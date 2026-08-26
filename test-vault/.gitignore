@@ -1,0 +1,15 @@
+# Conlang Workbench test-vault
+# Keep shareable Obsidian configuration while ignoring machine-local state.
+
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Temporary / backup files
+*~
+*.tmp
+*.swp
+
