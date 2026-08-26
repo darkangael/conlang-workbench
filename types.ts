@@ -110,11 +110,26 @@ export interface InflectionRule {
   description?: string;
 }
 
+export interface LanguageProfile {
+  id: string;
+  name: string;
+  path: string;
+
+  autonym?: string;
+  aliases?: string[];
+  status?: string;
+  modality?: string | string[];
+  documentationLanguage?: string;
+}
+
 export interface LanguageConfig {
   // Display name of the language
   name: string;
   // Folder containing dictionary entries (one .md file per word)
   dictionaryFolder: string;
+  // Optional vault path to the canonical Language Profile note.
+  // Omitted for backwards compatibility with existing configurations.
+  profilePath?: string;
   // Cypher sheets used for translation when a word isn't in the dictionary
   sheets: CypherSheet[];
   // If true, hovering a recognised conlang word shows its English definition
