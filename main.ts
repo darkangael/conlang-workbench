@@ -15,10 +15,12 @@ import {
   ConlangSettings,
   DEFAULT_SETTINGS,
   LanguageConfig,
+  LanguageProfile,
   DictionaryEntry,
 } from "./types";
 import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
+import { loadLanguageProfile } from "./language-profile";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
 import { WORD_RE, cleanWord, isWordChar, applyCasing } from "./word-tokens";
@@ -46,6 +48,12 @@ import { EditorView } from "@codemirror/view";
 export default class ConlangPlugin extends Plugin {
   settings: ConlangSettings = DEFAULT_SETTINGS;
   dictionary: Dictionary = new Dictionary(this.app);
+
+  // Parsed canonical Language Profiles for currently active languages.
+  // Keyed by LanguageConfig.name for compatibility with the inherited
+  // settings model. The profile itself carries its stable language id.
+  readonly languageProfiles: Map<string, LanguageProfile> = new Map();
+
   // Memoized word-classification results for the highlighter (see
   // highlight-core.ts). Cleared whenever the dictionary reloads or settings
   // change, since either can alter what a word resolves to.
@@ -342,6 +350,17 @@ export default class ConlangPlugin extends Plugin {
     // into the single Dictionary index. Each entry carries its `language`
     // field so callers can distinguish source.
     const active = this.getActiveLanguages();
+
+    // Language Profiles are canonical linguistic data stored in Markdown.
+    // Refresh the in-memory view whenever active-language data is reloaded.
+    this.languageProfiles.clear();
+    for (const lang of active) {
+      const profile = loadLanguageProfile(this.app, lang);
+      if (profile) {
+        this.languageProfiles.set(lang.name, profile);
+      }
+    }
+
     // Index case mode is a load-time decision — set it before (re)loading.
     this.dictionary.setCaseSensitive(this.settings.caseSensitiveMatching);
     if (active.length === 0) {
