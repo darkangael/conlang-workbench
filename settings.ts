@@ -433,7 +433,25 @@ export class ConlangSettingTab extends PluginSettingTab {
 
     new Setting(body).setName("Name").addText((t) =>
       t.setValue(lang.name).onChange(async (v) => {
+        const oldName = lang.name;
         lang.name = v;
+
+        // Language names are still used as runtime references by the inherited
+        // settings model. Keep those references valid when a language is renamed.
+        this.plugin.settings.activeLanguages =
+          this.plugin.settings.activeLanguages.map((n) =>
+            n === oldName ? v : n
+          );
+
+        if (this.plugin.settings.primaryLanguage === oldName) {
+          this.plugin.settings.primaryLanguage = v;
+        }
+
+        // Preserve expanded-card state, which is also keyed by language name.
+        if (this.openCards.delete(oldName)) this.openCards.add(v);
+        if (this.openSheets.delete(oldName)) this.openSheets.add(v);
+        if (this.openInflections.delete(oldName)) this.openInflections.add(v);
+
         await this.plugin.saveSettings();
       })
     );
@@ -446,6 +464,27 @@ export class ConlangSettingTab extends PluginSettingTab {
           lang.dictionaryFolder = v;
           await this.plugin.saveSettings();
         })
+      );
+
+    new Setting(body)
+      .setName("Language profile")
+      .setDesc("Optional vault path to this language's canonical language profile note.")
+      .addText((t) =>
+        t.setValue(lang.profilePath ?? "").onChange(async (v) => {
+          lang.profilePath = v.trim() || undefined;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    const profile = this.plugin.languageProfiles.get(lang.name);
+    new Setting(body)
+      .setName("Profile status")
+      .setDesc(
+        !lang.profilePath
+          ? "No language profile configured."
+          : profile
+            ? `Loaded: ${profile.name} (${profile.id})`
+            : "Profile not found or invalid."
       );
 
     new Setting(body)

@@ -26,7 +26,7 @@ __export(main_exports, {
   default: () => ConlangPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // types.ts
 var DEFAULT_SETTINGS = {
@@ -828,6 +828,46 @@ var _Dictionary = class _Dictionary {
 _Dictionary.TOOLTIP_FORM_LIMIT = 8;
 var Dictionary = _Dictionary;
 
+// language-profile.ts
+var import_obsidian2 = require("obsidian");
+function loadLanguageProfile(app, config) {
+  var _a, _b, _c, _d, _e, _f, _g, _h;
+  const profilePath = (_a = config.profilePath) == null ? void 0 : _a.trim();
+  if (!profilePath) return null;
+  const abstractFile = app.vault.getAbstractFileByPath(profilePath);
+  if (!(abstractFile instanceof import_obsidian2.TFile)) return null;
+  if (abstractFile.extension !== "md") return null;
+  const cache = app.metadataCache.getFileCache(abstractFile);
+  if (!cache) return null;
+  const fm = (_b = cache.frontmatter) != null ? _b : {};
+  const asString = (value) => {
+    if (value === void 0 || value === null) return void 0;
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    return void 0;
+  };
+  const type = (_c = asString(fm.type)) == null ? void 0 : _c.trim();
+  if (type !== "language-profile") return null;
+  const id = (_d = asString(fm.language_id)) == null ? void 0 : _d.trim();
+  const name = (_e = asString(fm.language)) == null ? void 0 : _e.trim();
+  if (!id || !name) return null;
+  const modalityList = parseStringList(fm.modality);
+  return {
+    id,
+    name,
+    path: abstractFile.path,
+    autonym: (_f = asString(fm.autonym)) == null ? void 0 : _f.trim(),
+    aliases: parseStringList(fm.aliases),
+    status: (_g = asString(fm.status)) == null ? void 0 : _g.trim(),
+    modality: modalityList && modalityList.length > 1 ? modalityList : modalityList == null ? void 0 : modalityList[0],
+    documentationLanguage: (_h = asString(
+      fm.documentation_language
+    )) == null ? void 0 : _h.trim()
+  };
+}
+
 // inflection.ts
 function findInflection(word, dictionary, rules) {
   if (!rules || rules.length === 0) return null;
@@ -926,7 +966,7 @@ function applyRuleForward(lemma, rule) {
 }
 
 // settings.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // presets.ts
 var INFLECTION_PRESETS = [
@@ -1002,7 +1042,7 @@ function findPreset(id) {
 }
 
 // settings.ts
-var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
+var ConlangSettingTab = class extends import_obsidian3.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     // Persist expand/collapse state across re-renders, keyed by language name.
@@ -1036,7 +1076,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     this.renderHighlightSection(containerEl);
     this.renderMatchingSection(containerEl);
     this.renderTranslationSection(containerEl);
-    new import_obsidian2.Setting(containerEl).setName("Individual languages").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Individual languages").setHeading();
     containerEl.createEl("p", {
       cls: "conlang-help",
       text: "Each language is a card below. Expand one to edit its dictionary folder, cypher sheets, and inflection rules."
@@ -1047,8 +1087,8 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
   }
   // ===== Top overview =====
   renderLanguageOverview(containerEl) {
-    new import_obsidian2.Setting(containerEl).setName("Languages").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Active languages").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Languages").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Active languages").setDesc(
       "Active languages contribute to hover, lookup, dictionary browsing, and highlighting. Tick to activate; click the star to set the primary."
     );
     const list = containerEl.createDiv({ cls: "conlang-lang-overview" });
@@ -1086,7 +1126,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         row.createSpan({ cls: "conlang-badge", text: "inactive" });
       }
     }
-    new import_obsidian2.Setting(containerEl).addButton(
+    new import_obsidian3.Setting(containerEl).addButton(
       (btn) => btn.setButtonText("Add language").setCta().onClick(async () => {
         const newName = this.uniqueLanguageName();
         this.plugin.settings.languages.push({
@@ -1104,7 +1144,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         const n = await this.plugin.reloadActiveLanguage();
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
-        new import_obsidian2.Notice(`Made Up Words: loaded ${n} dictionary entries`);
+        new import_obsidian3.Notice(`Made Up Words: loaded ${n} dictionary entries`);
       })
     );
   }
@@ -1123,7 +1163,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     let listed = Array.from(set);
     if (listed.length === 0) {
       listed = [name];
-      new import_obsidian2.Notice("Made Up Words: at least one language must stay active.");
+      new import_obsidian3.Notice("Made Up Words: at least one language must stay active.");
     }
     this.plugin.settings.activeLanguages = listed;
     if (!listed.includes(this.plugin.settings.primaryLanguage)) {
@@ -1136,8 +1176,8 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
   }
   // ===== Behaviour sections =====
   renderHoverSection(containerEl) {
-    new import_obsidian2.Setting(containerEl).setName("Hover tooltips").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Hover modifier key").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Hover tooltips").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Hover modifier key").setDesc(
       "Hold this key while hovering to see translation tooltips. 'None' shows a tooltip on any hover. Hover can also be turned off per language in each card below."
     ).addDropdown((dd) => {
       dd.addOption("none", "None (always show)");
@@ -1150,7 +1190,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("Show your words' meanings").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Show your words' meanings").setDesc(
       "Hovering one of your made-up words shows its dictionary entry. Covers headwords, phrases, declared forms, and inflected forms."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.hoverConlang).onChange(async (v) => {
@@ -1158,7 +1198,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Show English to conlang translations").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Show English to conlang translations").setDesc(
       "Hovering an English word shows the conlang words that mean it. Turn this off if your made-up words are being mistaken for English. It also switches off the cypher preview below, which transforms hovered text the same way. A word that's already one of your headwords is never treated as English, whichever way this is set."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.hoverEnglish).onChange(async (v) => {
@@ -1167,7 +1207,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         this.rerender();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Fallback for unknown words").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Fallback for unknown words").setDesc(
       "What to show when you hover a word that isn't in the dictionary. 'Cypher preview' shows a phonological placeholder; 'Nothing' shows no tooltip. The cypher preview is an English to conlang transformation, so this only applies while that direction is on."
     ).addDropdown((dd) => {
       dd.addOption("cypher", "Cypher preview");
@@ -1181,8 +1221,8 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     });
   }
   renderHighlightSection(containerEl) {
-    new import_obsidian2.Setting(containerEl).setName("Highlighting").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Highlight known words in notes").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Highlighting").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Highlight known words in notes").setDesc(
       "Visually mark recognised words in both the editor and Reading view."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightKnownWords).onChange(async (v) => {
@@ -1192,7 +1232,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     if (!this.plugin.settings.highlightKnownWords) return;
-    new import_obsidian2.Setting(containerEl).setName("Highlight style").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Highlight style").setDesc(
       "How highlighted words look. Themeable via the .conlang-known-word CSS class."
     ).addDropdown((dd) => {
       dd.addOption("underline", "Dotted underline + colour");
@@ -1204,7 +1244,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("Highlight conlang words").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Highlight conlang words").setDesc(
       "Mark words that exist as dictionary entries (including inflected forms and phrases)."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightConlang).onChange(async (v) => {
@@ -1212,7 +1252,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Highlight translatable English words").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Highlight translatable English words").setDesc(
       "Mark English words the dictionary can translate. Handy for spotting coverage, but noisier in English-heavy notes."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightEnglish).onChange(async (v) => {
@@ -1222,8 +1262,8 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     );
   }
   renderMatchingSection(containerEl) {
-    new import_obsidian2.Setting(containerEl).setName("Word matching").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Case-sensitive matching").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Word matching").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Case-sensitive matching").setDesc(
       "Treat capitalized and lowercase conlang words as different entries (e.g. a proper noun 'Sol' vs a common noun 'sol'). Affects dictionary headwords, aliases, and phrase matching. English-side lookups stay case-insensitive. Changing this reloads the dictionary."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.caseSensitiveMatching).onChange(async (v) => {
@@ -1234,7 +1274,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         this.plugin.refreshHighlights();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Show declared forms in hover tooltip").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Show declared forms in hover tooltip").setDesc(
       "Include an entry's hardcoded `forms:` (its declension or conjugation table) in the hover tooltip. The side panel always shows them. Turn this off to keep tooltips compact when your entries carry long form tables."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.showFormsInTooltip).onChange(async (v) => {
@@ -1244,8 +1284,8 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     );
   }
   renderTranslationSection(containerEl) {
-    new import_obsidian2.Setting(containerEl).setName("Translation").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Commit wrapper").setDesc(
+    new import_obsidian3.Setting(containerEl).setName("Translation").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Commit wrapper").setDesc(
       "How committed translations are stored in the note. HTML tooltip is recommended (uses native <abbr> tags)."
     ).addDropdown((dd) => {
       dd.addOption("html-tooltip", "HTML tooltip (<abbr>)");
@@ -1312,26 +1352,49 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
       });
     }
     const body = card.createDiv({ cls: "conlang-card-body" });
-    new import_obsidian2.Setting(body).setName("Name").addText(
+    new import_obsidian3.Setting(body).setName("Name").addText(
       (t) => t.setValue(lang.name).onChange(async (v) => {
+        const oldName = lang.name;
         lang.name = v;
+        this.plugin.settings.activeLanguages = this.plugin.settings.activeLanguages.map(
+          (n) => n === oldName ? v : n
+        );
+        if (this.plugin.settings.primaryLanguage === oldName) {
+          this.plugin.settings.primaryLanguage = v;
+        }
+        if (this.openCards.delete(oldName)) this.openCards.add(v);
+        if (this.openSheets.delete(oldName)) this.openSheets.add(v);
+        if (this.openInflections.delete(oldName)) this.openInflections.add(v);
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(body).setName("Dictionary folder").setDesc("Folder of one .md file per word, each with frontmatter `definition:` set.").addText(
+    new import_obsidian3.Setting(body).setName("Dictionary folder").setDesc("Folder of one .md file per word, each with frontmatter `definition:` set.").addText(
       (t) => t.setValue(lang.dictionaryFolder).onChange(async (v) => {
         lang.dictionaryFolder = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(body).setName("Active").setDesc("Include this language in hover, lookup, browsing, and highlighting.").addToggle(
+    new import_obsidian3.Setting(body).setName("Language profile").setDesc("Optional vault path to this language's canonical language profile note.").addText(
+      (t) => {
+        var _a;
+        return t.setValue((_a = lang.profilePath) != null ? _a : "").onChange(async (v) => {
+          lang.profilePath = v.trim() || void 0;
+          await this.plugin.saveSettings();
+        });
+      }
+    );
+    const profile = this.plugin.languageProfiles.get(lang.name);
+    new import_obsidian3.Setting(body).setName("Profile status").setDesc(
+      !lang.profilePath ? "No language profile configured." : profile ? `Loaded: ${profile.name} (${profile.id})` : "Profile not found or invalid."
+    );
+    new import_obsidian3.Setting(body).setName("Active").setDesc("Include this language in hover, lookup, browsing, and highlighting.").addToggle(
       (tg) => tg.setValue(isActive).onChange(async (v) => {
         await this.toggleActive(lang.name, v);
         this.rerender();
       })
     );
     if (isActive && !isPrimary) {
-      new import_obsidian2.Setting(body).setName("Primary language").setDesc("Target for English-to-conlang translation and default save folder for new entries.").addButton(
+      new import_obsidian3.Setting(body).setName("Primary language").setDesc("Target for English-to-conlang translation and default save folder for new entries.").addButton(
         (b) => b.setButtonText("Make primary").onClick(async () => {
           this.plugin.settings.primaryLanguage = lang.name;
           await this.plugin.saveSettings();
@@ -1339,18 +1402,18 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         })
       );
     }
-    new import_obsidian2.Setting(body).setName("Enable hover tooltips").setDesc("Show translation tooltips when hovering this language's words.").addToggle(
+    new import_obsidian3.Setting(body).setName("Enable hover tooltips").setDesc("Show translation tooltips when hovering this language's words.").addToggle(
       (tg) => tg.setValue(lang.hoverEnabled).onChange(async (v) => {
         lang.hoverEnabled = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(body).addButton(
+    new import_obsidian3.Setting(body).addButton(
       (b) => b.setButtonText("Reload dictionary").onClick(async () => {
         const n = await this.plugin.reloadActiveLanguage();
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
-        new import_obsidian2.Notice(
+        new import_obsidian3.Notice(
           isActive ? `Reloaded \u2014 ${n} entries across active languages` : `${lang.name} is inactive; activate it to load its dictionary.`
         );
       })
@@ -1381,7 +1444,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
       }
     };
     rebuildSheets();
-    new import_obsidian2.Setting(sheetsBody).addButton(
+    new import_obsidian3.Setting(sheetsBody).addButton(
       (b) => b.setButtonText("Add sheet").setCta().onClick(async () => {
         lang.sheets.push({
           name: `Sheet ${lang.sheets.length + 1}`,
@@ -1405,7 +1468,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
       text: "When a word isn't in the dictionary, these rules try to find its lemma. Strip removes characters from the end (suffix) or start (prefix); add then attaches characters to reconstruct the lemma. Most rules just chop a suffix off \u2014 leave add empty for that. Use add for respellings (strip 'ies', add 'y'). Optional POS filter: comma-separated, e.g. 'noun' or 'noun,proper-noun'. Rules are tried in order; the first whose reconstructed stem exists wins."
     });
     let pendingPresetId = "";
-    new import_obsidian2.Setting(inflBody).setName("Apply preset").setDesc("Load a curated starter set. Replaces existing inflection rules for this language.").addDropdown((dd) => {
+    new import_obsidian3.Setting(inflBody).setName("Apply preset").setDesc("Load a curated starter set. Replaces existing inflection rules for this language.").addDropdown((dd) => {
       dd.addOption("", "\u2014 pick a preset \u2014");
       for (const preset of INFLECTION_PRESETS) {
         dd.addOption(preset.id, preset.name);
@@ -1417,7 +1480,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
       (b) => b.setButtonText("Apply").setCta().onClick(async () => {
         var _a, _b;
         if (!pendingPresetId) {
-          new import_obsidian2.Notice("Made Up Words: pick a preset first");
+          new import_obsidian3.Notice("Made Up Words: pick a preset first");
           return;
         }
         const preset = findPreset(pendingPresetId);
@@ -1429,11 +1492,11 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         this.openInflections.add(lang.name);
         await this.plugin.saveSettings();
         this.rerender();
-        new import_obsidian2.Notice(`Made Up Words: applied preset "${preset.name}"`);
+        new import_obsidian3.Notice(`Made Up Words: applied preset "${preset.name}"`);
       })
     );
     this.renderInflectionTable(inflBody, lang);
-    new import_obsidian2.Setting(inflBody).addButton(
+    new import_obsidian3.Setting(inflBody).addButton(
       (b) => b.setButtonText("Add inflection rule").onClick(async () => {
         var _a;
         ((_a = lang.inflections) != null ? _a : lang.inflections = []).push({
@@ -1492,7 +1555,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
   renderSheet(parent, lang, sheetIndex, rebuildSheets) {
     const sheet = lang.sheets[sheetIndex];
     const box = parent.createDiv({ cls: "conlang-sheet" });
-    new import_obsidian2.Setting(box).setName(sheet.name).addExtraButton(
+    new import_obsidian3.Setting(box).setName(sheet.name).addExtraButton(
       (b) => b.setIcon("arrow-up").setTooltip("Move sheet up").setDisabled(sheetIndex === 0).onClick(async () => {
         this.moveItem(lang.sheets, sheetIndex, sheetIndex - 1);
         await this.plugin.saveSettings();
@@ -1516,7 +1579,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
         this.rerender();
       })
     );
-    new import_obsidian2.Setting(box).setName("Sheet name").addText(
+    new import_obsidian3.Setting(box).setName("Sheet name").addText(
       (t) => t.setValue(sheet.name).onChange(async (v) => {
         sheet.name = v;
         await this.plugin.saveSettings();
@@ -1530,7 +1593,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     for (let r = 0; r < sheet.rules.length; r++) {
       this.renderRuleRow(tbody, sheet, r);
     }
-    new import_obsidian2.Setting(box).addButton(
+    new import_obsidian3.Setting(box).addButton(
       (b) => b.setButtonText("Add rule").onClick(async () => {
         sheet.rules.push({ input: "", output: "", type: "default", enabled: true });
         await this.plugin.saveSettings();
@@ -1666,7 +1729,7 @@ var ConlangSettingTab = class extends import_obsidian2.PluginSettingTab {
     });
   }
 };
-var PresetConfirmModal = class extends import_obsidian2.Modal {
+var PresetConfirmModal = class extends import_obsidian3.Modal {
   constructor(app, presetName, description, existingCount, resolve) {
     super(app);
     this.decided = false;
@@ -1704,7 +1767,7 @@ var PresetConfirmModal = class extends import_obsidian2.Modal {
 };
 
 // panel.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // explanations.ts
 var EXPLANATIONS = {
@@ -1944,7 +2007,7 @@ function renderTransliterationString(tokens) {
 
 // panel.ts
 var VIEW_TYPE_PANEL = "made-up-words-panel";
-var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3.ItemView {
+var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.activeTab = "translate";
@@ -2104,7 +2167,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
     const current = new Set(settings.activeLanguages);
     if (current.has(name)) {
       if (current.size <= 1) {
-        new import_obsidian3.Notice("Made Up Words: at least one language must be active.");
+        new import_obsidian4.Notice("Made Up Words: at least one language must be active.");
         return;
       }
       current.delete(name);
@@ -2289,7 +2352,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
     return null;
   }
   readSelection() {
-    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
     if (view) {
       const editorSel = view.editor.getSelection();
       if (editorSel && editorSel.length > 0) return editorSel;
@@ -2402,7 +2465,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian3.TFile) {
+      if (file instanceof import_obsidian4.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -2518,7 +2581,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
         chip.addClass("conlang-clickable");
         chip.addEventListener("click", () => {
           const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-          if (file instanceof import_obsidian3.TFile) {
+          if (file instanceof import_obsidian4.TFile) {
             void this.plugin.app.workspace.getLeaf(false).openFile(file);
           }
         });
@@ -2566,7 +2629,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
   }
   renderActions(text, direction) {
     this.actionsEl.empty();
-    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
     const hasEditor = view !== null && view.editor.getSelection() === text;
     if (direction === "english-to-conlang") {
       const replaceBtn = this.actionsEl.createEl("button", {
@@ -2638,7 +2701,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian3.TFile) {
+      if (file instanceof import_obsidian4.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -2871,7 +2934,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian3.TFile) {
+      if (file instanceof import_obsidian4.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -2898,7 +2961,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
       row.addEventListener("click", (e) => {
         e.stopPropagation();
         const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-        if (file instanceof import_obsidian3.TFile) {
+        if (file instanceof import_obsidian4.TFile) {
           void this.plugin.app.workspace.getLeaf(false).openFile(file);
         }
       });
@@ -3262,7 +3325,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian3
     }
     row.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian3.TFile) {
+      if (file instanceof import_obsidian4.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -3275,7 +3338,7 @@ _TranslationPanelView.BROWSER_PAGE = 200;
 var TranslationPanelView = _TranslationPanelView;
 
 // entry-modal.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var COMMON_POS = [
   { label: "noun", description: "A person, place, thing, or idea. e.g. cat, river, freedom." },
   { label: "verb", description: "An action or state of being. e.g. run, become, exist." },
@@ -3295,7 +3358,7 @@ function buildPosChips(parent, onPick) {
     chip.addEventListener("click", () => onPick(pos.label));
   }
 }
-var EntryCreationModal = class extends import_obsidian4.Modal {
+var EntryCreationModal = class extends import_obsidian5.Modal {
   constructor(app, englishText, translatedText, resolve) {
     super(app);
     this.decided = false;
@@ -3355,7 +3418,7 @@ var EntryCreationModal = class extends import_obsidian4.Modal {
     this.contentEl.empty();
   }
 };
-var MultiEntryModal = class extends import_obsidian4.Modal {
+var MultiEntryModal = class extends import_obsidian5.Modal {
   constructor(app, englishText, inits, resolve) {
     super(app);
     this.decided = false;
@@ -3421,7 +3484,7 @@ var MultiEntryModal = class extends import_obsidian4.Modal {
   submit() {
     const targets = this.rows.filter((r) => r.checkbox.checked && r.formInput.value.trim()).map((r) => ({ languageName: r.init.languageName, form: r.formInput.value.trim() }));
     if (targets.length === 0) {
-      new import_obsidian4.Notice("Made Up Words: tick at least one language (with a form) to save.");
+      new import_obsidian5.Notice("Made Up Words: tick at least one language (with a form) to save.");
       return;
     }
     this.decided = true;
@@ -3440,7 +3503,7 @@ var MultiEntryModal = class extends import_obsidian4.Modal {
 };
 
 // name-modal.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var NAME_CATEGORIES = [
   { label: "character", description: "A person \u2014 protagonist, antagonist, supporting figure. Includes the names of gods and personified forces." },
   { label: "place", description: "A geographic location \u2014 city, region, mountain, river, building. Anything with coordinates in your world." },
@@ -3450,7 +3513,7 @@ var NAME_CATEGORIES = [
   { label: "title", description: "A specific role or rank that's treated as a proper noun \u2014 'the High King', 'the Dawnspeaker'. Often capitalised in prose." },
   { label: "other", description: "Anything else that gets its own proper-noun treatment." }
 ];
-var NameCreationModal = class extends import_obsidian5.Modal {
+var NameCreationModal = class extends import_obsidian6.Modal {
   constructor(app, cypherFn, resolve) {
     super(app);
     this.decided = false;
@@ -3537,7 +3600,7 @@ var NameCreationModal = class extends import_obsidian5.Modal {
   applyCypher() {
     const src = this.deriveFromEnglish.trim();
     if (!src) {
-      new import_obsidian5.Notice("Made Up Words: type an English word to derive from first");
+      new import_obsidian6.Notice("Made Up Words: type an English word to derive from first");
       return;
     }
     const out = this.cypherFn(src);
@@ -3557,7 +3620,7 @@ var NameCreationModal = class extends import_obsidian5.Modal {
   submit() {
     const conlang = this.conlangForm.trim();
     if (!conlang) {
-      new import_obsidian5.Notice("Made Up Words: give the name a conlang form (type it or derive it)");
+      new import_obsidian6.Notice("Made Up Words: give the name a conlang form (type it or derive it)");
       this.conlangInput.focus();
       return;
     }
@@ -3581,8 +3644,8 @@ var NameCreationModal = class extends import_obsidian5.Modal {
 };
 
 // lookup-modal.ts
-var import_obsidian6 = require("obsidian");
-var LookupModal = class extends import_obsidian6.Modal {
+var import_obsidian7 = require("obsidian");
+var LookupModal = class extends import_obsidian7.Modal {
   constructor(app, query, matches) {
     super(app);
     this.query = query;
@@ -3670,7 +3733,7 @@ var LookupModal = class extends import_obsidian6.Modal {
     row.addClass("conlang-clickable");
     row.addEventListener("click", () => {
       const file = this.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian6.TFile) {
+      if (file instanceof import_obsidian7.TFile) {
         void this.app.workspace.getLeaf(false).openFile(file).then(() => this.close());
       }
     });
@@ -3681,7 +3744,7 @@ var LookupModal = class extends import_obsidian6.Modal {
 };
 
 // word-modal.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 var COMMON_POS2 = [
   { label: "noun", description: "A person, place, thing, or idea. e.g. cat, river, freedom." },
   { label: "verb", description: "An action or state of being. e.g. run, become, exist." },
@@ -3692,7 +3755,7 @@ var COMMON_POS2 = [
   { label: "conjunction", description: "Joins words, phrases, or clauses. e.g. and, but, because." },
   { label: "interjection", description: "An exclamation expressing emotion or reaction. e.g. oh!, wow, alas." }
 ];
-var WordCreationModal = class extends import_obsidian7.Modal {
+var WordCreationModal = class extends import_obsidian8.Modal {
   constructor(app, cypherFn, resolve) {
     super(app);
     this.decided = false;
@@ -3763,7 +3826,7 @@ var WordCreationModal = class extends import_obsidian7.Modal {
   deriveFromEnglish() {
     const src = this.englishDefinition.trim();
     if (!src) {
-      new import_obsidian7.Notice("Made Up Words: type an English meaning first");
+      new import_obsidian8.Notice("Made Up Words: type an English meaning first");
       this.englishInput.focus();
       return;
     }
@@ -3777,12 +3840,12 @@ var WordCreationModal = class extends import_obsidian7.Modal {
     const c = this.conlangWord.trim();
     const e = this.englishDefinition.trim();
     if (!c) {
-      new import_obsidian7.Notice("Made Up Words: give the word a conlang form");
+      new import_obsidian8.Notice("Made Up Words: give the word a conlang form");
       this.conlangInput.focus();
       return;
     }
     if (!e) {
-      new import_obsidian7.Notice("Made Up Words: give the word an English meaning");
+      new import_obsidian8.Notice("Made Up Words: give the word an English meaning");
       this.englishInput.focus();
       return;
     }
@@ -3809,7 +3872,7 @@ var WordCreationModal = class extends import_obsidian7.Modal {
 var import_view = require("@codemirror/view");
 var import_state = require("@codemirror/state");
 var import_language = require("@codemirror/language");
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 
 // highlight-core.ts
 var BASE_CLASS = "conlang-known-word";
@@ -3915,7 +3978,7 @@ function registerEntryLinkHandler(plugin) {
     const path = el.getAttribute(ENTRY_PATH_ATTR);
     if (!path) return;
     const file = plugin.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian8.TFile)) return;
+    if (!(file instanceof import_obsidian9.TFile)) return;
     evt.preventDefault();
     evt.stopPropagation();
     void plugin.app.workspace.getLeaf(evt.ctrlKey || evt.metaKey).openFile(file);
@@ -4035,11 +4098,15 @@ function replaceTextNode(plugin, textNode) {
 }
 
 // main.ts
-var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
+var _ConlangPlugin = class _ConlangPlugin extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
     this.dictionary = new Dictionary(this.app);
+    // Parsed canonical Language Profiles for currently active languages.
+    // Keyed by LanguageConfig.name for compatibility with the inherited
+    // settings model. The profile itself carries its stable language id.
+    this.languageProfiles = /* @__PURE__ */ new Map();
     // Memoized word-classification results for the highlighter (see
     // highlight-core.ts). Cleared whenever the dictionary reloads or settings
     // change, since either can alter what a word resolves to.
@@ -4055,7 +4122,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     this.hoverActive = false;
     // Trailing-edge debounce (resetTimer=true): a burst of vault events results
     // in one reload ~500ms after the last event.
-    this.scheduleDictionaryReload = (0, import_obsidian9.debounce)(
+    this.scheduleDictionaryReload = (0, import_obsidian10.debounce)(
       () => void this.performDictionaryReload(),
       500,
       true
@@ -4127,7 +4194,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
         const n = await this.reloadActiveLanguage();
         this.refreshPanel();
         this.refreshHighlights();
-        new import_obsidian9.Notice(`Made Up Words: loaded ${n} dictionary entries`);
+        new import_obsidian10.Notice(`Made Up Words: loaded ${n} dictionary entries`);
       }
     });
     this.addCommand({
@@ -4156,7 +4223,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
       callback: async () => {
         this.settings.highlightKnownWords = !this.settings.highlightKnownWords;
         await this.saveSettings();
-        new import_obsidian9.Notice(
+        new import_obsidian10.Notice(
           `Made Up Words: highlighting ${this.settings.highlightKnownWords ? "on" : "off"}`
         );
       }
@@ -4238,7 +4305,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     this.settings.hasSeenWelcome = true;
     void this.saveData(this.settings);
     const message = "Made Up Words is loaded. Open the side panel via the book-open icon in the left ribbon, or via the command palette \u2192 'Made Up Words: Open panel'.";
-    new import_obsidian9.Notice(message, 12e3);
+    new import_obsidian10.Notice(message, 12e3);
   }
   /**
    * Return the primary language config (the one used for new entries and
@@ -4267,6 +4334,13 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   }
   async reloadActiveLanguage() {
     const active = this.getActiveLanguages();
+    this.languageProfiles.clear();
+    for (const lang of active) {
+      const profile = loadLanguageProfile(this.app, lang);
+      if (profile) {
+        this.languageProfiles.set(lang.name, profile);
+      }
+    }
     this.dictionary.setCaseSensitive(this.settings.caseSensitiveMatching);
     if (active.length === 0) {
       this.dictionary.clear();
@@ -4292,14 +4366,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
         leaf = this.app.workspace.getLeaf(true);
       }
       if (!leaf) {
-        new import_obsidian9.Notice("Made Up Words: could not open panel (no available leaf)");
+        new import_obsidian10.Notice("Made Up Words: could not open panel (no available leaf)");
         return;
       }
       await leaf.setViewState({ type: VIEW_TYPE_PANEL, active: true });
       await this.app.workspace.revealLeaf(leaf);
     } catch (e) {
       console.error("[Conlang] openPanel failed:", e);
-      new import_obsidian9.Notice("Made Up Words: failed to open panel \u2014 see developer console");
+      new import_obsidian10.Notice("Made Up Words: failed to open panel \u2014 see developer console");
     }
   }
   refreshPanel() {
@@ -4381,7 +4455,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof import_obsidian9.MarkdownView)) continue;
+      if (!(view instanceof import_obsidian10.MarkdownView)) continue;
       const cm = view.editor.cm;
       if (cm) {
         try {
@@ -4500,11 +4574,11 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async previewToConlang(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian9.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian10.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     const translated = this.translateToConlang(sel.text);
-    new import_obsidian9.Notice(`${sel.text}  \u2192  ${translated}`, 6e3);
+    new import_obsidian10.Notice(`${sel.text}  \u2192  ${translated}`, 6e3);
   }
   /**
    * Commit the editor's current selection (or word under cursor) as conlang.
@@ -4513,7 +4587,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async commitSelectionToConlang(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian9.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian10.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     const translated = this.translateToConlang(sel.text);
@@ -4537,26 +4611,26 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async previewToEnglish(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian9.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian10.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     const entry = this.dictionary.lookup(cleanWord(sel.text));
     if (entry) {
-      new import_obsidian9.Notice(`${entry.word}  \u2192  ${entry.definition}`, 6e3);
+      new import_obsidian10.Notice(`${entry.word}  \u2192  ${entry.definition}`, 6e3);
       return;
     }
     const lang = this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian9.Notice("Made Up Words: no active language");
+      new import_obsidian10.Notice("Made Up Words: no active language");
       return;
     }
     const reversed = applyCypherReverse(sel.text, lang.sheets);
-    new import_obsidian9.Notice(`${sel.text}  \u2192  ${reversed} (reverse cypher)`, 6e3);
+    new import_obsidian10.Notice(`${sel.text}  \u2192  ${reversed} (reverse cypher)`, 6e3);
   }
   async createEntryFromSelection(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian9.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian10.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     await this.openMultiLangEntries(sel.text);
@@ -4569,7 +4643,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async openMultiLangEntries(englishText) {
     const langs = this.settings.languages;
     if (langs.length === 0) {
-      new import_obsidian9.Notice("Made Up Words: no languages configured");
+      new import_obsidian10.Notice("Made Up Words: no languages configured");
       return;
     }
     const primary = this.settings.primaryLanguage;
@@ -4605,15 +4679,15 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     await this.afterEntriesChanged();
     if (firstPath) {
       const f = this.app.vault.getAbstractFileByPath(firstPath);
-      if (f instanceof import_obsidian9.TFile) await this.app.workspace.getLeaf(false).openFile(f);
+      if (f instanceof import_obsidian10.TFile) await this.app.workspace.getLeaf(false).openFile(f);
     }
     if (errors.length > 0) {
-      new import_obsidian9.Notice(
+      new import_obsidian10.Notice(
         `Made Up Words: ${created.length} saved, ${errors.length} failed \u2014 ${errors.join("; ")}`,
         9e3
       );
     } else {
-      new import_obsidian9.Notice(
+      new import_obsidian10.Notice(
         `Made Up Words: saved ${created.length} ${created.length === 1 ? "entry" : "entries"}`,
         5e3
       );
@@ -4638,7 +4712,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     }
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof import_obsidian9.TFile) {
+    if (existing instanceof import_obsidian10.TFile) {
       if (this.entryCoversDefinition(existing, p.englishText)) {
         return { ok: true, created: false, path };
       }
@@ -4722,12 +4796,12 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
       const existing = this.app.vault.getAbstractFileByPath(current);
-      if (existing instanceof import_obsidian9.TFolder) continue;
+      if (existing instanceof import_obsidian10.TFolder) continue;
       if (existing) throw new Error(`"${current}" exists but is not a folder`);
       try {
         await this.app.vault.createFolder(current);
       } catch (e) {
-        if (!(this.app.vault.getAbstractFileByPath(current) instanceof import_obsidian9.TFolder)) {
+        if (!(this.app.vault.getAbstractFileByPath(current) instanceof import_obsidian10.TFolder)) {
           throw e;
         }
       }
@@ -4744,7 +4818,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async lookupWord(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian9.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian10.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     const query = sel.text.trim();
@@ -4835,7 +4909,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async createDictionaryEntryForText(englishText, targetLang) {
     const lang = targetLang != null ? targetLang : this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian9.Notice("Made Up Words: no active language");
+      new import_obsidian10.Notice("Made Up Words: no active language");
       return;
     }
     const translated = this.translateToConlangWith(englishText, lang);
@@ -4844,15 +4918,15 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     let path = `${folder}/${safeName}.md`;
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof import_obsidian9.TFile && this.entryCoversDefinition(existing, englishText)) {
+    if (existing instanceof import_obsidian10.TFile && this.entryCoversDefinition(existing, englishText)) {
       await this.app.workspace.getLeaf(false).openFile(existing);
-      new import_obsidian9.Notice(`Conlang: opened existing entry "${translated}"`);
+      new import_obsidian10.Notice(`Conlang: opened existing entry "${translated}"`);
       return;
     }
     const opts = await this.promptForEntryOptions(englishText, translated);
     if (opts === null) return;
     let wordOverride = false;
-    if (existing instanceof import_obsidian9.TFile) {
+    if (existing instanceof import_obsidian10.TFile) {
       path = this.freeHomographPath(folder, safeName, opts.partOfSpeech);
       wordOverride = true;
     }
@@ -4880,7 +4954,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     this.lastHoverWord = null;
     const isActive = this.settings.activeLanguages.includes(lang.name);
     const senseNote = wordOverride ? " as a new sense of an existing word" : "";
-    new import_obsidian9.Notice(
+    new import_obsidian10.Notice(
       isActive ? `Made Up Words: created "${translated}" in ${lang.name}${senseNote}` : `Made Up Words: created "${translated}" in ${lang.name}${senseNote} (inactive \u2014 activate it to see hover/highlight)`
     );
   }
@@ -4897,7 +4971,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async createWordFromPanel() {
     const lang = this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian9.Notice("Made Up Words: no active language");
+      new import_obsidian10.Notice("Made Up Words: no active language");
       return;
     }
     const result = await new Promise((resolve) => {
@@ -4911,10 +4985,10 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     let path = `${folder}/${safeName}.md`;
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof import_obsidian9.TFile) {
+    if (existing instanceof import_obsidian10.TFile) {
       if (this.entryCoversDefinition(existing, result.englishDefinition)) {
         await this.app.workspace.getLeaf(false).openFile(existing);
-        new import_obsidian9.Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
+        new import_obsidian10.Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
         return;
       }
       path = this.freeHomographPath(folder, safeName, result.partOfSpeech);
@@ -4940,7 +5014,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
-    new import_obsidian9.Notice(
+    new import_obsidian10.Notice(
       wordOverride ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word` : `Conlang: added "${result.conlangWord}"`
     );
   }
@@ -4952,7 +5026,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
   async createName() {
     const lang = this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian9.Notice("Made Up Words: no active language");
+      new import_obsidian10.Notice("Made Up Words: no active language");
       return;
     }
     const result = await this.promptForName();
@@ -4964,10 +5038,10 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     const referent = result.referent || result.conlangForm;
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof import_obsidian9.TFile) {
+    if (existing instanceof import_obsidian10.TFile) {
       if (this.entryCoversDefinition(existing, referent)) {
         await this.app.workspace.getLeaf(false).openFile(existing);
-        new import_obsidian9.Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
+        new import_obsidian10.Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
         return;
       }
       path = this.freeHomographPath(folder, safeName, result.category || "name");
@@ -4998,7 +5072,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian9.Plugin {
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
-    new import_obsidian9.Notice(`Conlang: created name "${result.conlangForm}"`);
+    new import_obsidian10.Notice(`Conlang: created name "${result.conlangForm}"`);
   }
   promptForName() {
     return new Promise((resolve) => {
