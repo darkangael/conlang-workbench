@@ -42,11 +42,31 @@ Conlang Workbench should operate on ordinary Markdown notes and structured metad
 
 A user's language documentation must remain readable and usable without Conlang Workbench installed.
 
-### Language-aware rather than one-size-fits-all
+### Flat frontmatter, structured Markdown
 
-Different languages require different kinds of documentation.
+Frontmatter should remain flat and should primarily hold concise metadata useful for identity, indexing, filtering, and simple relationships.
 
-Conlang Workbench should allow language profiles and lexical or grammatical schemas to determine which information is relevant instead of presenting every possible linguistic field to every language.
+Complex linguistic information should normally be stored in standardized Markdown body sections rather than nested YAML.
+
+### Language-neutral architecture
+
+Conlang Workbench must not assume that every language has the same grammatical categories, sound system, writing system, modality, or lexical organization.
+
+Common linguistic structures may be offered as tools or presets, but they must not become requirements merely because the plugin supports them.
+
+### Describe rather than prescribe
+
+**Conlang Workbench should not dictate how a constructed language works. It should provide structures capable of documenting how that language works.**
+
+The tool may ask useful questions, offer terminology, provide validation, and suggest common analyses. It must not silently turn those conveniences into rules governing the language itself.
+
+### Linguistic references are descriptive resources
+
+Linguistic and conlanging references are used to reveal possibilities, terminology, documentation gaps, and known patterns.
+
+They are not conformity tests.
+
+An unusual but deliberate language feature is not wrong merely because it differs from a natural-language tendency or from the examples used in a reference work.
 
 ### Creator-facing and linguist-readable
 
@@ -58,6 +78,30 @@ Validation, generation, and analysis tools should assist the conlanger rather th
 
 Irregularity and exceptions are legitimate properties of languages and should be documentable rather than treated automatically as errors.
 
+### Facts and analysis may differ
+
+The Workbench should permit the creator to document observed or established behavior even when its best linguistic analysis remains provisional or unresolved.
+
+### Existing data should survive growth
+
+New features should extend the existing Markdown model incrementally.
+
+Migration should not discard information, and existing notes should not become invalid merely because richer structures are introduced later.
+
+## Reference-Guided Design
+
+Before a major language-model feature is considered stable, compare it against relevant conlanging and linguistic references.
+
+The purpose is to discover missing questions and useful representational needs, not to require every language to implement every referenced feature.
+
+Coverage should be classified where practical as:
+
+- Supported
+- Partial
+- Planned
+- Not needed
+- Intentionally open
+
 ## Current Development Stage
 
 The initial development stage focuses on preserving the useful dictionary and lookup foundation inherited from Made Up Words while establishing Conlang Workbench's own data model and project architecture.
@@ -65,14 +109,21 @@ The initial development stage focuses on preserving the useful dictionary and lo
 Major planned areas include:
 
 - language profiles
-- configurable lexical schemas
+- configurable document schemas
 - rich lexical senses
-- phonology and phonotactics
-- orthography
+- phonetics and phonology
+- phonotactics and prosody
+- orthography and writing systems
 - morphology and paradigms
+- morphophonology
+- syntax
+- semantics
+- pragmatics and discourse
+- sociolinguistics and register
+- semantic and cultural domains
 - typed etymological and historical relationships
 - interlinear glossed examples
-- grammar documentation
+- texts and corpora
 - validation and completeness auditing
 - dictionary and reference-grammar export
 

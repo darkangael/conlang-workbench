@@ -1,25 +1,19 @@
-# Conlang Workbench --- Data Model
+# Conlang Workbench — Data Model
 
-**Version:** 0.1\
+**Version:** 0.2
 **Status:** Draft
 
 ## Purpose
 
-This document defines the initial data-model principles for Conlang
-Workbench.
+This document defines the initial data-model principles for Conlang Workbench.
 
-Conlang Workbench is intended to support the creation, development,
-analysis, documentation, and eventual publication of constructed
-languages within Obsidian.
+Conlang Workbench is intended to support the creation, development, analysis, documentation, and eventual publication of constructed languages within Obsidian.
 
-The data model must remain language-neutral. No individual language,
-language family, grammatical typology, writing system, or linguistic
-tradition is assumed to be the default.
+The data model must remain language-neutral. No individual language, language family, grammatical typology, modality, writing system, or linguistic tradition is assumed to be the default.
 
-Individual languages define their own requirements through language
-profiles and related schemas.
+Individual languages define their own requirements through language profiles and related documentation.
 
-------------------------------------------------------------------------
+---
 
 ## 1. Core Principles
 
@@ -27,120 +21,97 @@ profiles and related schemas.
 
 The user's Markdown files are the authoritative language documentation.
 
-Conlang Workbench may index, interpret, validate, display, and edit
-those files, but the language data must not depend upon an opaque
-internal database.
+Conlang Workbench may index, interpret, validate, display, and edit those files, but the language data must not depend upon an opaque internal database.
 
-A vault must remain meaningfully usable if Conlang Workbench is removed
-or unavailable.
+A vault must remain meaningfully usable if Conlang Workbench is removed or unavailable.
 
 ### 1.2 Human-Readable Storage
 
-Plugin-managed information should remain understandable and reasonably
-editable as ordinary Markdown.
-
-Conlang Workbench should enhance the vault rather than make the vault
-dependent upon the plugin.
+Plugin-managed information should remain understandable and reasonably editable as ordinary Markdown.
 
 ### 1.3 Flat Frontmatter
 
 Conlang Workbench should prefer flat YAML frontmatter.
 
-Frontmatter is intended primarily for document identity, language
-identity, classification, indexing, filtering, simple linguistic
-properties, status information, simple relationships, and other concise
-metadata.
+Frontmatter is intended primarily for document identity, language identity, classification, indexing, filtering, concise status information, simple linguistic properties, and simple relationships.
 
-Nested YAML must not be required for normal Conlang Workbench operation.
+Nested YAML must not be required for normal operation.
 
-Complex linguistic structures belong primarily in standardized Markdown
-body sections.
+Complex linguistic structures belong primarily in standardized Markdown body sections.
 
 ### 1.4 Language Neutrality
 
-Conlang Workbench must not assume that languages use a particular word
-order, distinguish particular parts of speech, mark number or gender,
-use grammatical case, inflect verbs, use tense or articles, use an
-alphabet, have predictable stress, use concatenative morphology,
-distinguish words in the same manner as English, or possess any other
-particular grammatical or phonological feature.
+Conlang Workbench must not assume that languages:
 
-Language-specific behavior belongs in the language profile or associated
-language documentation.
+- use a particular word order
+- distinguish particular parts of speech
+- mark number, gender, case, tense, aspect, mood, person, or agreement
+- use spoken-auditory modality
+- use an alphabet or even a phonographic writing system
+- have predictable stress
+- use concatenative morphology
+- distinguish words in the same manner as English
+- possess any other particular grammatical, phonological, orthographic, semantic, pragmatic, or sociolinguistic feature
 
-### 1.5 Configurability Without Field Overload
+Language-specific behavior belongs in the language profile or associated documentation.
+
+### 1.5 Describe Rather Than Prescribe
+
+Conlang Workbench should not dictate how a constructed language works. It should provide structures capable of documenting how that language works.
+
+Questions, presets, terminology, and validation may assist the creator, but they must not become hidden requirements.
+
+### 1.6 Configurability Without Field Overload
 
 Different languages require different kinds of information.
 
-Conlang Workbench should expose fields and tools relevant to the
-language and document category being edited rather than presenting every
-possible linguistic field to every user.
+A simple language must be allowed to remain simple. A complex language must not be constrained by the requirements of a simpler one.
 
-A simple language must be allowed to remain simple. A complex language
-must not be constrained by the requirements of a simpler one.
+### 1.7 Existing Notes Remain Valid
 
-### 1.6 Existing Notes Remain Valid
+Adopting Conlang Workbench should not require immediate migration of an existing conlang vault.
 
-Adopting Conlang Workbench should not require immediate migration of an
-existing conlang vault.
+Existing Markdown notes should remain usable wherever their information can be recognized reliably.
 
-Existing Markdown notes should remain usable wherever their information
-can be recognized reliably. Richer Conlang Workbench structures may be
-introduced progressively.
+### 1.8 Irregularity Is Data
 
-### 1.7 Irregularity Is Data
+Naturalistic irregularity, historical residue, suppletion, exceptions, unusual forms, and deliberate violations of productive patterns are legitimate language data.
 
-Naturalistic irregularity, historical residue, suppletion, exceptions,
-unusual forms, and deliberate violations of productive patterns are
-legitimate language data.
+Validation must distinguish among invalid data, incomplete documentation, unusual forms, and intentional exceptions.
 
-Validation must distinguish among invalid data, incomplete
-documentation, unusual forms, and intentional exceptions.
+### 1.9 Human Judgment Is Authoritative
 
-A warning is not necessarily an error.
+Conlang Workbench may assist with analysis, generation, validation, and organization.
 
-### 1.8 Human Judgment Is Authoritative
+It must not silently make linguistic or creative decisions on behalf of the creator.
 
-Conlang Workbench may assist with analysis, generation, validation, and
-organization.
+### 1.10 Facts and Analysis May Differ
 
-It must not silently make linguistic or creative decisions on behalf of
-the language creator.
+The data model should permit a distinction between observed or established facts about how a language behaves and linguistic analysis or interpretation of those facts.
 
-### 1.9 Facts and Analysis May Differ
+### 1.11 Linguist-Readable Documentation
 
-The data model should permit a distinction between observed or
-established facts about how a language behaves and linguistic analysis
-or interpretation of those facts.
+The data model should be capable of supporting documentation precise enough that another person, including a linguist, can correctly understand, pronounce or otherwise realize, analyze, and reproduce the documented language without depending upon undocumented knowledge held by its creator.
 
-A language creator may know that a construction behaves in a particular
-way before deciding how best to analyze or classify it.
+### 1.12 References Are Descriptive Resources
 
-### 1.10 Linguist-Readable Documentation
+Conlanging and linguistic references are used to discover relevant questions, terminology, possibilities, and documentation needs.
 
-The data model should be capable of supporting documentation precise
-enough that another person, including a linguist, can correctly
-understand, pronounce, analyze, and reproduce the documented language
-without depending upon undocumented knowledge held by its creator.
+They are not conformity tests. A language is not invalid because it answers a reference work's question in an unusual way or because a feature is absent.
 
-This is a long-term design requirement rather than a requirement that
-every language be fully documented.
-
-------------------------------------------------------------------------
+---
 
 ## 2. Storage Model
 
-Conlang Workbench divides information broadly between frontmatter and
-Markdown body content.
+Conlang Workbench divides information broadly between frontmatter and Markdown body content.
 
 ### 2.1 Frontmatter
 
-Frontmatter should contain concise properties useful for identification,
-indexing, searching, filtering, and validation.
+Frontmatter should contain concise properties useful for identification, indexing, searching, filtering, and validation.
 
-A conceptual lexeme might contain:
+Example:
 
-``` yaml
+```yaml
 ---
 type: lexeme
 language: Example
@@ -160,359 +131,321 @@ tags:
 ---
 ```
 
-This example illustrates storage structure only. It does not define
-required fields for all languages.
+This example illustrates storage structure only. It does not define required fields for all languages.
 
 ### 2.2 Markdown Body
 
-Complex or variable linguistic information should normally be stored in
-standardized Markdown sections.
+Complex or variable linguistic information should normally be stored in standardized Markdown sections.
 
-Examples include multiple lexical senses, detailed definitions,
-paradigms, usage examples, interlinear glossed text, allophonic
-distributions, phonological rules, sound changes, etymological
-explanations, semantic development, grammatical rules and exceptions,
-historical reconstruction, sociolinguistic information, cultural usage,
-and unresolved analysis.
+Examples include multiple lexical senses, paradigms, usage examples, interlinear glossed text, allophonic distributions, phonological rules, morphophonology, sound changes, etymological explanations, semantic development, grammatical rules and exceptions, discourse behavior, historical reconstruction, sociolinguistic information, cultural usage, and unresolved analysis.
 
-Conlang Workbench may provide specialized editors for these sections
-while preserving their Markdown representation.
-
-------------------------------------------------------------------------
+---
 
 ## 3. Language Profiles
 
 Each language may have a Language Profile.
 
-The Language Profile describes the language-specific configuration used
-by Conlang Workbench.
+The Language Profile describes the language-specific configuration and documentation map used by Conlang Workbench.
 
-A profile may eventually define or reference information such as
-language name, autonym, alternate names, language family, historical
-stage, dialect or variety, lexicon and grammar locations, document
-categories, lexical categories, phoneme inventory, phonotactic
-constraints, orthographic conventions, pronunciation conventions, stress
-and prosodic rules, morphological behavior, grammatical categories,
-glossing conventions, writing systems, validation rules, and enabled
-Workbench features.
+A profile may eventually define or reference information such as:
 
-No particular feature is assumed to exist merely because Conlang
-Workbench supports documenting it.
+- language name and autonym
+- alternate names
+- modality or modalities
+- language family and historical relationships
+- historical stage
+- dialect or variety
+- documentation language
+- lexicon and grammar locations
+- document categories
+- lexical categories
+- phonetic and phonological documentation
+- phonotactic constraints
+- orthographic conventions and writing systems
+- pronunciation or realization conventions
+- stress, tone, prosody, or analogous systems
+- morphological behavior
+- grammatical categories
+- syntax
+- semantics
+- pragmatics and discourse
+- sociolinguistic variation
+- semantic and cultural domains
+- glossing conventions
+- validation rules
+- enabled Workbench features
 
-A language profile describes the language; it does not force the
-language into a universal template.
+No particular feature is assumed to exist merely because Conlang Workbench supports documenting it.
 
-------------------------------------------------------------------------
+---
 
 ## 4. Document Categories
 
-Conlang Workbench should recognize multiple categories of language
-documentation.
-
-The initial model anticipates at least the following categories.
+Conlang Workbench should recognize multiple categories of language documentation.
 
 ### 4.1 Lexeme
 
-A lexical entry representing a word, lexicalized expression, or other
-dictionary headword.
-
-Possible information includes lemma, display form, pronunciation,
-phonemic and phonetic representation, lexical category, gloss, senses,
-semantic fields, register, etymology, derivation, related forms,
-inflectional information, examples, and usage notes.
+A lexical entry representing a word, lexicalized expression, sign, or other dictionary headword.
 
 ### 4.2 Morpheme
 
 A bound or free morpheme documented independently of a lexical entry.
 
-This may include prefixes, suffixes, infixes, circumfixes, clitics,
-roots, stems, grammatical particles, reduplicative patterns, and
-nonconcatenative morphological elements.
-
-The model must not assume that morphology consists only of prefixes and
-suffixes.
+The model must not assume that morphology consists only of prefixes and suffixes.
 
 ### 4.3 Grammar
 
-A document describing grammatical behavior.
+A document describing grammatical behavior, including morphology, syntax, semantics, pragmatics, information structure, or discourse.
 
-Grammar documentation may cover any structure relevant to the language,
-including morphology, syntax, semantics, pragmatics, information
-structure, or discourse.
+### 4.4 Phonetics and Phonology
 
-### 4.4 Phonology
+A document describing sound systems, phonetic realization, phonemes, allophones, inventories, phonotactics, syllable structure, stress, tone, pitch accent, rhythm, intonation, or connected-speech processes.
 
-A document describing sounds or sound systems.
-
-This may include phonemes, allophones, inventories, distribution,
-phonotactics, syllable structure, stress, tone, pitch accent, rhythm,
-intonation, and connected-speech processes.
+For non-spoken modalities, the analogous structural documentation should be possible without forcing spoken-language terminology.
 
 ### 4.5 Orthography or Writing System
 
-A document describing how a language is represented visually.
+A document describing how a language is represented visually or otherwise encoded.
 
-This may include romanization, native scripts, transliteration,
-grapheme-to-sound relationships, spelling conventions, punctuation,
-historical orthographies, and non-alphabetic writing systems.
-
-Conlang Workbench must not assume that writing is alphabetic.
+The model must not assume writing is alphabetic.
 
 ### 4.6 Sentence or Example
 
 A linguistic example showing language in use.
 
-An example may include original text, pronunciation, phonemic or
-phonetic transcription, morphological segmentation, morpheme-by-morpheme
-gloss, free translation, context, source, and commentary.
+An example may include original text, realization or transcription, segmentation, morpheme-by-morpheme gloss, free translation, context, source, and commentary.
 
-### 4.7 Paradigm
+### 4.7 Text
+
+A larger connected piece of language data such as a conversation, narrative, ritual, inscription, letter, song, or other discourse sample.
+
+A text may contain or link to multiple individually glossed examples.
+
+Texts are a first-class source of evidence for grammar, lexicon, pragmatics, discourse, and documentation completeness.
+
+### 4.8 Paradigm
 
 A structured collection of related forms.
 
-Paradigms may be represented through human-readable Markdown tables or
-other standardized Markdown structures.
+The model must permit both productive regular paradigms and explicitly stored irregular forms.
 
-The model must permit both productive regular paradigms and explicitly
-stored irregular forms.
+### 4.9 Historical Language Material
 
-### 4.8 Historical Language Material
+Documentation may represent reconstructed forms, ancestral languages, daughter languages, historical stages, cognates, borrowings, sound changes, semantic changes, grammaticalization, and dialect development.
 
-Documentation may represent reconstructed forms, ancestral languages,
-daughter languages, historical stages, cognates, borrowings, sound
-changes, semantic changes, grammaticalization, and dialect development.
+### 4.10 Sociolinguistic and Usage Documentation
 
-Historical relationships should eventually be representable as
-meaningful typed relationships rather than prose alone.
+Languages may document register, formality, social status, region, dialect, ritual usage, taboo language, occupational vocabulary, poetic usage, historical usage, or other socially conditioned variation.
 
-### 4.9 Sociolinguistic and Usage Documentation
+### 4.11 Semantic and Cultural Domains
 
-Languages may document distinctions involving register, formality,
-social status, region, dialect, ritual usage, taboo language,
-occupational vocabulary, poetic usage, historical usage, or other
-socially conditioned variation.
+A language may organize culturally important semantic fields in ways not mirrored by the documentation language.
 
-No particular distinction is assumed to exist.
+Relevant domains may include kinship, time, space, color, social categories, naming, ritual terminology, material culture, ecology, or any other domain important to the speakers.
 
-------------------------------------------------------------------------
+---
 
 ## 5. Lexical Senses
 
 A lexeme may possess any number of senses.
 
-A simple `gloss` property may provide a concise summary suitable for
-search results and dictionary indexes.
+A simple `gloss` property may provide a concise summary suitable for search results and dictionary indexes.
 
-Detailed senses should be capable of being represented separately in the
-Markdown body.
+Detailed senses should be capable of being represented separately in the Markdown body.
 
-Each sense may eventually support information such as gloss, definition,
-lexical category, semantic field, register, usage restrictions,
-examples, historical notes, and relationships to other senses.
+Conlang Workbench should not require every lexeme to use detailed sense records.
 
-Conlang Workbench should not require every lexeme to use detailed sense
-records. Simple entries must remain simple when additional structure
-provides no benefit.
-
-------------------------------------------------------------------------
+---
 
 ## 6. Relationships
 
-Language documentation frequently contains meaningful relationships
-among entries.
-
 Conlang Workbench should eventually support typed relationships such as:
 
--   derived from
--   compound of
--   cognate with
--   borrowed from
--   descended from
--   variant of
--   allomorph of
--   related to
+- derived from
+- compound of
+- cognate with
+- borrowed from
+- descended from
+- variant of
+- allomorph of
+- related to
 
-Relationships should use ordinary Obsidian links wherever practical so
-that they remain useful outside the plugin.
+Relationships should use ordinary Obsidian links wherever practical.
 
-The relationship type supplies linguistic meaning to the link.
-
-------------------------------------------------------------------------
+---
 
 ## 7. Linguistic Examples and Glossing
 
-Interlinear glossed examples are an important part of descriptive
-language documentation.
+Interlinear glossed examples are an important part of descriptive language documentation.
 
-Conlang Workbench should eventually support structured examples
-containing distinct tiers for original language text, pronunciation or
-transcription where appropriate, morphological segmentation,
-morpheme-by-morpheme gloss, natural translation, and notes or context
-where needed.
+Conlang Workbench should eventually support distinct tiers for:
 
-Literal or morphological glosses must remain distinct from natural
-translations.
+1. original language text
+2. pronunciation, realization, or transcription where appropriate
+3. morphological segmentation
+4. morpheme-by-morpheme gloss
+5. natural translation
+6. notes or context where needed
 
-Conlang Workbench may support established linguistic glossing
-conventions while allowing language-specific abbreviations and
-analytical choices.
+Literal or morphological glosses must remain distinct from natural translations.
 
-------------------------------------------------------------------------
+Established conventions such as the Leipzig Glossing Rules may be supported as defaults while permitting language-specific conventions.
+
+---
+
+### 7.1 Interlinear Gloss Interoperability
+
+Conlang Workbench should maintain its own language-neutral representation of
+linguistic examples while supporting interoperability with established
+human-readable glossing formats.
+
+The Interlinear Glossing (`ling-gloss`) Obsidian plugin is an important
+interoperability target.
+
+Where practical, Conlang Workbench should be able to:
+
+- recognize existing `gloss` and `ngloss` blocks
+- preserve those blocks unchanged when Conlang Workbench is not editing them
+- interpret supported directives and aligned levels
+- import supported Ling Gloss content into the Workbench's internal example representation
+- export compatible examples to Ling Gloss syntax
+- preserve unsupported directives during round-trip editing
+- avoid requiring migration merely to use other Conlang Workbench features
+
+Ling Gloss syntax should be treated as an authoring and interchange format,
+not as Conlang Workbench's canonical linguistic data model.
+
+The Workbench's internal representation should distinguish the linguistic
+role of a tier from its position in an external format. For example, an
+aligned level might contain phonetic transcription, morphological
+segmentation, morpheme glosses, or another language-specific representation.
+
+Conlang Workbench therefore must not assume that a particular Ling Gloss
+aligned level always has a particular linguistic meaning.
+
+### 7.2 Round-Trip Preservation
+
+Interoperability should favor lossless or minimally destructive round trips.
+
+When Conlang Workbench reads an external human-readable format and later
+writes it again, information that the Workbench does not understand should
+be preserved wherever practical rather than silently discarded.
+
+If lossless round-trip editing cannot be guaranteed, the user should be
+warned before an operation rewrites the source.
+
+This principle applies beyond Ling Gloss and should guide future support for
+other linguistic Markdown formats.
+
+---
 
 ## 8. Validation
 
-Validation should help identify problems without dictating language
-design.
+Validation should help identify problems without dictating language design.
 
-Potential validation areas include malformed frontmatter, missing
-required metadata, unknown document or lexical categories, invalid or
-undocumented phonemes, phonotactic violations, unexpected stress, broken
-relationships, missing linked entries, incomplete paradigms,
-undocumented gloss abbreviations, and incomplete language documentation.
+Potential areas include malformed frontmatter, missing required metadata, unknown categories, undocumented segments or symbols, structural violations defined by the language itself, broken relationships, incomplete paradigms, undocumented gloss abbreviations, and incomplete documentation.
 
-Validation results should distinguish severity and intent.
+At minimum, validation should permit:
 
-At minimum, the model should permit:
+- error
+- warning
+- incomplete
+- intentional exception
 
--   error
--   warning
--   incomplete
--   intentional exception
-
-------------------------------------------------------------------------
+---
 
 ## 9. Documentation Status
 
-Conlang Workbench should permit language information to carry an
-appropriate documentation or analysis status.
+Possible status concepts include:
 
-Possible concepts include:
-
--   established
--   provisional
--   unresolved
--   reconstructed
--   hypothetical
--   deprecated
+- established
+- provisional
+- unresolved
+- reconstructed
+- hypothetical
+- deprecated
 
 Language profiles may define additional statuses when necessary.
 
-The Workbench must not assume that every documented form has equal
-certainty or canonical standing.
-
-------------------------------------------------------------------------
+---
 
 ## 10. Documentation Completeness
 
-Conlang Workbench should eventually help creators identify undocumented
-portions of a language.
+Completeness analysis should be based on the features the language claims to use rather than a universal checklist.
 
-Completeness analysis should be based on the features the language
-claims to use rather than a universal checklist requiring every language
-to possess every grammatical category.
+Absence of a feature is not incomplete documentation if the language does not use that feature.
 
-Absence of a feature is not incomplete documentation if the language
-does not use that feature.
+Completeness tools should be capable of asking whether relevant areas are adequately documented, including phonetics/phonology or analogous modality structure, morphology, syntax, semantics, pragmatics, discourse, orthography, examples, texts, glossing conventions, and historical relationships where applicable.
 
-Completeness tools should identify useful questions such as whether the
-phoneme inventory is documented, relevant phonotactic constraints are
-described, productive morphological processes and exceptions are
-explained, major syntactic constructions are described, gloss
-abbreviations are defined, representative examples are available, and
-pronunciation rules are sufficient for another person to reproduce the
-language.
+The purpose is to expose gaps in documentation, not to declare a language "finished."
 
-The purpose is to expose gaps in documentation, not to declare a
-language "finished."
-
-------------------------------------------------------------------------
+---
 
 ## 11. Publication and Export
 
-The canonical vault is a development and reference environment.
-
-Conlang Workbench should eventually be capable of transforming the same
-underlying language documentation into different forms for different
-audiences.
-
 Potential outputs include:
 
--   working dictionary
--   learner dictionary
--   learner grammar
--   descriptive reference grammar
--   linguist-facing documentation
--   web reference
--   print or PDF dictionary
--   language-family reference
+- working dictionary
+- learner dictionary
+- learner grammar
+- descriptive reference grammar
+- linguist-facing documentation
+- web reference
+- print or PDF dictionary
+- language-family reference
+- annotated corpus or text collection
 
 Publication formatting must remain separate from canonical storage.
 
-The vault should not need to imitate the final printed document.
-
-------------------------------------------------------------------------
+---
 
 ## 12. Backward Compatibility
 
-Conlang Workbench begins from an existing Obsidian dictionary foundation
-and must account for existing conlang vaults.
-
 Where practical:
 
--   existing simple dictionary entries should continue to work
--   additional metadata should be optional unless required by a language
-    profile
--   migration should be incremental
--   automated migration should never silently discard information
--   users should be able to inspect proposed migrations before
-    committing them
+- existing simple dictionary entries should continue to work
+- additional metadata should be optional unless required by a language profile
+- migration should be incremental
+- automated migration should never silently discard information
+- users should be able to inspect proposed migrations before committing them
 
-The Workbench should adapt to existing documentation where reasonable
-rather than requiring creators to rebuild their languages around the
-plugin.
+---
 
-------------------------------------------------------------------------
+## 13. Reference-Guided Coverage Audit
 
-## 13. Initial Implementation Scope
+Before a major data-model area is considered stable, compare it against relevant conlanging and linguistic references.
 
-Data Model v0.1 establishes architectural direction.
+Classify coverage as:
+
+- Supported
+- Partial
+- Planned
+- Not needed
+- Intentionally open
+
+The purpose is to find representational gaps, not to require every language to exhibit every feature found in reference works.
+
+---
+
+## 14. Initial Implementation Scope
 
 The first implementation stage should focus on:
 
-1.  recognizing Conlang Workbench document categories
-2.  recognizing Language Profiles
-3.  associating documents with languages
-4.  preserving existing dictionary behavior
-5.  establishing extensible internal types for later language-specific
-    schemas
-6.  validating basic metadata without requiring nested YAML
+1. recognizing Conlang Workbench document categories
+2. recognizing Language Profiles
+3. associating documents with languages
+4. preserving existing dictionary behavior
+5. establishing extensible internal types for later language-specific schemas
+6. validating basic metadata without requiring nested YAML
 
-The following are intentionally deferred until the foundation is stable:
+Advanced morphology, automatic paradigms, sound-change engines, full phonotactic validation, interlinear editors, historical visualization, completeness auditing, and publication systems remain deferred until the foundation is stable.
 
--   advanced morphology engines
--   automatic paradigm generation
--   sound-change engines
--   full phonotactic validation
--   interlinear gloss editors
--   historical-language visualization
--   completeness auditing
--   dictionary publication
--   descriptive-grammar generation
+---
 
-These are planned capabilities, not requirements for the first
-implementation.
+## 15. Design Test
 
-------------------------------------------------------------------------
+When considering a new data-model requirement, Conlang Workbench should ask:
 
-## 14. Design Test
+> Can this represent the language as the creator intends it, preserve the information in human-readable form, and communicate it accurately to another person without forcing assumptions from an unrelated language?
 
-When considering a new data-model requirement, Conlang Workbench should
-ask:
-
-> Can this represent the language as the creator intends it, preserve
-> the information in human-readable form, and communicate it accurately
-> to another person without forcing assumptions from an unrelated
-> language?
-
-If the answer is no, the model should be extended rather than forcing
-the language to conform to the tool.
+If the answer is no, the model should be extended rather than forcing the language to conform to the tool.
