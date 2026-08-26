@@ -219,6 +219,12 @@ export class Dictionary {
     }
     this.finalizePhrases();
     await this.loadBodyMetadata(bodyMetadataEntries);
+
+    // Structured senses are loaded from note bodies after the ordinary
+    // dictionary indexes are built. Add their explicit English lookup keys
+    // only after that metadata is available.
+    this.indexStructuredSenseKeys();
+
     return count;
   }
 
@@ -349,6 +355,51 @@ export class Dictionary {
     };
   }
 
+  /**
+   * Add one English lookup key for an entry.
+   *
+   * English lookup is case-insensitive. Avoid duplicate entries when the same
+   * key is declared in more than one place, such as both the simple definition
+   * and a structured sense.
+   */
+  private indexEnglishKey(key: string, entry: DictionaryEntry) {
+    const normalized = key.trim().toLowerCase();
+    if (!normalized) return;
+
+    const list = this.byEnglish.get(normalized) ?? [];
+
+    if (!list.includes(entry)) {
+      list.push(entry);
+    }
+
+    this.byEnglish.set(normalized, list);
+  }
+
+  /**
+   * Add explicit lookup vocabulary declared by structured lexical senses.
+   *
+   * Sense glosses and lookup terms are intentional translation/search keys.
+   * Full sense definitions are descriptive prose and deliberately do NOT become
+   * entries in the central English-to-conlang lookup index.
+   */
+  private indexStructuredSenseKeys() {
+    for (const entry of this.all) {
+      if (!entry.senses) continue;
+
+      for (const sense of entry.senses) {
+        if (sense.gloss) {
+          this.indexEnglishKey(sense.gloss, entry);
+        }
+
+        if (sense.lookupTerms) {
+          for (const term of sense.lookupTerms) {
+            this.indexEnglishKey(term, entry);
+          }
+        }
+      }
+    }
+  }
+
   private addEntry(entry: DictionaryEntry) {
     const key = this.norm(entry.word);
     const existing = this.byWord.get(key) ?? [];
@@ -406,16 +457,12 @@ export class Dictionary {
       }
     }
 
-    // Index English definition: split on commas/semicolons so "water, liquid"
-    // becomes two lookups.
-    const englishKeys = entry.definition
-      .split(/[,;]/)
-      .map((s) => s.trim().toLowerCase())
-      .filter((s) => s.length > 0);
-    for (const k of englishKeys) {
-      const list = this.byEnglish.get(k) ?? [];
-      list.push(entry);
-      this.byEnglish.set(k, list);
+    // Index the simple English definition exactly as before: commas and
+    // semicolons separate independently useful lookup meanings.
+    const englishKeys = entry.definition.split(/[,;]/);
+
+    for (const key of englishKeys) {
+      this.indexEnglishKey(key, entry);
     }
   }
 
