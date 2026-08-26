@@ -345,6 +345,30 @@ export default class ConlangPlugin extends Plugin {
     return this.getPrimaryLanguage();
   }
 
+  /**
+   * Return the loaded canonical profile for a configured language.
+   *
+   * Callers should use this accessor instead of reading `languageProfiles`
+   * directly. Profiles are currently stored by LanguageConfig.name because
+   * the inherited settings model still identifies languages by display name.
+   * Keeping that implementation detail here gives us one place to change when
+   * runtime language identity moves to the stable `language_id`.
+   */
+  getLanguageProfile(lang: LanguageConfig): LanguageProfile | null {
+    return this.languageProfiles.get(lang.name) ?? null;
+  }
+
+  /**
+   * Return the loaded canonical profile for the primary language.
+   *
+   * A language may legitimately have no profile while older configurations
+   * remain supported, so callers must handle a null result.
+   */
+  getPrimaryLanguageProfile(): LanguageProfile | null {
+    const lang = this.getPrimaryLanguage();
+    return lang ? this.getLanguageProfile(lang) : null;
+  }
+
   async reloadActiveLanguage(): Promise<number> {
     // With multi-active languages, this loads ALL active dictionaries
     // into the single Dictionary index. Each entry carries its `language`

@@ -476,7 +476,10 @@ export class ConlangSettingTab extends PluginSettingTab {
         })
       );
 
-    const profile = this.plugin.languageProfiles.get(lang.name);
+    // Use the plugin accessor rather than depending on how profiles are
+    // currently keyed internally. This keeps the settings UI insulated from
+    // future migration from display names to stable language IDs.
+    const profile = this.plugin.getLanguageProfile(lang);
     new Setting(body)
       .setName("Profile status")
       .setDesc(
