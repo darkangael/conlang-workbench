@@ -251,6 +251,66 @@ function extractBodyPreview(content) {
   return text;
 }
 
+// lexical-senses.ts
+function parseLexicalSenses(markdown) {
+  var _a, _b;
+  const sensesSection = extractSensesSection(markdown);
+  if (!sensesSection) return [];
+  const senses = [];
+  const senseHeadingRe = /^###\s+Sense\b.*$/gim;
+  const matches = [...sensesSection.matchAll(senseHeadingRe)];
+  if (matches.length === 0) return [];
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    const start = ((_a = match.index) != null ? _a : 0) + match[0].length;
+    const end = i + 1 < matches.length ? (_b = matches[i + 1].index) != null ? _b : sensesSection.length : sensesSection.length;
+    const block = sensesSection.slice(start, end);
+    const sense = parseSenseBlock(block);
+    if (sense) senses.push(sense);
+  }
+  return senses;
+}
+function extractSensesSection(markdown) {
+  var _a;
+  const headingRe = /^##\s+Senses\s*$/im;
+  const match = headingRe.exec(markdown);
+  if (!match || match.index === void 0) return null;
+  const start = match.index + match[0].length;
+  const remaining = markdown.slice(start);
+  const nextHeading = /^##\s+.+$/m.exec(remaining);
+  const end = (_a = nextHeading == null ? void 0 : nextHeading.index) != null ? _a : remaining.length;
+  return remaining.slice(0, end);
+}
+function parseSenseBlock(block) {
+  const id = readField(block, "ID");
+  const gloss = readField(block, "Gloss");
+  const definition = readField(block, "Definition");
+  const lookupRaw = readField(block, "Lookup");
+  const lookupTerms = lookupRaw == null ? void 0 : lookupRaw.split(",").map((term) => term.trim()).filter((term) => term.length > 0);
+  const hasMeaning = Boolean(gloss == null ? void 0 : gloss.trim()) || Boolean(definition == null ? void 0 : definition.trim()) || Boolean(lookupTerms && lookupTerms.length > 0);
+  if (!hasMeaning) return null;
+  return {
+    id: (id == null ? void 0 : id.trim()) || void 0,
+    gloss: (gloss == null ? void 0 : gloss.trim()) || void 0,
+    definition: (definition == null ? void 0 : definition.trim()) || void 0,
+    lookupTerms: lookupTerms && lookupTerms.length > 0 ? lookupTerms : void 0
+  };
+}
+function readField(block, label) {
+  var _a;
+  const escaped = escapeRegExp(label);
+  const re = new RegExp(
+    `^\\*\\*${escaped}:\\*\\*\\s*(.*)$`,
+    "im"
+  );
+  const match = re.exec(block);
+  const value = (_a = match == null ? void 0 : match[1]) == null ? void 0 : _a.trim();
+  return value || void 0;
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // word-tokens.ts
 var WORD_RE = /\p{L}[\p{L}'-]*/gu;
 function cleanWord(s) {
@@ -578,7 +638,7 @@ var _Dictionary = class _Dictionary {
   async loadFromFolders(sources) {
     this.clear();
     let count = 0;
-    const properNounEntries = [];
+    const bodyMetadataEntries = [];
     for (const source of sources) {
       const folder = this.app.vault.getAbstractFileByPath(source.folder);
       if (!folder || !(folder instanceof import_obsidian.TFolder)) continue;
@@ -594,13 +654,11 @@ var _Dictionary = class _Dictionary {
         }
         this.addEntry(entry);
         count++;
-        if (this.isProperNoun(entry)) {
-          properNounEntries.push({ entry, file });
-        }
+        bodyMetadataEntries.push({ entry, file });
       }
     }
     this.finalizePhrases();
-    void this.loadBodyPreviews(properNounEntries);
+    await this.loadBodyMetadata(bodyMetadataEntries);
     return count;
   }
   /**
@@ -620,13 +678,29 @@ var _Dictionary = class _Dictionary {
     const pos = (_b = (_a = entry.partOfSpeech) == null ? void 0 : _a.toLowerCase()) != null ? _b : "";
     return pos === "proper-noun" || pos === "proper noun" || pos === "propernoun";
   }
-  async loadBodyPreviews(items) {
+  /**
+   * Load information derived from the Markdown body of lexical-entry notes.
+   *
+   * We read each file only once here, then let multiple body-based features
+   * share that content. This avoids separate vault reads for previews, senses,
+   * and any similar enrichment we may add later.
+   */
+  async loadBodyMetadata(items) {
     await Promise.all(
       items.map(async ({ entry, file }) => {
         try {
           const content = await this.app.vault.cachedRead(file);
-          entry.bodyPreview = extractBodyPreview(content);
-        } catch (e) {
+          if (this.isProperNoun(entry)) {
+            entry.bodyPreview = extractBodyPreview(content);
+          }
+          const senses = parseLexicalSenses(content);
+          entry.senses = senses.length > 0 ? senses : void 0;
+        } catch (error) {
+          console.warn(
+            "[Conlang] Failed to load body metadata:",
+            file.path,
+            error
+          );
         }
       })
     );
@@ -1383,7 +1457,7 @@ var ConlangSettingTab = class extends import_obsidian3.PluginSettingTab {
         });
       }
     );
-    const profile = this.plugin.languageProfiles.get(lang.name);
+    const profile = this.plugin.getLanguageProfile(lang);
     new import_obsidian3.Setting(body).setName("Profile status").setDesc(
       !lang.profilePath ? "No language profile configured." : profile ? `Loaded: ${profile.name} (${profile.id})` : "Profile not found or invalid."
     );
@@ -3200,6 +3274,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
       this.browserLimit = _TranslationPanelView.BROWSER_PAGE;
     }
     let filtered = all.filter((entry) => {
+      var _a;
       const isName = this.isProperNoun(entry);
       if (this.nameFilter === "names-only" && !isName) return false;
       if (this.nameFilter === "hide-names" && isName) return false;
@@ -3208,6 +3283,19 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
       if (!q) return true;
       if (entry.word.toLowerCase().includes(q)) return true;
       if (entry.definition.toLowerCase().includes(q)) return true;
+      if ((_a = entry.senses) == null ? void 0 : _a.some((sense) => {
+        var _a2, _b, _c;
+        if ((_a2 = sense.gloss) == null ? void 0 : _a2.toLowerCase().includes(q)) return true;
+        if ((_b = sense.definition) == null ? void 0 : _b.toLowerCase().includes(q)) return true;
+        if ((_c = sense.lookupTerms) == null ? void 0 : _c.some(
+          (term) => term.toLowerCase().includes(q)
+        )) {
+          return true;
+        }
+        return false;
+      })) {
+        return true;
+      }
       if (entry.nameCategory && entry.nameCategory.toLowerCase().includes(q)) return true;
       return false;
     });
@@ -3319,6 +3407,24 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
     }
     const def = row.createDiv({ cls: "conlang-browser-row-def" });
     def.setText(entry.definition);
+    if (entry.senses && entry.senses.length > 0) {
+      const sensesEl = row.createDiv({ cls: "conlang-browser-row-senses" });
+      for (const sense of entry.senses) {
+        const senseEl = sensesEl.createDiv({ cls: "conlang-browser-row-sense" });
+        if (sense.gloss) {
+          const gloss = senseEl.createDiv({
+            cls: "conlang-browser-row-sense-gloss"
+          });
+          gloss.setText(sense.gloss);
+        }
+        if (sense.definition) {
+          const senseDef = senseEl.createDiv({
+            cls: "conlang-browser-row-sense-def"
+          });
+          senseDef.setText(sense.definition);
+        }
+      }
+    }
     if (entry.ipa) {
       const ipa = row.createDiv({ cls: "conlang-browser-row-ipa" });
       ipa.setText(entry.ipa);
@@ -4331,6 +4437,29 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian10.Plugin {
    */
   getActiveLanguage() {
     return this.getPrimaryLanguage();
+  }
+  /**
+   * Return the loaded canonical profile for a configured language.
+   *
+   * Callers should use this accessor instead of reading `languageProfiles`
+   * directly. Profiles are currently stored by LanguageConfig.name because
+   * the inherited settings model still identifies languages by display name.
+   * Keeping that implementation detail here gives us one place to change when
+   * runtime language identity moves to the stable `language_id`.
+   */
+  getLanguageProfile(lang) {
+    var _a;
+    return (_a = this.languageProfiles.get(lang.name)) != null ? _a : null;
+  }
+  /**
+   * Return the loaded canonical profile for the primary language.
+   *
+   * A language may legitimately have no profile while older configurations
+   * remain supported, so callers must handle a null result.
+   */
+  getPrimaryLanguageProfile() {
+    const lang = this.getPrimaryLanguage();
+    return lang ? this.getLanguageProfile(lang) : null;
   }
   async reloadActiveLanguage() {
     const active = this.getActiveLanguages();

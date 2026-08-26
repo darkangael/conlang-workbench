@@ -31,12 +31,49 @@ export interface InflectedForm {
   form: string;
 }
 
+/**
+ * A richer semantic sense attached to a lexical entry.
+ *
+ * Structured senses are optional enrichment. They do not replace the simple
+ * `definition` field, and an entry does not need senses in order to be valid
+ * or complete.
+ *
+ * A sense may begin life with only a fuller definition and gain a concise
+ * gloss or extra lookup terms later as the language is developed.
+ */
+export interface LexicalSense {
+  // Optional stable identifier for this sense. Not required for simple use,
+  // but available when later features need to reference one specific sense.
+  id?: string;
+
+  // Short documentation-language label used for compact display and lookup.
+  // Optional because a creator may know the concept before choosing a concise
+  // gloss for it.
+  gloss?: string;
+
+  // Fuller semantic explanation of what this sense actually means.
+  definition?: string;
+
+  // Additional documentation-language search terms that should find this
+  // sense without being treated as the definition itself.
+  lookupTerms?: string[];
+}
+
 export interface DictionaryEntry {
   // The conlang form (the key in the dictionary). For phrase entries this
   // can contain spaces — set via frontmatter `word:` to override the filename.
   word: string;
-  // The English translation/definition
+  // The simple documentation-language meaning for this entry. This remains a
+  // first-class entry format: an entry does not need structured senses to be
+  // complete. When `senses` are present, they enrich this basic meaning with
+  // more detailed semantic information rather than replacing it.
   definition: string;
+
+  // Optional structured senses for entries that need richer semantic detail.
+  // Senses progressively enrich a simple entry rather than replacing its
+  // `definition`. A word may remain a simple entry permanently.
+  senses?: LexicalSense[];
+
   // Source file path inside the vault
   path: string;
   // Optional metadata read from frontmatter

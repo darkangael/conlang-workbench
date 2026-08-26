@@ -1531,6 +1531,27 @@ export class TranslationPanelView extends ItemView {
       if (!q) return true;
       if (entry.word.toLowerCase().includes(q)) return true;
       if (entry.definition.toLowerCase().includes(q)) return true;
+
+      // Structured senses participate in dictionary browsing search. This lets
+      // a richer sense be discoverable through its gloss, full definition, or
+      // explicit lookup terms without changing the simple entry definition.
+      if (
+        entry.senses?.some((sense) => {
+          if (sense.gloss?.toLowerCase().includes(q)) return true;
+          if (sense.definition?.toLowerCase().includes(q)) return true;
+          if (
+            sense.lookupTerms?.some((term) =>
+              term.toLowerCase().includes(q)
+            )
+          ) {
+            return true;
+          }
+          return false;
+        })
+      ) {
+        return true;
+      }
+
       // For names, also search by category (e.g. "place" finds all places)
       if (entry.nameCategory && entry.nameCategory.toLowerCase().includes(q)) return true;
       return false;
@@ -1668,6 +1689,31 @@ export class TranslationPanelView extends ItemView {
 
     const def = row.createDiv({ cls: "conlang-browser-row-def" });
     def.setText(entry.definition);
+
+    // Structured senses enrich the simple entry rather than replacing its
+    // definition. Show only reader-facing semantic information here; IDs and
+    // lookup terms remain internal/reference metadata.
+    if (entry.senses && entry.senses.length > 0) {
+      const sensesEl = row.createDiv({ cls: "conlang-browser-row-senses" });
+
+      for (const sense of entry.senses) {
+        const senseEl = sensesEl.createDiv({ cls: "conlang-browser-row-sense" });
+
+        if (sense.gloss) {
+          const gloss = senseEl.createDiv({
+            cls: "conlang-browser-row-sense-gloss",
+          });
+          gloss.setText(sense.gloss);
+        }
+
+        if (sense.definition) {
+          const senseDef = senseEl.createDiv({
+            cls: "conlang-browser-row-sense-def",
+          });
+          senseDef.setText(sense.definition);
+        }
+      }
+    }
 
     if (entry.ipa) {
       const ipa = row.createDiv({ cls: "conlang-browser-row-ipa" });

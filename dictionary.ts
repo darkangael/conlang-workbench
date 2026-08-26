@@ -22,6 +22,7 @@
 import { App, TFile, TFolder, CachedMetadata } from "obsidian";
 import { DictionaryEntry } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
+import { parseLexicalSenses } from "./lexical-senses";
 import { parseStringList, parseInflectedForms } from "./word-tokens";
 import {
   buildPhraseIndex,
@@ -191,7 +192,7 @@ export class Dictionary {
   ): Promise<number> {
     this.clear();
     let count = 0;
-    const properNounEntries: { entry: DictionaryEntry; file: TFile }[] = [];
+    const bodyMetadataEntries: { entry: DictionaryEntry; file: TFile }[] = [];
     for (const source of sources) {
       const folder = this.app.vault.getAbstractFileByPath(source.folder);
       if (!folder || !(folder instanceof TFolder)) continue;
@@ -210,13 +211,14 @@ export class Dictionary {
         }
         this.addEntry(entry);
         count++;
-        if (this.isProperNoun(entry)) {
-          properNounEntries.push({ entry, file });
-        }
+        // Every lexical entry may contain structured senses in its Markdown
+        // body. Keep the file paired with the parsed entry so body-derived
+        // metadata can be loaded once after the index itself is built.
+        bodyMetadataEntries.push({ entry, file });
       }
     }
     this.finalizePhrases();
-    void this.loadBodyPreviews(properNounEntries);
+    await this.loadBodyMetadata(bodyMetadataEntries);
     return count;
   }
 
@@ -235,14 +237,39 @@ export class Dictionary {
     return pos === "proper-noun" || pos === "proper noun" || pos === "propernoun";
   }
 
-  private async loadBodyPreviews(items: { entry: DictionaryEntry; file: TFile }[]) {
+  /**
+   * Load information derived from the Markdown body of lexical-entry notes.
+   *
+   * We read each file only once here, then let multiple body-based features
+   * share that content. This avoids separate vault reads for previews, senses,
+   * and any similar enrichment we may add later.
+   */
+  private async loadBodyMetadata(items: { entry: DictionaryEntry; file: TFile }[]) {
     await Promise.all(
       items.map(async ({ entry, file }) => {
         try {
           const content = await this.app.vault.cachedRead(file);
-          entry.bodyPreview = _extractBodyPreview(content);
-        } catch {
-          // Non-fatal — body preview is optional enrichment
+
+          // Short prose previews were originally a proper-noun feature.
+          // Preserve that behaviour instead of reading arbitrary lexical prose
+          // into every tooltip.
+          if (this.isProperNoun(entry)) {
+            entry.bodyPreview = _extractBodyPreview(content);
+          }
+
+          // Optional structured semantic senses from the note's `## Senses`
+          // section. Simple entries remain valid when no senses are present.
+          const senses = parseLexicalSenses(content);
+          entry.senses = senses.length > 0 ? senses : undefined;
+        } catch (error) {
+          // Body-derived metadata is optional, so a failure should not prevent
+          // the dictionary itself from loading. Log the error so problems with
+          // sense parsing or file reads are visible during development.
+          console.warn(
+            "[Conlang] Failed to load body metadata:",
+            file.path,
+            error
+          );
         }
       })
     );
