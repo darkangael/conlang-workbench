@@ -1130,12 +1130,23 @@ export class TranslationPanelView extends ItemView {
         if (candidates.length === 1) {
           const single = head.createSpan({ cls: "conlang-gloss-token-target" });
           single.setText(candidates[0].word);
-          const matchedSense = this.getSingleMatchedSense(t, candidates[0]);
-          this.renderTokenMeta(card, candidates[0], matchedSense);
+
+          const matchedSenses = this.getMatchedSenses(t, candidates[0]);
+
+          if (matchedSenses.length > 1) {
+            // The lexical entry itself is unambiguous, but the English key
+            // belongs to several of its senses. Show the word once and make
+            // the within-entry sense ambiguity explicit below it.
+            this.renderTokenMeta(card, candidates[0], undefined, false);
+            this.renderMatchedSenses(card, matchedSenses);
+          } else {
+            const matchedSense = matchedSenses[0];
+            this.renderTokenMeta(card, candidates[0], matchedSense);
+          }
         } else {
           const note = head.createSpan({ cls: "conlang-gloss-multi-note" });
-          note.setText(`${candidates.length} senses`);
-          this.renderCandidates(card, candidates);
+          note.setText(`${candidates.length} matches`);
+          this.renderCandidates(card, candidates, t);
         }
         break;
       }
@@ -1190,22 +1201,35 @@ export class TranslationPanelView extends ItemView {
   }
 
   /**
-   * Return the single structured sense that matched this dictionary entry,
-   * when the English lookup identified exactly one.
+   * Return every structured lexical sense that matched this dictionary entry.
    *
-   * A dictionary entry can theoretically match the same English key through
-   * more than one structured sense. In that ambiguous case, do not choose one
-   * silently; the ordinary entry-level display remains the safer fallback.
+   * `englishMatches` may contain several results for the same lexical entry
+   * when one English lookup key belongs to more than one of its senses. Keeping
+   * all of them lets the UI show that ambiguity instead of silently choosing.
+   */
+  private getMatchedSenses(
+    token: GlossToken,
+    entry: DictionaryEntry
+  ): LexicalSense[] {
+    return (
+      token.englishMatches
+        ?.filter((match) => match.entry === entry && match.sense)
+        .map((match) => match.sense as LexicalSense) ?? []
+    );
+  }
+
+  /**
+   * Return one structured sense only when the lookup identified exactly one.
+   *
+   * This helper remains useful for ordinary unambiguous matches. When several
+   * senses matched, return undefined so callers cannot accidentally present one
+   * of them as the definite meaning.
    */
   private getSingleMatchedSense(
     token: GlossToken,
     entry: DictionaryEntry
   ): LexicalSense | undefined {
-    const senses =
-      token.englishMatches
-        ?.filter((match) => match.entry === entry && match.sense)
-        .map((match) => match.sense as LexicalSense) ?? [];
-
+    const senses = this.getMatchedSenses(token, entry);
     return senses.length === 1 ? senses[0] : undefined;
   }
 
@@ -1221,7 +1245,8 @@ export class TranslationPanelView extends ItemView {
   private renderTokenMeta(
     card: HTMLElement,
     entry: DictionaryEntry,
-    matchedSense?: LexicalSense
+    matchedSense?: LexicalSense,
+    showSimpleDefinition = true
   ) {
     const meta = card.createDiv({ cls: "conlang-gloss-token-meta" });
     const parts: string[] = [];
@@ -1238,9 +1263,10 @@ export class TranslationPanelView extends ItemView {
       ) {
         parts.push(`"${matchedSense.gloss}"`);
       }
-    } else {
-      // Simple entries, and ambiguous structured matches, retain the original
-      // behaviour based on the entry-level definition.
+    } else if (showSimpleDefinition) {
+      // Simple entries retain the original behaviour based on the entry-level
+      // definition. A caller can suppress this fallback when several
+      // structured senses matched and those senses will be shown explicitly.
       const sense = firstSense(entry.definition);
       if (sense && sense.toLowerCase() !== entry.word.toLowerCase()) {
         parts.push(`"${sense}"`);
@@ -1268,8 +1294,58 @@ export class TranslationPanelView extends ItemView {
     });
   }
 
-  /** Render multiple candidates as a list when an English word has multiple senses. */
-  private renderCandidates(card: HTMLElement, candidates: DictionaryEntry[]) {
+  /**
+   * Render several structured senses that matched one lexical entry.
+   *
+   * Prefer a sense gloss as the reader-facing heading. When no gloss exists,
+   * use the fuller definition directly instead. Stable sense IDs remain
+   * structural metadata and are intentionally not shown here.
+   */
+  private renderMatchedSenses(
+    card: HTMLElement,
+    senses: LexicalSense[]
+  ) {
+    const note = card.createDiv({ cls: "conlang-gloss-multi-note" });
+    note.setText(`${senses.length} matching senses`);
+
+    const list = card.createDiv({ cls: "conlang-gloss-matched-senses" });
+
+    for (const sense of senses) {
+      const row = list.createDiv({ cls: "conlang-gloss-matched-sense" });
+
+      if (sense.gloss) {
+        const gloss = row.createDiv({
+          cls: "conlang-gloss-matched-sense-gloss",
+        });
+        gloss.setText(sense.gloss);
+
+        if (sense.definition) {
+          const definition = row.createDiv({
+            cls: "conlang-gloss-matched-sense-def",
+          });
+          definition.setText(sense.definition);
+        }
+      } else if (sense.definition) {
+        const definition = row.createDiv({
+          cls: "conlang-gloss-matched-sense-def",
+        });
+        definition.setText(sense.definition);
+      }
+    }
+  }
+
+  /**
+   * Render multiple dictionary-entry matches for the same English lookup.
+   *
+   * Each row represents a different lexical entry. When structured sense
+   * information is available, show the particular sense that caused that
+   * entry to match rather than only its general entry-level definition.
+   */
+  private renderCandidates(
+    card: HTMLElement,
+    candidates: DictionaryEntry[],
+    token: GlossToken
+  ) {
     const list = card.createDiv({ cls: "conlang-gloss-candidates" });
     // Only show language tags when more than one language is active —
     // otherwise it's just visual noise.
@@ -1287,7 +1363,16 @@ export class TranslationPanelView extends ItemView {
         pos.setText(entry.partOfSpeech);
       }
       const def = row.createSpan({ cls: "conlang-gloss-candidate-def" });
-      def.setText(entry.definition);
+
+      // Use the structured sense that actually caused this English lookup
+      // when there is exactly one such sense for this candidate. This keeps
+      // the candidate list honest: it explains why this particular word was
+      // offered instead of always showing the entry's general definition.
+      const matchedSense = this.getSingleMatchedSense(token, entry);
+      const matchedMeaning =
+        matchedSense?.gloss ?? matchedSense?.definition ?? entry.definition;
+
+      def.setText(matchedMeaning);
       row.addClass("conlang-clickable");
       row.addEventListener("click", (e) => {
         e.stopPropagation();

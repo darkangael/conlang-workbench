@@ -3029,12 +3029,18 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
         if (candidates.length === 1) {
           const single = head.createSpan({ cls: "conlang-gloss-token-target" });
           single.setText(candidates[0].word);
-          const matchedSense = this.getSingleMatchedSense(t, candidates[0]);
-          this.renderTokenMeta(card, candidates[0], matchedSense);
+          const matchedSenses = this.getMatchedSenses(t, candidates[0]);
+          if (matchedSenses.length > 1) {
+            this.renderTokenMeta(card, candidates[0], void 0, false);
+            this.renderMatchedSenses(card, matchedSenses);
+          } else {
+            const matchedSense = matchedSenses[0];
+            this.renderTokenMeta(card, candidates[0], matchedSense);
+          }
         } else {
           const note = head.createSpan({ cls: "conlang-gloss-multi-note" });
-          note.setText(`${candidates.length} senses`);
-          this.renderCandidates(card, candidates);
+          note.setText(`${candidates.length} matches`);
+          this.renderCandidates(card, candidates, t);
         }
         break;
       }
@@ -3087,16 +3093,25 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
     }
   }
   /**
-   * Return the single structured sense that matched this dictionary entry,
-   * when the English lookup identified exactly one.
+   * Return every structured lexical sense that matched this dictionary entry.
    *
-   * A dictionary entry can theoretically match the same English key through
-   * more than one structured sense. In that ambiguous case, do not choose one
-   * silently; the ordinary entry-level display remains the safer fallback.
+   * `englishMatches` may contain several results for the same lexical entry
+   * when one English lookup key belongs to more than one of its senses. Keeping
+   * all of them lets the UI show that ambiguity instead of silently choosing.
+   */
+  getMatchedSenses(token, entry) {
+    var _a, _b;
+    return (_b = (_a = token.englishMatches) == null ? void 0 : _a.filter((match) => match.entry === entry && match.sense).map((match) => match.sense)) != null ? _b : [];
+  }
+  /**
+   * Return one structured sense only when the lookup identified exactly one.
+   *
+   * This helper remains useful for ordinary unambiguous matches. When several
+   * senses matched, return undefined so callers cannot accidentally present one
+   * of them as the definite meaning.
    */
   getSingleMatchedSense(token, entry) {
-    var _a, _b;
-    const senses = (_b = (_a = token.englishMatches) == null ? void 0 : _a.filter((match) => match.entry === entry && match.sense).map((match) => match.sense)) != null ? _b : [];
+    const senses = this.getMatchedSenses(token, entry);
     return senses.length === 1 ? senses[0] : void 0;
   }
   /**
@@ -3108,7 +3123,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
    * metadata. With no matched structured sense, preserve the original
    * simple-definition behaviour.
    */
-  renderTokenMeta(card, entry, matchedSense) {
+  renderTokenMeta(card, entry, matchedSense, showSimpleDefinition = true) {
     const meta = card.createDiv({ cls: "conlang-gloss-token-meta" });
     const parts = [];
     if (entry.partOfSpeech) parts.push(entry.partOfSpeech);
@@ -3117,7 +3132,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
       if (matchedSense.gloss && matchedSense.gloss.toLowerCase() !== entry.word.toLowerCase()) {
         parts.push(`"${matchedSense.gloss}"`);
       }
-    } else {
+    } else if (showSimpleDefinition) {
       const sense = firstSense(entry.definition);
       if (sense && sense.toLowerCase() !== entry.word.toLowerCase()) {
         parts.push(`"${sense}"`);
@@ -3138,8 +3153,47 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
       }
     });
   }
-  /** Render multiple candidates as a list when an English word has multiple senses. */
-  renderCandidates(card, candidates) {
+  /**
+   * Render several structured senses that matched one lexical entry.
+   *
+   * Prefer a sense gloss as the reader-facing heading. When no gloss exists,
+   * use the fuller definition directly instead. Stable sense IDs remain
+   * structural metadata and are intentionally not shown here.
+   */
+  renderMatchedSenses(card, senses) {
+    const note = card.createDiv({ cls: "conlang-gloss-multi-note" });
+    note.setText(`${senses.length} matching senses`);
+    const list = card.createDiv({ cls: "conlang-gloss-matched-senses" });
+    for (const sense of senses) {
+      const row = list.createDiv({ cls: "conlang-gloss-matched-sense" });
+      if (sense.gloss) {
+        const gloss = row.createDiv({
+          cls: "conlang-gloss-matched-sense-gloss"
+        });
+        gloss.setText(sense.gloss);
+        if (sense.definition) {
+          const definition = row.createDiv({
+            cls: "conlang-gloss-matched-sense-def"
+          });
+          definition.setText(sense.definition);
+        }
+      } else if (sense.definition) {
+        const definition = row.createDiv({
+          cls: "conlang-gloss-matched-sense-def"
+        });
+        definition.setText(sense.definition);
+      }
+    }
+  }
+  /**
+   * Render multiple dictionary-entry matches for the same English lookup.
+   *
+   * Each row represents a different lexical entry. When structured sense
+   * information is available, show the particular sense that caused that
+   * entry to match rather than only its general entry-level definition.
+   */
+  renderCandidates(card, candidates, token) {
+    var _a, _b;
     const list = card.createDiv({ cls: "conlang-gloss-candidates" });
     const showLang = this.plugin.getActiveLanguages().length > 1;
     for (const entry of candidates) {
@@ -3155,7 +3209,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
         pos.setText(entry.partOfSpeech);
       }
       const def = row.createSpan({ cls: "conlang-gloss-candidate-def" });
-      def.setText(entry.definition);
+      const matchedSense = this.getSingleMatchedSense(token, entry);
+      const matchedMeaning = (_b = (_a = matchedSense == null ? void 0 : matchedSense.gloss) != null ? _a : matchedSense == null ? void 0 : matchedSense.definition) != null ? _b : entry.definition;
+      def.setText(matchedMeaning);
       row.addClass("conlang-clickable");
       row.addEventListener("click", (e) => {
         e.stopPropagation();
