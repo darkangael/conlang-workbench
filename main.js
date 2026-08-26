@@ -3029,7 +3029,8 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
         if (candidates.length === 1) {
           const single = head.createSpan({ cls: "conlang-gloss-token-target" });
           single.setText(candidates[0].word);
-          this.renderTokenMeta(card, candidates[0]);
+          const matchedSense = this.getSingleMatchedSense(t, candidates[0]);
+          this.renderTokenMeta(card, candidates[0], matchedSense);
         } else {
           const note = head.createSpan({ cls: "conlang-gloss-multi-note" });
           note.setText(`${candidates.length} senses`);
@@ -3046,7 +3047,8 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
           target.setText(c.word);
           const tag = head.createSpan({ cls: "conlang-gloss-token-tag" });
           tag.setText("Phrase");
-          this.renderTokenMeta(card, c);
+          const matchedSense = this.getSingleMatchedSense(t, c);
+          this.renderTokenMeta(card, c, matchedSense);
         }
         break;
       }
@@ -3084,17 +3086,50 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian4
       }
     }
   }
-  /** Render small metadata line (POS, IPA) under a token. */
-  renderTokenMeta(card, entry) {
+  /**
+   * Return the single structured sense that matched this dictionary entry,
+   * when the English lookup identified exactly one.
+   *
+   * A dictionary entry can theoretically match the same English key through
+   * more than one structured sense. In that ambiguous case, do not choose one
+   * silently; the ordinary entry-level display remains the safer fallback.
+   */
+  getSingleMatchedSense(token, entry) {
+    var _a, _b;
+    const senses = (_b = (_a = token.englishMatches) == null ? void 0 : _a.filter((match) => match.entry === entry && match.sense).map((match) => match.sense)) != null ? _b : [];
+    return senses.length === 1 ? senses[0] : void 0;
+  }
+  /**
+   * Render the small metadata area under a gloss token.
+   *
+   * When a specific structured sense caused the English lookup match, prefer
+   * that sense's compact gloss. If the sense has no gloss but does have a
+   * fuller definition, show that definition on its own line beneath the
+   * metadata. With no matched structured sense, preserve the original
+   * simple-definition behaviour.
+   */
+  renderTokenMeta(card, entry, matchedSense) {
     const meta = card.createDiv({ cls: "conlang-gloss-token-meta" });
     const parts = [];
     if (entry.partOfSpeech) parts.push(entry.partOfSpeech);
     if (entry.ipa) parts.push(entry.ipa);
-    const sense = firstSense(entry.definition);
-    if (sense && sense.toLowerCase() !== entry.word.toLowerCase()) {
-      parts.push(`"${sense}"`);
+    if (matchedSense) {
+      if (matchedSense.gloss && matchedSense.gloss.toLowerCase() !== entry.word.toLowerCase()) {
+        parts.push(`"${matchedSense.gloss}"`);
+      }
+    } else {
+      const sense = firstSense(entry.definition);
+      if (sense && sense.toLowerCase() !== entry.word.toLowerCase()) {
+        parts.push(`"${sense}"`);
+      }
     }
     meta.setText(parts.join(" \xB7 "));
+    if (matchedSense && !matchedSense.gloss && matchedSense.definition) {
+      const senseDef = card.createDiv({
+        cls: "conlang-gloss-token-sense-def"
+      });
+      senseDef.setText(matchedSense.definition);
+    }
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);

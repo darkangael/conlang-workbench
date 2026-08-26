@@ -8,7 +8,7 @@
 
 import { ItemView, WorkspaceLeaf, MarkdownView, TFile, Notice } from "obsidian";
 import type ConlangPlugin from "./main";
-import { DictionaryEntry, InflectedForm } from "./types";
+import { DictionaryEntry, InflectedForm, LexicalSense } from "./types";
 import { applyCypherReverse } from "./cypher";
 import { findInflection, generateInflections, GeneratedForm } from "./inflection";
 import { explainInflection } from "./explanations";
@@ -1130,7 +1130,8 @@ export class TranslationPanelView extends ItemView {
         if (candidates.length === 1) {
           const single = head.createSpan({ cls: "conlang-gloss-token-target" });
           single.setText(candidates[0].word);
-          this.renderTokenMeta(card, candidates[0]);
+          const matchedSense = this.getSingleMatchedSense(t, candidates[0]);
+          this.renderTokenMeta(card, candidates[0], matchedSense);
         } else {
           const note = head.createSpan({ cls: "conlang-gloss-multi-note" });
           note.setText(`${candidates.length} senses`);
@@ -1147,7 +1148,8 @@ export class TranslationPanelView extends ItemView {
           target.setText(c.word);
           const tag = head.createSpan({ cls: "conlang-gloss-token-tag" });
           tag.setText("Phrase");
-          this.renderTokenMeta(card, c);
+          const matchedSense = this.getSingleMatchedSense(t, c);
+          this.renderTokenMeta(card, c, matchedSense);
         }
         break;
       }
@@ -1187,17 +1189,76 @@ export class TranslationPanelView extends ItemView {
     }
   }
 
-  /** Render small metadata line (POS, IPA) under a token. */
-  private renderTokenMeta(card: HTMLElement, entry: DictionaryEntry) {
+  /**
+   * Return the single structured sense that matched this dictionary entry,
+   * when the English lookup identified exactly one.
+   *
+   * A dictionary entry can theoretically match the same English key through
+   * more than one structured sense. In that ambiguous case, do not choose one
+   * silently; the ordinary entry-level display remains the safer fallback.
+   */
+  private getSingleMatchedSense(
+    token: GlossToken,
+    entry: DictionaryEntry
+  ): LexicalSense | undefined {
+    const senses =
+      token.englishMatches
+        ?.filter((match) => match.entry === entry && match.sense)
+        .map((match) => match.sense as LexicalSense) ?? [];
+
+    return senses.length === 1 ? senses[0] : undefined;
+  }
+
+  /**
+   * Render the small metadata area under a gloss token.
+   *
+   * When a specific structured sense caused the English lookup match, prefer
+   * that sense's compact gloss. If the sense has no gloss but does have a
+   * fuller definition, show that definition on its own line beneath the
+   * metadata. With no matched structured sense, preserve the original
+   * simple-definition behaviour.
+   */
+  private renderTokenMeta(
+    card: HTMLElement,
+    entry: DictionaryEntry,
+    matchedSense?: LexicalSense
+  ) {
     const meta = card.createDiv({ cls: "conlang-gloss-token-meta" });
     const parts: string[] = [];
+
     if (entry.partOfSpeech) parts.push(entry.partOfSpeech);
     if (entry.ipa) parts.push(entry.ipa);
-    const sense = firstSense(entry.definition);
-    if (sense && sense.toLowerCase() !== entry.word.toLowerCase()) {
-      parts.push(`"${sense}"`);
+
+    if (matchedSense) {
+      // A structured gloss is already intended to be a short reader-facing
+      // meaning, so it belongs naturally in the compact metadata line.
+      if (
+        matchedSense.gloss &&
+        matchedSense.gloss.toLowerCase() !== entry.word.toLowerCase()
+      ) {
+        parts.push(`"${matchedSense.gloss}"`);
+      }
+    } else {
+      // Simple entries, and ambiguous structured matches, retain the original
+      // behaviour based on the entry-level definition.
+      const sense = firstSense(entry.definition);
+      if (sense && sense.toLowerCase() !== entry.word.toLowerCase()) {
+        parts.push(`"${sense}"`);
+      }
     }
+
     meta.setText(parts.join(" · "));
+
+    // A structured sense may intentionally have no short gloss. Its fuller
+    // definition is still useful, but it is prose rather than compact metadata,
+    // so display it on a separate line instead of squeezing it beside POS/IPA.
+    if (matchedSense && !matchedSense.gloss && matchedSense.definition) {
+      const senseDef = card.createDiv({
+        cls: "conlang-gloss-token-sense-def",
+      });
+      senseDef.setText(matchedSense.definition);
+    }
+
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
