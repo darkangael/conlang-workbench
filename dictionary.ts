@@ -20,7 +20,7 @@
 // Body of the note can contain freeform usage notes; we include it as `notes`.
 
 import { App, TFile, TFolder, CachedMetadata } from "obsidian";
-import { DictionaryEntry } from "./types";
+import { DictionaryEntry, LexicalSense } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
 import { parseLexicalSenses } from "./lexical-senses";
 import { parseStringList, parseInflectedForms } from "./word-tokens";
@@ -29,6 +29,21 @@ import {
   EMPTY_PHRASE_INDEX,
   PhraseIndex,
 } from "./phrases";
+
+/**
+ * A richer English-language dictionary lookup result.
+ *
+ * `entry` is always present because every lookup ultimately resolves to a
+ * dictionary entry. `sense` is present only when the English lookup key
+ * specifically matches one of that entry's structured lexical senses.
+ *
+ * Keeping the sense optional preserves simple dictionary entries as a fully
+ * supported format rather than requiring every entry to have structured senses.
+ */
+export interface EnglishLookupMatch {
+  entry: DictionaryEntry;
+  sense?: LexicalSense;
+}
 
 /**
  * A hit from the declared-forms index: which entry the surface form belongs
@@ -156,6 +171,54 @@ export class Dictionary {
    */
   lookupEnglish(english: string): DictionaryEntry[] {
     return this.byEnglish.get(english.toLowerCase()) ?? [];
+  }
+
+  /**
+   * Look up English text while preserving which structured lexical sense
+   * caused the match when that information is available.
+   *
+   * This deliberately builds on the existing `byEnglish` index instead of
+   * replacing it. The old lookup API therefore remains available to callers
+   * that only need dictionary entries.
+   *
+   * If more than one structured sense in the same entry explicitly matches
+   * the English key, each matching sense is returned separately. If no
+   * structured sense matches, the entry is still returned without a sense.
+   */
+  lookupEnglishMatches(english: string): EnglishLookupMatch[] {
+    const normalized = english.trim().toLowerCase();
+    const entries = this.byEnglish.get(normalized) ?? [];
+    const matches: EnglishLookupMatch[] = [];
+
+    for (const entry of entries) {
+      const matchingSenses: LexicalSense[] = [];
+
+      if (entry.senses) {
+        for (const sense of entry.senses) {
+          const glossMatches =
+            sense.gloss?.trim().toLowerCase() === normalized;
+
+          const lookupTermMatches =
+            sense.lookupTerms?.some(
+              (term) => term.trim().toLowerCase() === normalized
+            ) ?? false;
+
+          if (glossMatches || lookupTermMatches) {
+            matchingSenses.push(sense);
+          }
+        }
+      }
+
+      if (matchingSenses.length > 0) {
+        for (const sense of matchingSenses) {
+          matches.push({ entry, sense });
+        }
+      } else {
+        matches.push({ entry });
+      }
+    }
+
+    return matches;
   }
 
   /**

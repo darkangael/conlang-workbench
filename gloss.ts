@@ -14,7 +14,7 @@
 // invents grammar.
 
 import { DictionaryEntry, LanguageConfig } from "./types";
-import { Dictionary } from "./dictionary";
+import { Dictionary, EnglishLookupMatch } from "./dictionary";
 import { findInflection } from "./inflection";
 import { tokeniseWithPhrases } from "./phrases";
 import { applyCypher, applyCypherReverse } from "./cypher";
@@ -32,8 +32,17 @@ export interface GlossToken {
   kind: GlossKind;
   // The original source text for this token
   source: string;
-  // For dictionary/phrase: all candidate entries (multi-sense aware)
+  // For dictionary/phrase: all candidate dictionary entries. This remains the
+  // simple representation used by existing renderers and by conlang-to-English
+  // lookup.
   candidates?: DictionaryEntry[];
+
+  // For English-to-conlang lookup only: richer results that preserve which
+  // structured lexical sense caused each match. This is kept alongside
+  // `candidates` so existing consumers do not need to become sense-aware all
+  // at once.
+  englishMatches?: EnglishLookupMatch[];
+
   // For inflected: the matched form descriptor
   inflection?: { lemma: DictionaryEntry; label: string };
   // For cypher-fallback: what the cypher produced
@@ -191,12 +200,22 @@ function tokeniseEnglishAgainstDictionary(
       if (collected.length < n) continue;
 
       const phrase = collected.join(" ");
-      const hits = dictionary.lookupEnglish(phrase);
-      if (hits.length > 0) {
+      const englishMatches = dictionary.lookupEnglishMatches(phrase);
+
+      if (englishMatches.length > 0) {
+        // Several structured senses may point to the same dictionary entry.
+        // Set removes those duplicate entry references for the legacy
+        // `candidates` list while preserving every sense match separately in
+        // `englishMatches`.
+        const candidates = Array.from(
+          new Set(englishMatches.map((match) => match.entry))
+        );
+
         out.push({
           kind: "phrase",
           source: phraseSourceText.trim(),
-          candidates: hits,
+          candidates,
+          englishMatches,
         });
         // Include any separator after the phrase as a fresh separator token
         // for honest reconstruction
@@ -207,11 +226,22 @@ function tokeniseEnglishAgainstDictionary(
     }
     if (matched) continue;
 
-    // Single word: get ALL candidates (multi-sense aware)
+    // Single word: preserve both the simple candidate entries and any richer
+    // structured-sense match information.
     const word = seg.text;
-    const hits = dictionary.lookupEnglish(word);
-    if (hits.length > 0) {
-      out.push({ kind: "dictionary", source: word, candidates: hits });
+    const englishMatches = dictionary.lookupEnglishMatches(word);
+
+    if (englishMatches.length > 0) {
+      const candidates = Array.from(
+        new Set(englishMatches.map((match) => match.entry))
+      );
+
+      out.push({
+        kind: "dictionary",
+        source: word,
+        candidates,
+        englishMatches,
+      });
       i++;
       continue;
     }

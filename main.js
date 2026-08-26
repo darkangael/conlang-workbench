@@ -610,6 +610,46 @@ var _Dictionary = class _Dictionary {
     return (_a = this.byEnglish.get(english.toLowerCase())) != null ? _a : [];
   }
   /**
+   * Look up English text while preserving which structured lexical sense
+   * caused the match when that information is available.
+   *
+   * This deliberately builds on the existing `byEnglish` index instead of
+   * replacing it. The old lookup API therefore remains available to callers
+   * that only need dictionary entries.
+   *
+   * If more than one structured sense in the same entry explicitly matches
+   * the English key, each matching sense is returned separately. If no
+   * structured sense matches, the entry is still returned without a sense.
+   */
+  lookupEnglishMatches(english) {
+    var _a, _b, _c, _d;
+    const normalized = english.trim().toLowerCase();
+    const entries = (_a = this.byEnglish.get(normalized)) != null ? _a : [];
+    const matches = [];
+    for (const entry of entries) {
+      const matchingSenses = [];
+      if (entry.senses) {
+        for (const sense of entry.senses) {
+          const glossMatches = ((_b = sense.gloss) == null ? void 0 : _b.trim().toLowerCase()) === normalized;
+          const lookupTermMatches = (_d = (_c = sense.lookupTerms) == null ? void 0 : _c.some(
+            (term) => term.trim().toLowerCase() === normalized
+          )) != null ? _d : false;
+          if (glossMatches || lookupTermMatches) {
+            matchingSenses.push(sense);
+          }
+        }
+      }
+      if (matchingSenses.length > 0) {
+        for (const sense of matchingSenses) {
+          matches.push({ entry, sense });
+        }
+      } else {
+        matches.push({ entry });
+      }
+    }
+    return matches;
+  }
+  /**
    * All known conlang words (lowercase). For multi-language vaults, a word
    * appearing in multiple languages is listed once.
    */
@@ -2043,12 +2083,16 @@ function tokeniseEnglishAgainstDictionary(text, dictionary, lang) {
       if (!cleanGaps) continue;
       if (collected.length < n) continue;
       const phrase = collected.join(" ");
-      const hits2 = dictionary.lookupEnglish(phrase);
-      if (hits2.length > 0) {
+      const englishMatches2 = dictionary.lookupEnglishMatches(phrase);
+      if (englishMatches2.length > 0) {
+        const candidates = Array.from(
+          new Set(englishMatches2.map((match) => match.entry))
+        );
         out.push({
           kind: "phrase",
           source: phraseSourceText.trim(),
-          candidates: hits2
+          candidates,
+          englishMatches: englishMatches2
         });
         i = j;
         matched = true;
@@ -2057,9 +2101,17 @@ function tokeniseEnglishAgainstDictionary(text, dictionary, lang) {
     }
     if (matched) continue;
     const word = seg.text;
-    const hits = dictionary.lookupEnglish(word);
-    if (hits.length > 0) {
-      out.push({ kind: "dictionary", source: word, candidates: hits });
+    const englishMatches = dictionary.lookupEnglishMatches(word);
+    if (englishMatches.length > 0) {
+      const candidates = Array.from(
+        new Set(englishMatches.map((match) => match.entry))
+      );
+      out.push({
+        kind: "dictionary",
+        source: word,
+        candidates,
+        englishMatches
+      });
       i++;
       continue;
     }
