@@ -1,10 +1,10 @@
 {
-  "id": "made-up-words",
-  "name": "Made Up Words",
+  "id": "conlang-workbench",
+  "name": "Conlang Workbench",
   "version": "0.21.1",
   "minAppVersion": "1.7.2",
-  "description": "A dictionary for the words you've made up. Browse, search, and look up your invented vocabulary across multiple languages, with hover tooltips and a side-panel lexicon.",
-  "author": "Josh P",
+  "description": "An Obsidian workbench for constructing, documenting, and exploring constructed languages.",
+  "author": "darkangael",
   "authorUrl": "",
   "isDesktopOnly": false
 }

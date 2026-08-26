@@ -1,7 +1,7 @@
 {
-  "name": "made-up-words",
+  "name": "conlang-workbench",
   "version": "0.21.1",
-  "description": "A dictionary for the words you've made up, in Obsidian",
+  "description": "An Obsidian workbench for constructing, documenting, and exploring constructed languages.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -18,7 +18,7 @@
     "dictionary",
     "lexicon"
   ],
-  "author": "Josh P",
+  "author": "darkangael",
   "license": "MIT",
   "devDependencies": {
     "@codemirror/language": "^6.12.4",
