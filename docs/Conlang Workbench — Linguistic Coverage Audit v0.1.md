@@ -99,6 +99,40 @@ Conlang Workbench should integrate with or export to specialized tools where
 appropriate rather than reimplementing unrelated mature capabilities merely
 to keep every workflow inside the plugin.
 
+### Generation Proposes; Humans Establish
+
+Generated, inferred, reconstructed, predicted, or automatically analyzed
+material should begin as a proposal rather than silently becoming authoritative
+language data.
+
+For constructed languages, creator acceptance establishes the language.
+
+For natural-language documentation, observed and attested evidence must remain
+distinguishable from Workbench-generated analysis or reconstruction.
+
+### Proposed → Accepted → Revised
+
+Generative and analytical workflows should distinguish among:
+
+- **proposed** — a suggestion that may be regenerated, modified, compared, or
+  discarded freely;
+- **accepted** — a human-established decision or analysis that Workbench should
+  treat as stable language data;
+- **revised** — an accepted decision deliberately changed later while preserving
+  the fact that an earlier accepted state existed.
+
+Regeneration should operate upon proposals, not silently rewrite accepted or
+attested material.
+
+### Revision Does Not Erase History
+
+Changing an accepted rule, naming convention, orthography, phonological system,
+or other language structure should affect future expectations and proposals
+without automatically invalidating material established under an earlier state.
+
+Older forms and conventions may remain historically, regionally, socially,
+ceremonially, nostalgically, or otherwise culturally valid.
+
 ---
 
 ## Status Values
@@ -171,6 +205,8 @@ For each area:
 | Area | Status | Priority | Notes |
 | --- | --- | --- | --- |
 | Language identity and profiles | Planned | Foundation | Language identity must be distinct from plugin configuration; stable identity and relationships must remain possible |
+| Guided language creation and proposal workflow | Planned | Early | Generation should offer explainable proposals, scoped regeneration, modification, and explicit human acceptance rather than silently establishing language data |
+| Naming traditions and name generation | Planned | Early | Naming systems should support generated proposals, multiple simultaneous or historical traditions, cultural scope, revision, revival, and stable previously established names |
 | Lexicon and lexical senses | Partial | Foundation | Existing dictionary and lookup provide a strong base; richer sense representation is needed |
 | Phonetics and phonology | Planned | Early | Language-level inventories, realization, allophony, and unresolved analyses are not yet represented |
 | Phonotactics and prosody | Planned | Early | Documentation must precede optional machine validation; spoken-language assumptions must not be universal |
@@ -215,6 +251,129 @@ A Foundation area may therefore begin with a deliberately small implementation.
 For example, external-format interoperability is foundational because the data
 model must permit preservation and round-trip behavior, but full support for
 many external formats is not required before Early features can be built.
+
+---
+
+## Workbench Workflow Extensions
+
+The following areas span several linguistic domains and therefore do not fit
+cleanly into only one numbered linguistic-coverage section.
+
+### Guided Language Creation and Proposal Workflow
+
+**Status:** Planned  
+**Priority:** Early
+
+Conlang Workbench should support users who want to create a language but do not
+yet know enough linguistic terminology or design practice to begin from an
+empty phonological inventory, grammar, or lexicon.
+
+A guided workflow may offer:
+
+- approachable descriptive starting choices;
+- several alternative proposals rather than one generated answer;
+- explanations of the linguistic structures underlying those proposals;
+- modification of individual proposals;
+- regeneration of rejected proposals;
+- scoped regeneration of only one subsystem;
+- direct manual entry for users who already know what they want;
+- inference from existing names, words, or other supplied forms;
+- provenance identifying which source material contributed to a proposal.
+
+Generation should remain scaffolding rather than authority.
+
+The user should always be able to reject generated options, regenerate them,
+modify them, or bypass generation entirely.
+
+Accepted forms must remain stable unless the user deliberately revises them.
+
+#### Generation Profiles
+
+A simple Latin A–Z representation may be offered as the beginner-friendly
+default because it is easy to type, share, and recognize.
+
+It must remain a profile or presentation choice rather than a restriction in
+the linguistic data model.
+
+Workbench should leave room for:
+
+- Latin orthographies with diacritics;
+- IPA-oriented transcription;
+- non-Latin writing systems;
+- multiple transcription or transliteration systems;
+- custom orthographies and scripts;
+- languages without a conventional written form.
+
+Sound system, transcription, romanization or transliteration, and native
+orthography should not be silently conflated.
+
+#### Inference from Existing Forms
+
+A user may already possess names, words, or attested forms before documenting
+the structures that produced them.
+
+Workbench should eventually be able to analyze such material and propose
+possible:
+
+- sound inventories;
+- recurring phonological patterns;
+- syllable structures;
+- phonotactic tendencies;
+- morphological patterns;
+- naming conventions.
+
+The supplied forms remain evidence. Inferred structures remain proposals until
+accepted or otherwise established by the user.
+
+### Naming Traditions and Name Generation
+
+**Status:** Planned  
+**Priority:** Early
+
+Naming conventions should be first-class language and cultural documentation
+rather than one mutable global generator setting.
+
+A language or community may possess multiple naming traditions differentiated
+by:
+
+- historical period;
+- region;
+- dialect or variety;
+- social group;
+- class;
+- religion;
+- ceremony;
+- family or clan;
+- personal preference;
+- revival or nostalgia;
+- heritage;
+- borrowing from another culture;
+- name category.
+
+Possible name categories include personal names, family names, clan names,
+patronymics, matronymics, titles, regnal names, religious names, earned names,
+epithets, place names, hydronyms, ethnonyms, and other language-defined
+categories.
+
+Naming generation should separate at least:
+
+- the language's available sound or writing system;
+- semantic material used in names;
+- structural naming patterns;
+- cultural and historical scope.
+
+If a naming convention has not yet been established, Workbench may propose
+several alternatives with the normal Proposed → Accepted → Revised lifecycle.
+
+Revising a naming tradition must not retroactively invalidate names previously
+accepted or attested under an older convention.
+
+Historical traditions should remain available for deliberate revival,
+nostalgic use, heritage naming, ceremonial use, or other culturally motivated
+reuse even when they are no longer normally productive.
+
+Names borrowed from another language or culture may preserve foreign features,
+undergo adaptation, or acquire new associations in the receiving community.
 
 ---
 
@@ -432,6 +591,53 @@ Do **not** generalize the existing prefix/suffix rule structure into the
 definition of morphology for Conlang Workbench.
 
 The broader architecture must leave room for other morphological systems.
+
+A future general morphology model should distinguish among:
+
+- **morpheme or function** — the linguistic meaning or grammatical function
+  being represented;
+- **realization** — how that morpheme or function appears in a particular form;
+- **process** — how the resulting form is produced or related to other forms.
+
+Concatenation should therefore be treated as one possible morphological process
+rather than as the definition of morphology itself.
+
+This permits Workbench to begin with straightforward roots, prefixes, suffixes,
+compounds, and other concatenative structures while leaving room for:
+
+- infixation;
+- circumfixation;
+- reduplication;
+- stem alternation;
+- ablaut;
+- templatic or root-and-pattern morphology;
+- suppletion;
+- zero realization;
+- context-conditioned allomorphy;
+- combinations of several morphological processes.
+
+The same architecture should eventually support both directions of work:
+
+```text
+morphemes / functions
+        ↓
+Word Builder
+        ↓
+possible or accepted form
+```
+
+and:
+
+```text
+attested or existing form
+        ↓
+Word Analyzer
+        ↓
+possible morphological analysis
+```
+
+Generated or automatically inferred analyses remain proposals until established
+by the user or supported by documentary evidence.
 
 ### Open questions
 
@@ -3077,6 +3283,21 @@ Conlang Workbench currently lacks explicit representation for:
 - analogy
 - historical orthographic changes
 - relationships between synchronic irregularity and historical explanation
+- ordered and inspectable chains of historical changes
+- provenance for automatically proposed descendant or reconstructed forms
+- stable accepted historical forms that are not silently replaced by later
+  regeneration
+- the distinction between the **type of historical relationship** and the
+  **degree of resulting change**
+- lexical borrowing that can identify the donor language and donor form
+- the particular source sense involved in a borrowing when that information is
+  known
+- phonological, orthographic, and morphological adaptation of borrowed forms
+- borrowing through one or more intermediary languages
+- uncertain or disputed borrowing paths
+- calques and partial calques
+- semantic loans
+- semantic narrowing, broadening, or other development after borrowing
 
 A single generic relationship such as `derived_from` would be insufficient
 for these distinctions.
@@ -3467,6 +3688,28 @@ system.
 
 At minimum, profiles should eventually be able to identify relationships
 without requiring those relationships to control inheritance automatically.
+
+The **type of relationship** should remain distinct from the **degree of
+difference or historical divergence**.
+
+For example, concepts such as:
+
+- historical stage;
+- descendant language;
+- dialect;
+- sister variety;
+- contact variety;
+- mixed language;
+- borrowing relationship;
+
+describe what kind of relationship exists.
+
+A separate description may record whether the resulting differences are minor,
+moderate, extensive, uncertain, or otherwise characterized by the language
+documentation.
+
+Workbench should not force concepts such as "dialect", "daughter language",
+"contact variety", and "distant descendant" onto one overloaded scale.
 
 For example, documenting:
 
