@@ -20,6 +20,7 @@ import {
 } from "./types";
 import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
+import { MorphemeInventory } from "./morphemes";
 import { loadLanguageProfile } from "./language-profile";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
@@ -49,6 +50,11 @@ export default class ConlangPlugin extends Plugin {
   settings: ConlangSettings = DEFAULT_SETTINGS;
   dictionary: Dictionary = new Dictionary(this.app);
 
+  // Morphological documentation is indexed separately from lexical entries.
+  // Morphemes do not automatically participate in dictionary lookup,
+  // translation, highlighting, or inflection.
+  morphemes: MorphemeInventory = new MorphemeInventory(this.app);
+
   // Parsed canonical Language Profiles for currently active languages.
   // Keyed by LanguageConfig.name for compatibility with the inherited
   // settings model. The profile itself carries its stable language id.
@@ -77,6 +83,7 @@ export default class ConlangPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
     this.dictionary = new Dictionary(this.app);
+    this.morphemes = new MorphemeInventory(this.app);
 
     this.app.workspace.onLayoutReady(async () => {
       await this.reloadActiveLanguage();
@@ -387,15 +394,33 @@ export default class ConlangPlugin extends Plugin {
 
     // Index case mode is a load-time decision — set it before (re)loading.
     this.dictionary.setCaseSensitive(this.settings.caseSensitiveMatching);
+
     if (active.length === 0) {
       this.dictionary.clear();
+      this.morphemes.clear();
       this.classifyCache.clear();
       return 0;
     }
+
     const count = await this.dictionary.loadFromFolders(
       active.map((l) => ({ folder: l.dictionaryFolder, language: l.name }))
     );
+
+    // Morphemes are loaded from their own optional canonical folders and remain
+    // separate from Dictionary. Languages without a configured morpheme folder
+    // simply contribute no morpheme source.
+    await this.morphemes.loadFromFolders(
+      active
+        .filter((l) => Boolean(l.morphemeFolder?.trim()))
+        .map((l) => ({
+          folder: l.morphemeFolder!.trim(),
+          language: l.name,
+          languageId: this.getLanguageProfile(l)?.id,
+        }))
+    );
+
     // The dictionary changed, so cached word classifications are stale.
+    // Morphemes do not yet participate in classification.
     this.classifyCache.clear();
     return count;
   }

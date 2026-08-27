@@ -59,6 +59,61 @@ export interface LexicalSense {
   lookupTerms?: string[];
 }
 
+/**
+ * A documented morpheme belonging to a language.
+ *
+ * Morphemes are deliberately distinct from DictionaryEntry. Some morphemes
+ * may also occur as independent lexemes, but bound roots, affixes, clitics,
+ * grammatical markers, and similar material must not automatically become
+ * dictionary words or English-to-conlang lookup candidates.
+ *
+ * This is intentionally a small first model. Later morphology work can enrich
+ * it with relationships, evidence, processes, examples, and more elaborate
+ * realization models without requiring simple morphemes to use those features.
+ */
+export interface Morpheme {
+  // Stable identity for references to this morpheme. Unlike the visible form,
+  // this should not need to change merely because spelling or analysis changes.
+  id: string;
+
+  // Convenient citation/display form for the morpheme. This is not necessarily
+  // its only possible surface realization.
+  form: string;
+
+  // Short documentation-language meaning or grammatical function.
+  // This is descriptive metadata, NOT an automatic dictionary lookup key.
+  gloss: string;
+
+  // Creator-defined morpheme category such as root, prefix, suffix, clitic,
+  // stem, etc. Free-form deliberately: these examples are not a closed
+  // universal taxonomy.
+  type?: string;
+
+  // Whether this morpheme can occur independently as a word, must occur bound,
+  // can do either, or has not yet been analyzed in those terms.
+  distribution?: "free" | "bound" | "both" | "unknown";
+
+  // Optional alternate or context-specific surface realizations. These are
+  // documented forms of the same morpheme, not separate lexical entries.
+  realizations?: string[];
+
+  // Human-readable language name retained for compatibility with the current
+  // dictionary/configuration architecture.
+  language?: string;
+
+  // Stable canonical Language Profile identity when one is available.
+  // Keeping this separate from `language` lets us migrate toward stable IDs
+  // without forcing that migration across the whole plugin at once.
+  languageId?: string;
+
+  // Canonical source Markdown file inside the vault.
+  path: string;
+
+  // Optional prose documentation and modification time for later browsing/UI.
+  notes?: string;
+  mtime?: number;
+}
+
 export interface DictionaryEntry {
   // The conlang form (the key in the dictionary). For phrase entries this
   // can contain spaces — set via frontmatter `word:` to override the filename.
@@ -164,6 +219,12 @@ export interface LanguageConfig {
   name: string;
   // Folder containing dictionary entries (one .md file per word)
   dictionaryFolder: string;
+
+  // Optional folder containing canonical morpheme notes. Morphemes remain
+  // separate from dictionary entries and are not automatically indexed as
+  // standalone words or translation candidates.
+  morphemeFolder?: string;
+
   // Optional vault path to the canonical Language Profile note.
   // Omitted for backwards compatibility with existing configurations.
   profilePath?: string;
