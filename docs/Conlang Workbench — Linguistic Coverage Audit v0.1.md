@@ -978,6 +978,18 @@ Simple languages should not be forced to populate every possible field. A root
 with a form and meaning should remain useful even when no richer analysis has
 been documented.
 
+A morpheme should not automatically be treated as a lexical entry.
+
+Some morphemes may be free forms that also function as independent lexemes, but
+others may be bound, grammatical, historical, or otherwise unavailable as
+standalone words.
+
+The Morpheme Inventory and Lexicon should therefore remain related but distinct.
+
+A lexical entry may reference one or more morphemes, and a morpheme may link to
+lexical entries in which it occurs, without requiring every morpheme to
+participate directly in word-level translation or dictionary lookup.
+
 ### Word Builder and Word Analyzer
 
 Conlang Workbench should eventually provide an interactive Word Builder for
@@ -4496,6 +4508,48 @@ Workbench should make it possible to distinguish:
 - an attested irregular form;
 - an unresolved analysis;
 - a machine prediction that differs from stored data.
+
+### Durable Evidence and Rebuildable Machine State
+
+Human-established evidence should outlive the machine models, caches, indexes,
+or other derived state built from it.
+
+Examples of durable evidence may include:
+
+- accepted stress markings;
+- corrected syllabification;
+- accepted morphological analyses;
+- approved phonological interpretations;
+- creator-confirmed or researcher-confirmed classifications;
+- attested examples used to support analysis.
+
+Derived machine state may include:
+
+- trained prediction models;
+- confidence estimates;
+- embeddings;
+- search indexes;
+- cached analyses;
+- generated recommendations.
+
+When derived machine state becomes obsolete, incompatible, or corrupt, the
+Workbench should prefer rebuilding it from durable evidence rather than
+discarding the evidence or treating the machine state as canonical.
+
+Conceptually:
+
+```text
+accepted evidence / corrections
+            ↓
+      derived model or index
+            ↓
+         predictions
+```
+
+If the derived model is replaced or rebuilt, the accepted evidence remains.
+
+This principle applies to local machine-learning features as well as optional
+external or local AI assistance.
 
 ### Categories of findings
 
