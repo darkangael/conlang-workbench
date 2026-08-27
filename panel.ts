@@ -20,10 +20,11 @@ import {
   renderTransliterationString,
   GlossToken,
 } from "./gloss";
+import { MorphemeTab } from "./morpheme-tab";
 
 export const VIEW_TYPE_PANEL = "made-up-words-panel";
 
-type TabId = "translate" | "dictionary" | "translator";
+type TabId = "translate" | "dictionary" | "translator" | "morphemes";
 type SortKey = "alphabetical" | "recent" | "partOfSpeech";
 type TranslatorDirection = "english-to-conlang" | "conlang-to-english";
 
@@ -32,6 +33,8 @@ export class TranslationPanelView extends ItemView {
   private activeTab: TabId = "translate";
   private lastRenderedText: string = "";
   private pollHandle: number | null = null;
+  private morphemeEl!: HTMLElement;
+  private morphemeTab!: MorphemeTab;
 
   // Browser state (persisted across re-renders within a session)
   private searchQuery: string = "";
@@ -120,6 +123,7 @@ export class TranslationPanelView extends ItemView {
     this.buildTranslateTab();
     this.buildTranslatorTab();
     this.buildDictionaryTab();
+    this.buildMorphemeTab();
     this.showActiveTab();
 
     // Update Translate tab on selection change
@@ -315,12 +319,14 @@ export class TranslationPanelView extends ItemView {
         if (id === "translate") this.updateTranslate();
         else if (id === "dictionary") this.renderBrowser();
         else if (id === "translator") this.runTranslatorTranslation();
+        else if (id === "morphemes") this.morphemeTab.render();
       });
       return tab;
     };
     mkTab("translate", "Selection");
     mkTab("translator", "Translator");
     mkTab("dictionary", "Dictionary");
+    mkTab("morphemes", "Morphemes");
   }
 
   private showActiveTab() {
@@ -328,6 +334,7 @@ export class TranslationPanelView extends ItemView {
     this.translateBodyEl.addClass("conlang-hidden");
     this.browserEl.addClass("conlang-hidden");
     this.translatorEl.addClass("conlang-hidden");
+    this.morphemeEl.addClass("conlang-hidden");
 
     if (this.activeTab === "translate") {
       // The updateTranslate method decides between empty and body visibility
@@ -339,6 +346,9 @@ export class TranslationPanelView extends ItemView {
       this.translatorEl.removeClass("conlang-hidden");
       // Focus the input so the user can start typing immediately
       window.setTimeout(() => this.translatorInputEl?.focus(), 0);
+    } else if (this.activeTab === "morphemes") {
+      this.morphemeEl.removeClass("conlang-hidden");
+      this.morphemeTab.render();
     }
   }
 
@@ -1611,6 +1621,21 @@ export class TranslationPanelView extends ItemView {
     this.browserEmptyEl = this.browserEl.createDiv({
       cls: "conlang-browser-empty conlang-hidden",
     });
+  }
+
+  /**
+  * Build the host container for the modular Morpheme Inventory tab.
+  *
+  * The parent panel owns tab placement and visibility. MorphemeTab owns the
+  * feature-specific UI rendered inside this container.
+  */
+ private buildMorphemeTab() {
+    this.morphemeEl = this.tabContentEl.createDiv({
+      cls: "conlang-morpheme-tab conlang-hidden",
+    });
+          
+    this.morphemeTab = new MorphemeTab(this.plugin);
+    this.morphemeTab.mount(this.morphemeEl);
   }
 
   private renderBrowser() {

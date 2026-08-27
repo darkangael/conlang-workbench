@@ -1732,3 +1732,92 @@ body.conlang-hl-background .conlang-known-word.is-phrase {
 .conlang-gloss-matched-sense-def {
   line-height: 1.35;
 }
+
+/* ===== Morpheme inventory ===== */
+/* ===== Morpheme inventory rows ===== */
+
+.conlang-morpheme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.conlang-morpheme-row {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.conlang-morpheme-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.conlang-morpheme-row-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.conlang-morpheme-form {
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.conlang-morpheme-meta {
+  font-style: italic;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.conlang-morpheme-gloss {
+  font-size: 0.85em;
+  color: var(--text-normal);
+  margin-top: 2px;
+}
+
+.conlang-morpheme-language {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+/* Known morpheme types receive a visual category marker.
+   Custom or unknown types retain the ordinary neutral border. */
+
+.conlang-morpheme-row.type-root {
+  border-left: 3px solid var(--color-green, var(--interactive-accent));
+}
+
+.conlang-morpheme-row.type-stem {
+  border-left: 3px solid var(--color-cyan, var(--interactive-accent));
+}
+
+.conlang-morpheme-row.type-prefix {
+  border-left: 3px solid var(--color-blue, var(--interactive-accent));
+}
+
+.conlang-morpheme-row.type-suffix {
+  border-left: 3px solid var(--color-purple, var(--interactive-accent));
+}
+
+.conlang-morpheme-row.type-infix {
+  border-left: 3px solid var(--color-orange, var(--interactive-accent));
+}
+
+.conlang-morpheme-row.type-circumfix {
+  border-left: 3px solid var(--color-yellow, var(--interactive-accent));
+}
+
+.conlang-morpheme-row.type-clitic {
+  border-left: 3px solid var(--color-red, var(--interactive-accent));
+}
