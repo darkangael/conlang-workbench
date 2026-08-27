@@ -373,14 +373,23 @@ export class Dictionary {
       // Arrays / objects: probably a mistake, treat as missing
       return undefined;
     };
-    const definition = asString(fm.definition ?? fm.translation ?? fm.meaning);
+    // Different conlang vaults use different names for the short English meaning.
+    // Workbench's original format uses `definition`, while linguistics-oriented
+    // lexicons commonly use `gloss`. Accept both so users do not have to rewrite
+    // an existing language just to make it readable by the plugin.
+    const definition = asString(
+      fm.definition ?? fm.gloss ?? fm.translation ?? fm.meaning
+    );
     if (!definition || !definition.trim()) return null;
 
-    // The conlang form: frontmatter `word` overrides the filename. Spaces are
-    // allowed (this is how phrase entries declare themselves) but commas,
-    // semicolons, and quotes are still forbidden since they conflict with how
-    // we index English definitions.
-    const wordOverride = asString(fm.word)?.trim() ?? "";
+    // The conlang form normally comes from frontmatter, with the filename used
+    // as a fallback. `word` is the original Workbench field, while `lemma` is
+    // a common lexicographic term and is what Mer already uses.
+    //
+    // Spaces are allowed in the headword because phrase entries may contain
+    // multiple words. Commas, semicolons, and quotes are still forbidden because
+    // they conflict with how Workbench indexes English definitions.
+    const wordOverride = asString(fm.word ?? fm.lemma)?.trim() ?? "";
     const word = wordOverride || file.basename;
     const isPhrase = /\s/.test(word);
     const wordCount = word.split(/\s+/).filter((w) => w.length > 0).length;

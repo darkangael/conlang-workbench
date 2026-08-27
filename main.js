@@ -761,7 +761,7 @@ var _Dictionary = class _Dictionary {
     return out;
   }
   readEntry(file) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return null;
     const fm = (_a = cache.frontmatter) != null ? _a : {};
@@ -771,27 +771,29 @@ var _Dictionary = class _Dictionary {
       if (typeof v === "number" || typeof v === "boolean") return String(v);
       return void 0;
     };
-    const definition = asString((_c = (_b = fm.definition) != null ? _b : fm.translation) != null ? _c : fm.meaning);
+    const definition = asString(
+      (_d = (_c = (_b = fm.definition) != null ? _b : fm.gloss) != null ? _c : fm.translation) != null ? _d : fm.meaning
+    );
     if (!definition || !definition.trim()) return null;
-    const wordOverride = (_e = (_d = asString(fm.word)) == null ? void 0 : _d.trim()) != null ? _e : "";
+    const wordOverride = (_g = (_f = asString((_e = fm.word) != null ? _e : fm.lemma)) == null ? void 0 : _f.trim()) != null ? _g : "";
     const word = wordOverride || file.basename;
     const isPhrase = /\s/.test(word);
     const wordCount = word.split(/\s+/).filter((w) => w.length > 0).length;
     const parts = parseStringList(fm.parts);
     const aliases = parseStringList(fm.aliases);
-    const forms = parseInflectedForms((_f = fm.forms) != null ? _f : fm.inflections);
-    const inflectAs = (_g = parseStringList(fm.inflectAs)) == null ? void 0 : _g.join(",");
+    const forms = parseInflectedForms((_h = fm.forms) != null ? _h : fm.inflections);
+    const inflectAs = (_i = parseStringList(fm.inflectAs)) == null ? void 0 : _i.join(",");
     return {
       word,
       definition,
       path: file.path,
-      partOfSpeech: asString((_h = fm.partOfSpeech) != null ? _h : fm.pos),
+      partOfSpeech: asString((_j = fm.partOfSpeech) != null ? _j : fm.pos),
       ipa: asString(fm.ipa),
       etymology: asString(fm.etymology),
       notes: asString(fm.notes),
       language: asString(fm.language),
       mtime: file.stat.mtime,
-      nameCategory: asString((_i = fm.nameCategory) != null ? _i : fm.category),
+      nameCategory: asString((_k = fm.nameCategory) != null ? _k : fm.category),
       isPhrase,
       wordCount,
       parts,
