@@ -467,6 +467,18 @@ export class ConlangSettingTab extends PluginSettingTab {
       );
 
     new Setting(body)
+      .setName("Morpheme folder")
+      .setDesc(
+        "Optional folder of canonical morpheme notes. Morphemes are loaded separately from dictionary entries and do not automatically become translation candidates."
+      )
+      .addText((t) =>
+        t.setValue(lang.morphemeFolder ?? "").onChange(async (v) => {
+          lang.morphemeFolder = v.trim() || undefined;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(body)
       .setName("Language profile")
       .setDesc("Optional vault path to this language's canonical language profile note.")
       .addText((t) =>
@@ -525,14 +537,14 @@ export class ConlangSettingTab extends PluginSettingTab {
 
     new Setting(body)
       .addButton((b) =>
-        b.setButtonText("Reload dictionary").onClick(async () => {
+        b.setButtonText("Reload language data").onClick(async () => {
           const n = await this.plugin.reloadActiveLanguage();
           this.plugin.refreshPanel();
           this.plugin.refreshHighlights();
           new Notice(
             isActive
-              ? `Reloaded — ${n} entries across active languages`
-              : `${lang.name} is inactive; activate it to load its dictionary.`
+              ? `Reloaded — ${n} dictionary entries across active languages`
+              : `${lang.name} is inactive; activate it to load its language data.`
           );
         })
       )

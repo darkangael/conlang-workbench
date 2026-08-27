@@ -1705,6 +1705,17 @@ var ConlangSettingTab = class extends import_obsidian4.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian4.Setting(body).setName("Morpheme folder").setDesc(
+      "Optional folder of canonical morpheme notes. Morphemes are loaded separately from dictionary entries and do not automatically become translation candidates."
+    ).addText(
+      (t) => {
+        var _a;
+        return t.setValue((_a = lang.morphemeFolder) != null ? _a : "").onChange(async (v) => {
+          lang.morphemeFolder = v.trim() || void 0;
+          await this.plugin.saveSettings();
+        });
+      }
+    );
     new import_obsidian4.Setting(body).setName("Language profile").setDesc("Optional vault path to this language's canonical language profile note.").addText(
       (t) => {
         var _a;
@@ -1740,12 +1751,12 @@ var ConlangSettingTab = class extends import_obsidian4.PluginSettingTab {
       })
     );
     new import_obsidian4.Setting(body).addButton(
-      (b) => b.setButtonText("Reload dictionary").onClick(async () => {
+      (b) => b.setButtonText("Reload language data").onClick(async () => {
         const n = await this.plugin.reloadActiveLanguage();
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
         new import_obsidian4.Notice(
-          isActive ? `Reloaded \u2014 ${n} entries across active languages` : `${lang.name} is inactive; activate it to load its dictionary.`
+          isActive ? `Reloaded \u2014 ${n} dictionary entries across active languages` : `${lang.name} is inactive; activate it to load its language data.`
         );
       })
     ).addButton((b) => {
