@@ -2382,11 +2382,11 @@ var MorphemeTab = class {
     this.render();
   }
   /**
-   * Re-render the tab from the current MorphemeInventory.
+   * Rebuild the Morphemes tab from the current MorphemeInventory.
    *
-   * The search controls and results containers are mounted once per full tab
-   * render. Filtering then refreshes only the results so the search field keeps
-   * keyboard focus while the user types.
+   * A full render recreates the persistent search/filter controls and the
+   * result containers. Routine searching and filtering should instead call
+   * renderResults() so those controls are not destroyed and recreated.
    */
   render() {
     if (!this.rootEl) return;
@@ -2401,10 +2401,19 @@ var MorphemeTab = class {
     this.renderResults();
   }
   /**
-   * Refresh only the morpheme results.
+   * Refresh only the displayed morpheme results.
    *
-   * The search control remains mounted so typing does not lose focus whenever
-   * the filtered results change.
+   * This function gets the current morpheme inventory, applies the active
+   * search and filter settings, clears the old result summary and rows, and
+   * then displays the newly filtered results.
+   *
+   * It also handles two different empty states:
+   * - no morphemes have been documented at all;
+   * - morphemes exist, but none match the current search or filters.
+   *
+   * Unlike render(), this does not rebuild the search box or filter controls.
+   * Keeping those controls mounted prevents the search field from losing
+   * keyboard focus every time the user types.
    */
   renderResults() {
     if (!this.summaryEl || !this.listEl) return;
@@ -2420,13 +2429,21 @@ var MorphemeTab = class {
       return;
     }
     this.renderSummary(filtered, morphemes.length);
+    if (filtered.length === 0) {
+      this.listEl.createDiv({
+        cls: "conlang-morpheme-empty",
+        text: "No matching morphemes."
+      });
+      return;
+    }
     this.renderList(filtered);
   }
   /**
-   * Render the current morpheme inventory as clickable rows.
+   * Render the current set of morphemes as clickable rows.
    *
-   * Sorting is intentionally simple for the first visible inventory: citation
-   * form first, using ordinary locale-aware alphabetical order.
+   * A copy of the result list is sorted alphabetically by morpheme form before
+   * rendering. Using slice() prevents the display sort from changing the order
+   * of the underlying MorphemeInventory data.
    */
   renderList(morphemes) {
     if (!this.listEl) return;
@@ -2437,10 +2454,13 @@ var MorphemeTab = class {
     }
   }
   /**
-   * Render one documented morpheme.
+   * Render one morpheme as a clickable inventory row.
    *
-   * The visible form and gloss are primary. Type and distribution are
-   * descriptive metadata rather than lexical categories.
+   * The morpheme form and gloss are the main visible information. Type and
+   * distribution are shown as supporting metadata. When multiple languages are
+   * active, the morpheme's language is also displayed.
+   *
+   * Clicking the row opens the canonical Markdown note for that morpheme.
    */
   renderRow(parent, morpheme) {
     const row = parent.createDiv({
@@ -2485,18 +2505,12 @@ var MorphemeTab = class {
     });
   }
   /**
-   * Render the initial empty state.
+   * Build the persistent search and filter controls for the Morphemes tab.
    *
-   * A configured language may legitimately have no documented morphemes, so
-   * an empty inventory is ordinary data rather than an error condition.
+   * These controls are created during a full render() and remain mounted while
+   * the user searches or changes filters. Their event handlers update the saved
+   * filter state and call renderResults() rather than rebuilding the whole tab.
    */
-  renderEmptyState() {
-    if (!this.rootEl) return;
-    this.rootEl.createDiv({
-      cls: "conlang-morpheme-empty",
-      text: "No morphemes are documented for the active language(s)."
-    });
-  }
   renderSearch() {
     if (!this.rootEl) return;
     const toolbar = this.rootEl.createDiv({
@@ -2561,6 +2575,16 @@ var MorphemeTab = class {
       this.renderResults();
     });
   }
+  /**
+   * Apply the current Type, Distribution, and text-search filters.
+   *
+   * Type and Distribution are rejection filters: a morpheme must satisfy every
+   * selected filter to remain in the result set. The text query is then matched
+   * against form, gloss, type, and distribution.
+   *
+   * In other words, active filters combine with AND semantics rather than one
+   * filter replacing another.
+   */
   filterMorphemes(morphemes) {
     const query = this.searchQuery.trim().toLowerCase();
     return morphemes.filter((morpheme) => {
@@ -2608,10 +2632,11 @@ var MorphemeTab = class {
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }
   /**
-   * Render a small inventory summary.
+   * Display the size of the current result set.
    *
-   * Browsing, searching, filters, and individual rows will be added on top of
-   * this foundation once the tab is successfully hosted by panel.ts.
+   * When no filtering is hiding results, this shows the total inventory size,
+   * such as "2 morphemes". When search or filters reduce the result set, it
+   * shows both values, such as "1 of 2 shown".
    */
   renderSummary(morphemes, total) {
     if (!this.summaryEl) return;
@@ -2624,9 +2649,11 @@ var MorphemeTab = class {
   /**
    * Open the canonical Markdown note belonging to a morpheme.
    *
-   * This is defined now because row rendering will need it shortly. Keeping
-   * navigation here means panel.ts does not need to know how MorphemeTab rows
-   * behave.
+   * The stored morpheme path is resolved through the Obsidian vault. If it
+   * points to a Markdown file, that file is opened in the current workspace.
+   *
+   * Navigation stays inside MorphemeTab so panel.ts does not need to know how
+   * individual Morpheme Inventory rows behave.
    */
   async openMorpheme(morpheme) {
     const file = this.plugin.app.vault.getAbstractFileByPath(morpheme.path);
