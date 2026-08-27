@@ -1706,3 +1706,29 @@ body.conlang-hl-background .conlang-known-word.is-phrase {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* --------------------------------------------------------------------------
+ * Matched lexical senses
+ *
+ * When one dictionary entry matches more than one structured lexical sense,
+ * the translator renders those senses together beneath the entry. Give each
+ * later sense a little breathing room and a subtle divider so the meanings
+ * remain visually distinct without making them look like separate entries.
+ * -------------------------------------------------------------------------- */
+
+.conlang-gloss-matched-sense + .conlang-gloss-matched-sense {
+  margin-top: 0.6em;
+  padding-top: 0.6em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* A short lexical gloss acts as the heading for a sense when one exists. */
+.conlang-gloss-matched-sense-gloss {
+  font-weight: 600;
+  margin-bottom: 0.15em;
+}
+
+/* Longer sense definitions remain ordinary prose but get comfortable spacing. */
+.conlang-gloss-matched-sense-def {
+  line-height: 1.35;
+}
