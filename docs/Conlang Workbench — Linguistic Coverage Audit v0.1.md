@@ -133,6 +133,170 @@ without automatically invalidating material established under an earlier state.
 Older forms and conventions may remain historically, regionally, socially,
 ceremonially, nostalgically, or otherwise culturally valid.
 
+### AI Assistance Is Optional
+
+Conlang Workbench should remain fully useful without artificial-intelligence
+services.
+
+AI-assisted features should be **off by default** and require deliberate user
+opt-in.
+
+When AI assistance is enabled, the architecture should permit both:
+
+- locally operated models or services;
+- external AI providers explicitly configured by the user.
+
+No canonical language data should depend upon continued access to a particular
+AI model, provider, or service.
+
+AI-generated or AI-inferred material follows the same proposal lifecycle as
+other generated analysis:
+
+```text
+AI assistance
+      ↓
+proposal or analysis
+      ↓
+human review
+      ↓
+accepted, revised, or rejected
+```
+
+AI assistance must not silently establish, overwrite, or reinterpret accepted
+or attested language data.
+
+The Workbench should also distinguish AI assistance from ordinary deterministic
+functionality. Dictionary lookup, declared-rule validation, morphological rule
+application, indexing, search, and other conventional algorithms should remain
+available without enabling AI merely because they perform automated work.
+
+Where practical, AI-assisted results should identify their origin and preserve
+enough provenance for the user to understand that the result was generated
+rather than directly attested or manually established.
+
+#### AI Workspace and Promotion Boundary
+
+AI assistance should have a designated non-canonical workspace in which it can
+write persistent notes, proposals, analyses, summaries, generated forms, and
+working memory.
+
+AI may read the canonical language documentation included within the scope of
+its workspace, but should write its own material only to that workspace unless
+the user explicitly promotes material into canonical language documentation.
+
+Conceptually:
+
+```text
+canonical language documentation
+            ↓ read
+       AI assistant
+            ↓ write
+       AI workspace
+            ↓
+       human review
+            ↓
+   promote / revise / reject
+            ↓
+canonical language documentation
+```
+
+The AI workspace should remain clearly distinguishable from accepted or
+attested language material.
+
+Possible workspace content may include:
+
+- generated lexical or grammatical proposals;
+- tentative morphological analyses;
+- inferred phonological, morphological, syntactic, or semantic patterns;
+- unresolved questions;
+- summaries of prior AI-assisted work;
+- evidence or references used by an analysis;
+- model-generated development notes;
+- working hypotheses;
+- language-specific or comparative AI memory useful for later sessions.
+
+Promotion from an AI workspace into canonical language documentation must be
+an explicit user action.
+
+Promoting material may involve accepting it unchanged, revising it first, or
+using it as the basis for new canonical documentation.
+
+AI workspace material should retain provenance where practical so that promoted
+content can remain distinguishable from directly attested evidence,
+creator-authored decisions, or manually established analysis.
+
+#### AI Workspace Scope
+
+AI workspace scope should be explicit rather than assumed.
+
+For work focused on one language, the user should be able to create or use a
+**language-local workspace** associated with that language.
+
+A language-local workspace may read the canonical documentation belonging to
+that language while keeping its AI memory, proposals, analyses, and other
+generated material within that language's own documentation area.
+
+Conceptually:
+
+```text
+Language
+├── canonical language documentation
+└── AI Workspace
+    ├── proposals
+    ├── analyses
+    ├── notes
+    └── working memory
+```
+
+The precise folder structure should remain an implementation decision rather
+than being fixed by this audit.
+
+Users should also be able to create a separate **cross-language workspace**
+when they deliberately want comparative or contact-oriented work.
+
+A cross-language workspace should read only the languages or varieties the user
+explicitly includes within its scope.
+
+Possible uses include:
+
+- comparative analysis;
+- language-family reconstruction;
+- dialect or variety comparison;
+- language-contact analysis;
+- loanword investigation;
+- historical comparison across related languages;
+- comparison of morphological, phonological, syntactic, or semantic systems.
+
+A cross-language workspace should maintain its own non-canonical AI memory and
+working material rather than writing directly into the canonical documentation
+of any participating language.
+
+Conceptually:
+
+```text
+Language A ──┐
+Language B ──┼── read ──→ Cross-Language AI Workspace
+Language C ──┘                     │
+                                   ↓
+                         proposals / analyses
+                                   │
+                              human review
+                                   ↓
+                         explicit promotion
+```
+
+The user should control which languages are available to a cross-language
+workspace and should be able to change that scope deliberately.
+
+Neither a language-local nor a cross-language AI workspace should silently
+expand its own reading scope.
+
+Promotion from either type of workspace into canonical language documentation
+remains an explicit human action.
+
+The workspace model therefore provides AI with persistent working memory
+without granting it authority over the language itself.
+
 ---
 
 ## Status Values
@@ -375,6 +539,66 @@ reuse even when they are no longer normally productive.
 Names borrowed from another language or culture may preserve foreign features,
 undergo adaptation, or acquire new associations in the receiving community.
 
+### Pronunciation Assistance and TTS
+
+**Status:** Planned  
+**Priority:** Later
+
+Conlang Workbench may eventually provide pronunciation assistance or
+text-to-speech preview for documented forms.
+
+Where possible, pronunciation output should be driven by the language's own
+documented phonological, phonetic, stress, and IPA information rather than by a
+generic natural-language voice.
+
+If Workbench cannot reproduce the documented pronunciation faithfully, it may
+still offer an approximate TTS preview when useful, but the interface should
+make that limitation explicit.
+
+Approximate TTS must not be presented as authoritative evidence of how a word
+or sentence is pronounced.
+
+Pronunciation assistance may eventually support:
+
+- IPA-aware pronunciation preview;
+- language-defined stress;
+- language-defined sound correspondences;
+- user-provided pronunciation guides;
+- comparison between documented and approximate pronunciation;
+- optional system or browser TTS as a fallback;
+- future specialized speech engines where practical.
+
+TTS should remain optional and should not be required for ordinary Workbench
+functionality.
+
+### Rhyme and Poetic Analysis
+
+**Status:** Planned  
+**Priority:** Later
+
+Conlang Workbench should eventually support rhyme-oriented analysis for users
+working with poetry, songs, chants, verse, translated literature, spells, or
+other language where sound patterning matters.
+
+Rhyme analysis should prefer documented pronunciation, phonology, syllable
+structure, and stress over spelling alone.
+
+Possible later capabilities may include:
+
+- identifying likely rhyme relationships;
+- comparing rhyme patterns across lines;
+- distinguishing exact from approximate rhyme;
+- identifying stress-sensitive rhyme;
+- suggesting accepted lexical alternatives that better preserve rhyme;
+- comparing source-language and target-language rhyme structures;
+- identifying alliteration, assonance, or related sound patterning where useful.
+
+Suggestions intended to preserve rhyme should remain proposals rather than
+silently replacing accepted lexical choices or translations.
+
+Rhyme analysis is desirable but depends upon sufficiently reliable phonological
+and prosodic representation and should therefore remain a later-use feature.
+
 ---
 
 # Detailed Audit
@@ -518,6 +742,70 @@ Workbench.
 Design future sense representation so that a simple `gloss` or `definition`
 can coexist with richer sense documentation.
 
+### Lookup Coverage and Quick Lexical Development
+
+Translation assistance and gloss lookup should make the limits of lexical
+coverage visible rather than implying that unresolved material has been
+translated successfully.
+
+Workbench should eventually be able to report useful coverage information such
+as:
+
+- how many relevant source tokens were resolved through documented lexical
+  entries;
+- how many remain unresolved;
+- which tokens were resolved only through fallback or generated proposals;
+- which tokens have several possible lexical or sense matches.
+
+A coverage percentage may provide a useful compact summary when its basis is
+clear.
+
+For example:
+
+```text
+Lexical coverage: 8 of 11 source tokens resolved
+Coverage: 73%
+```
+
+Coverage should describe what the Workbench actually knows from the documented
+language. It should not count cypher output, generated guesses, or other
+fallback material as equivalent to accepted lexical matches unless the
+interface clearly distinguishes those categories.
+
+Unresolved lookup items should provide a convenient path into lexical
+development.
+
+From an unresolved word or concept, the user should eventually be able to begin
+creating a lexical entry without leaving the lookup or translation workflow.
+
+That quick-add workflow may allow the user to:
+
+- enter a form manually;
+- choose among generated proposed forms when generation is enabled;
+- derive a form from documented morphemes;
+- mark a proposed borrowing or loanword source;
+- select or document lexical category;
+- create a simple definition;
+- create or attach a structured lexical sense;
+- review the proposed entry before accepting it.
+
+Generated suggestions remain proposals.
+
+Quick-add should therefore shorten the route from:
+
+```text
+unresolved concept
+        ↓
+lexical development
+        ↓
+accepted lexical entry
+        ↓
+lookup reruns with new documented data
+```
+
+without creating a second simplified lexicon model that bypasses the canonical
+dictionary-entry structure.
+
 ### Open questions
 
 - What is the minimum structured representation of a lexical sense?
@@ -638,6 +926,125 @@ possible morphological analysis
 
 Generated or automatically inferred analyses remain proposals until established
 by the user or supported by documentary evidence.
+
+### Morpheme Inventory
+
+Conlang Workbench should provide an explicit inventory for documenting and
+working with morphemes rather than requiring reusable morphological material to
+exist only implicitly inside lexical entries or generation rules.
+
+The inventory should be broad enough to represent language-defined units such
+as:
+
+- roots;
+- stems;
+- prefixes;
+- suffixes;
+- infixes;
+- circumfixes;
+- clitics;
+- bound morphemes;
+- zero realizations where analytically appropriate;
+- other language-defined morpheme or realization types.
+
+These categories should not be treated as a universal closed taxonomy.
+
+A morpheme may need to document information including:
+
+- stable identity;
+- form or realizations;
+- meaning or grammatical function;
+- category or type;
+- language or variety;
+- distribution or constraints;
+- alternate realizations or allomorphs;
+- notes;
+- examples;
+- relationships to lexical entries;
+- relationships to other morphemes;
+- provenance or evidence;
+- historical information where known.
+
+The canonical morpheme should remain distinct from any particular surface
+realization when the language requires that distinction.
+
+For example, several allomorphs may realize the same morpheme, while one
+surface sequence may potentially admit more than one morphological analysis.
+
+The inventory should support browsing, searching, filtering, and reuse during
+word construction and analysis.
+
+Simple languages should not be forced to populate every possible field. A root
+with a form and meaning should remain useful even when no richer analysis has
+been documented.
+
+### Word Builder and Word Analyzer
+
+Conlang Workbench should eventually provide an interactive Word Builder for
+constructing proposed forms from documented morphemes, realizations, and
+language-defined processes.
+
+The Builder should be able to present:
+
+- selected morphemes or functions;
+- their meanings or grammatical roles;
+- the realizations being used;
+- the processes applied;
+- the resulting proposed form;
+- relevant phonological or morphological constraints;
+- warnings or notices produced by language-defined validation;
+- explanations of why those findings were triggered.
+
+The Builder should remain advisory. A form that conflicts with an ordinary rule
+may still be accepted when the creator deliberately establishes an exception or
+when documentary evidence attests the form.
+
+The same underlying information should support a Word Analyzer working in the
+opposite direction.
+
+```text
+documented morphemes / processes
+            ↓
+       Word Builder
+            ↓
+       proposed form
+```
+
+and:
+
+```text
+existing or attested form
+            ↓
+       Word Analyzer
+            ↓
+possible segmentation / analysis
+```
+
+The Analyzer should be able to propose possible:
+
+- morpheme boundaries;
+- morpheme identities;
+- realizations or allomorphs;
+- morphological processes;
+- lexical or grammatical functions;
+- relationships to known lexical entries;
+- irregular or exceptional behavior;
+- possible loanword or historical relationships when relevant.
+
+Automatic analysis should not be reduced to substring matching.
+
+A surface sequence that happens to contain the spelling of a known morpheme is
+not sufficient evidence that the morpheme actually occurs there.
+
+Analysis should instead use the language's documented morphology, realizations,
+phonology, phonotactics, and other relevant constraints where those are
+available.
+
+When several analyses remain plausible, Workbench should preserve and display
+that ambiguity rather than silently selecting one.
+
+Generated analyses remain proposals until accepted by the creator or supported
+by documentary evidence.
 
 ### Open questions
 
@@ -4036,6 +4443,60 @@ It should not answer:
 Conlang Workbench is a documentation and development tool, not an arbiter of
 linguistic legitimacy.
 
+### Explainable Validation and Machine Confidence
+
+When Workbench reports that a form conflicts with documented language rules, the
+finding should identify the relevant rule, constraint, or evidence where
+practical.
+
+A useful finding should answer not only:
+
+> Something may be inconsistent.
+
+but also:
+
+> Which documented rule or expectation produced this finding?
+
+and, where possible:
+
+> Why did this particular form trigger it?
+
+This is especially important for beginning conlangers, because validation should
+teach the user how the documented language works rather than merely displaying
+an unexplained failure state.
+
+Where Workbench proposes an inferred analysis or prediction rather than applying
+a definite declared rule, it should distinguish certainty from confidence.
+
+Examples may include:
+
+- predicted stress;
+- proposed syllabification;
+- possible morphological segmentation;
+- inferred morpheme identity;
+- proposed phonological pattern;
+- suggested historical relationship;
+- possible loanword adaptation.
+
+Where meaningful, such proposals may expose confidence or uncertainty to help
+the user evaluate them.
+
+Confidence must not be treated as proof.
+
+A high-confidence machine proposal remains a proposal until accepted or
+supported by evidence.
+
+Likewise, a documented exception should remain valid language data even when a
+productive rule predicts something else.
+
+Workbench should make it possible to distinguish:
+
+- an apparent accidental inconsistency;
+- a deliberate creator-established exception;
+- an attested irregular form;
+- an unresolved analysis;
+- a machine prediction that differs from stored data.
+
 ### Categories of findings
 
 Validation findings should eventually distinguish among several kinds of
@@ -4845,6 +5306,71 @@ shared editable representation
 
 The Workbench should not silently create two independent canonical copies of
 the same linguistic information.
+
+### Flexible Import Mapping
+
+Conlang Workbench should eventually support configurable import mapping for
+existing linguistic material whose structure is understandable but does not
+already use Workbench's canonical representation.
+
+A user may possess older dictionaries, root lists, word lists, grammar data, or
+other language documentation in formats such as:
+
+- delimited text;
+- Markdown tables;
+- consistently formatted lines;
+- spreadsheets;
+- exported data from another language tool;
+- user-defined textual templates.
+
+Where practical, Workbench should allow the user to describe or map fields such
+as:
+
+- lemma or form;
+- definition or gloss;
+- lexical category;
+- pronunciation;
+- morpheme type;
+- source;
+- notes;
+- language or variety;
+- other recognizable fields.
+
+Import should provide a preview before canonical data is created or changed.
+
+The importer should identify information it cannot map reliably rather than
+silently discarding it.
+
+Where possible, imported material should retain provenance identifying its
+source and import process.
+
+Import mapping should convert external structure into the same canonical
+Workbench models used by manually created data rather than maintaining a
+separate simplified import-only representation.
+
+### Generated Relationship Views
+
+Workbench may eventually provide generated visual views of documented
+relationships among linguistic objects.
+
+Possible views may include relationships among:
+
+- morphemes and lexical entries;
+- lexical entries and derived forms;
+- source forms and loanwords;
+- historical forms and descendants;
+- languages and varieties;
+- lexical senses and semantic relationships;
+- linguistic examples and the forms they attest.
+
+These visualizations should be generated from canonical typed relationships.
+
+The graph or diagram itself should not become the only place where those
+relationships are stored.
+
+This follows the same principle already established for language-family trees:
+visual graphs are useful views of linguistic data rather than substitutes for
+the underlying canonical relationships.
 
 ### Reference findings
 
