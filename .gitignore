@@ -24,3 +24,22 @@ node_modules/
 # Local agent scratch
 .claude/
 issue16-reply.md
+
+# Conlang Workbench test-vault
+# Keep shareable Obsidian configuration while ignoring machine-local state.
+
+test-vault/.obsidian/workspace.json
+test-vault/.obsidian/workspace-mobile.json
+
+# OS-generated files
+Thumbs.db
+
+# Temporary / backup files
+*~
+*.tmp
+*.swp
+
+# Local real-language integration testing
+# Mer is copied from the private Conlangs vault for testing Conlang Workbench.
+# It is not repository test data and should never be committed.
+test-vault/Languages/Mer/
