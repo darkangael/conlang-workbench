@@ -33,6 +33,157 @@ export interface PhonologicalUnit {
 }
 
 /**
+ * Analytical status for a documented realization.
+ *
+ * A realization can be known even when the creator has not fully settled how
+ * it should be analyzed. Keeping status on the realization itself lets, for
+ * example, an established canonical unit have a proposed or unresolved
+ * realization without changing the status of the unit as a whole.
+ */
+export type PhonologicalRealizationStatus =
+  "established" | "proposed" | "unresolved";
+
+/**
+ * One documented realization of a canonical phonological unit.
+ *
+ * A realization is deliberately broader than "phone" or "allophone". Spoken
+ * languages will commonly store phonetic IPA here, but other modalities may
+ * use whatever notation describes the realized form of their contrastive unit.
+ *
+ * This first model records the relationship and descriptive evidence only.
+ * It does not yet attempt to interpret environments as executable rules.
+ */
+export interface PhonologicalRealization {
+  // Stable identity lets later evidence, diagnostics, lexical forms, or rules
+  // refer to this particular realization without depending on its notation.
+  id: string;
+
+  // Stable ID of the canonical PhonologicalUnit that this realizes.
+  // The relationship uses identity rather than symbol because symbols may
+  // change or may not be unique across active languages.
+  unitId: string;
+
+  // The creator's notation for the realized form. For spoken languages this
+  // will commonly be phonetic IPA such as [p] or [pʰ], but IPA is not required
+  // by the underlying model.
+  symbol: string;
+
+  // Human-readable description of where this realization occurs.
+  //
+  // This intentionally remains text in the first layer. We should learn what
+  // creators actually need to describe before designing a structured
+  // phonological-environment or rule language.
+  environment?: string;
+
+  // A realization may remain usable documentation even while its analysis is
+  // proposed or unresolved.
+  status?: PhonologicalRealizationStatus;
+
+  // Language identity is retained because unit IDs may legitimately be local
+  // to a language rather than globally unique across the whole Workbench.
+  language?: string;
+  languageId?: string;
+
+  notes?: string;
+
+  // Canonical Markdown source when the realization comes from a note.
+  // Keeping this optional leaves room for realizations later embedded in a
+  // phonological-unit note without requiring a separate source file.
+  path?: string;
+}
+
+/**
+ * Convert a Markdown note's frontmatter into one canonical phonological
+ * realization.
+ *
+ * This parser mirrors the intentionally small scope of parsePhonologicalUnit:
+ * it recognizes only fields that belong to the first realization layer.
+ * Environments remain descriptive text for now rather than executable rules.
+ */
+export function parsePhonologicalRealization(
+  frontmatter: Record<string, unknown>,
+  path?: string,
+): PhonologicalRealization | null {
+  const type =
+    typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
+
+  // Realizations are separate canonical documents from phonological units.
+  // Keeping the document types distinct prevents a unit note from being
+  // accidentally interpreted as one of its realizations.
+  if (type !== "phonological-realization") {
+    return null;
+  }
+
+  const rawId =
+    frontmatter.realization_id ??
+    frontmatter.realizationId ??
+    frontmatter["realization-id"];
+
+  const id = typeof rawId === "string" ? rawId.trim() : "";
+
+  const rawUnitId =
+    frontmatter.unit_id ?? frontmatter.unitId ?? frontmatter["unit-id"];
+
+  const unitId = typeof rawUnitId === "string" ? rawUnitId.trim() : "";
+
+  const symbol =
+    typeof frontmatter.symbol === "string" ? frontmatter.symbol.trim() : "";
+
+  // A realization is only useful when it has its own stable identity, a
+  // canonical unit relationship, and a representation of the realized form.
+  if (!id || !unitId || !symbol) {
+    return null;
+  }
+
+  const environment =
+    typeof frontmatter.environment === "string"
+      ? frontmatter.environment.trim()
+      : undefined;
+
+  const language =
+    typeof frontmatter.language === "string"
+      ? frontmatter.language.trim()
+      : undefined;
+
+  const rawLanguageId =
+    frontmatter.language_id ??
+    frontmatter.languageId ??
+    frontmatter["language-id"];
+
+  const languageId =
+    typeof rawLanguageId === "string" ? rawLanguageId.trim() : undefined;
+
+  const notes =
+    typeof frontmatter.notes === "string"
+      ? frontmatter.notes.trim()
+      : undefined;
+
+  const rawStatus =
+    typeof frontmatter.status === "string"
+      ? frontmatter.status.trim()
+      : undefined;
+
+  const status: PhonologicalRealizationStatus | undefined =
+    rawStatus === "established" ||
+    rawStatus === "proposed" ||
+    rawStatus === "unresolved"
+      ? rawStatus
+      : undefined;
+
+  return {
+    id,
+    unitId,
+    symbol,
+    environment: environment || undefined,
+    status,
+    language: language || undefined,
+    languageId: languageId || undefined,
+    notes: notes || undefined,
+    path,
+  };
+}
+
+/**
  * Convert a Markdown note's frontmatter into one canonical phonological unit.
  *
  * This parser is intentionally small for the first milestone. It only accepts
@@ -142,6 +293,15 @@ export class PhonologyInventory {
   private all: PhonologicalUnit[] = [];
   private byId = new Map<string, PhonologicalUnit[]>();
 
+  // Realizations are kept in their own collection because they are evidence
+  // about how canonical units are expressed, not canonical units themselves.
+  private realizations: PhonologicalRealization[] = [];
+
+  // Stable realization IDs support direct lookup, while the unit index lets
+  // callers ask which realizations belong to a particular canonical unit.
+  private realizationsById = new Map<string, PhonologicalRealization[]>();
+  private realizationsByUnitId = new Map<string, PhonologicalRealization[]>();
+
   constructor(private app: App) {}
 
   /**
@@ -153,6 +313,10 @@ export class PhonologyInventory {
   clear(): void {
     this.all = [];
     this.byId.clear();
+
+    this.realizations = [];
+    this.realizationsById.clear();
+    this.realizationsByUnitId.clear();
   }
 
   /**
@@ -161,6 +325,60 @@ export class PhonologyInventory {
    */
   allUnits(): PhonologicalUnit[] {
     return this.all.slice();
+  }
+
+  /**
+   * Return a copy of every loaded realization.
+   */
+  allRealizations(): PhonologicalRealization[] {
+    return this.realizations.slice();
+  }
+
+  /**
+   * Find realizations by their own stable ID.
+   *
+   * Optional language filters mirror lookupId() so realization IDs can remain
+   * local to a language when multiple active languages are loaded together.
+   */
+  lookupRealizationId(
+    id: string,
+    languageId?: string,
+    language?: string,
+  ): PhonologicalRealization[] {
+    const normalized = id.trim().toLowerCase();
+    if (!normalized) return [];
+
+    const matches = this.realizationsById.get(normalized) ?? [];
+
+    return matches.filter((realization) => {
+      if (languageId && realization.languageId !== languageId) return false;
+      if (language && realization.language !== language) return false;
+      return true;
+    });
+  }
+
+  /**
+   * Find every realization associated with one canonical phonological unit.
+   *
+   * This is the important relationship lookup for the realization layer:
+   * callers can begin with a canonical unit and discover its documented
+   * realized forms without treating those forms as canonical units themselves.
+   */
+  lookupRealizationsForUnit(
+    unitId: string,
+    languageId?: string,
+    language?: string,
+  ): PhonologicalRealization[] {
+    const normalized = unitId.trim().toLowerCase();
+    if (!normalized) return [];
+
+    const matches = this.realizationsByUnitId.get(normalized) ?? [];
+
+    return matches.filter((realization) => {
+      if (languageId && realization.languageId !== languageId) return false;
+      if (language && realization.language !== language) return false;
+      return true;
+    });
   }
 
   /**
@@ -226,39 +444,80 @@ export class PhonologyInventory {
       const files = this.collectMarkdownFiles(folder);
 
       for (const file of files) {
+        // A phonology folder may contain both canonical units and realization
+        // notes. Try the canonical-unit parser first; its explicit type marker
+        // prevents a realization note from being mistaken for a unit.
         const unit = this.readUnit(file);
-        if (!unit) continue;
 
-        // If both the source and the note explicitly name a language, they
-        // must agree. This prevents a misplaced note from silently entering
-        // the wrong active language's inventory.
+        if (unit) {
+          // If both the source and the note explicitly name a language, they
+          // must agree. This prevents a misplaced note from silently entering
+          // the wrong active language's inventory.
+          if (
+            source.language &&
+            unit.language &&
+            unit.language !== source.language
+          ) {
+            continue;
+          }
+
+          if (
+            source.languageId &&
+            unit.languageId &&
+            unit.languageId !== source.languageId
+          ) {
+            continue;
+          }
+
+          // A configured language provides context for simpler notes that do
+          // not need to repeat the same language metadata individually.
+          if (!unit.language && source.language) {
+            unit.language = source.language;
+          }
+
+          if (!unit.languageId && source.languageId) {
+            unit.languageId = source.languageId;
+          }
+
+          this.addUnit(unit);
+          count++;
+          continue;
+        }
+
+        // If the file was not a canonical unit, give the realization parser a
+        // chance to recognize it. Other Markdown files remain ignored.
+        const realization = this.readRealization(file);
+        if (!realization) continue;
+
+        // Realizations use the same language-boundary protection as units.
         if (
           source.language &&
-          unit.language &&
-          unit.language !== source.language
+          realization.language &&
+          realization.language !== source.language
         ) {
           continue;
         }
 
         if (
           source.languageId &&
-          unit.languageId &&
-          unit.languageId !== source.languageId
+          realization.languageId &&
+          realization.languageId !== source.languageId
         ) {
           continue;
         }
 
-        // A configured language provides context for simpler notes that do not
-        // need to repeat the same language metadata individually.
-        if (!unit.language && source.language) {
-          unit.language = source.language;
+        if (!realization.language && source.language) {
+          realization.language = source.language;
         }
 
-        if (!unit.languageId && source.languageId) {
-          unit.languageId = source.languageId;
+        if (!realization.languageId && source.languageId) {
+          realization.languageId = source.languageId;
         }
 
-        this.addUnit(unit);
+        // We deliberately load a realization even if its unit_id does not
+        // currently resolve. Loading preserves the creator's documented data;
+        // a later diagnostic layer can report broken relationships explicitly.
+        this.addRealization(realization);
         count++;
       }
     }
@@ -304,6 +563,23 @@ export class PhonologyInventory {
   }
 
   /**
+   * Parse one Markdown file as a phonological realization.
+   *
+   * Reading remains separate from indexing so parsing can later support other
+   * storage representations without changing how the inventory is queried.
+   */
+  private readRealization(file: TFile): PhonologicalRealization | null {
+    const cache: CachedMetadata | null =
+      this.app.metadataCache.getFileCache(file);
+
+    if (!cache) return null;
+
+    const frontmatter = cache.frontmatter ?? {};
+
+    return parsePhonologicalRealization(frontmatter, file.path);
+  }
+
+  /**
    * Add one validated unit to both the complete inventory and the stable-ID
    * lookup index.
    */
@@ -315,5 +591,28 @@ export class PhonologyInventory {
 
     existing.push(unit);
     this.byId.set(key, existing);
+  }
+
+  /**
+   * Add one validated realization to its complete collection and both lookup
+   * indexes.
+   *
+   * One index answers "which realization has this ID?" while the other answers
+   * the more linguistically useful "how can this canonical unit be realized?"
+   */
+  private addRealization(realization: PhonologicalRealization): void {
+    this.realizations.push(realization);
+
+    const idKey = realization.id.trim().toLowerCase();
+    const byId = this.realizationsById.get(idKey) ?? [];
+
+    byId.push(realization);
+    this.realizationsById.set(idKey, byId);
+
+    const unitKey = realization.unitId.trim().toLowerCase();
+    const byUnit = this.realizationsByUnitId.get(unitKey) ?? [];
+
+    byUnit.push(realization);
+    this.realizationsByUnitId.set(unitKey, byUnit);
   }
 }

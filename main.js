@@ -1316,6 +1316,39 @@ var LinguisticExampleInventory = class {
 
 // phonology.ts
 var import_obsidian4 = require("obsidian");
+function parsePhonologicalRealization(frontmatter, path) {
+  var _a, _b, _c, _d, _e, _f;
+  const type = typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
+  if (type !== "phonological-realization") {
+    return null;
+  }
+  const rawId = (_b = (_a = frontmatter.realization_id) != null ? _a : frontmatter.realizationId) != null ? _b : frontmatter["realization-id"];
+  const id = typeof rawId === "string" ? rawId.trim() : "";
+  const rawUnitId = (_d = (_c = frontmatter.unit_id) != null ? _c : frontmatter.unitId) != null ? _d : frontmatter["unit-id"];
+  const unitId = typeof rawUnitId === "string" ? rawUnitId.trim() : "";
+  const symbol = typeof frontmatter.symbol === "string" ? frontmatter.symbol.trim() : "";
+  if (!id || !unitId || !symbol) {
+    return null;
+  }
+  const environment = typeof frontmatter.environment === "string" ? frontmatter.environment.trim() : void 0;
+  const language = typeof frontmatter.language === "string" ? frontmatter.language.trim() : void 0;
+  const rawLanguageId = (_f = (_e = frontmatter.language_id) != null ? _e : frontmatter.languageId) != null ? _f : frontmatter["language-id"];
+  const languageId = typeof rawLanguageId === "string" ? rawLanguageId.trim() : void 0;
+  const notes = typeof frontmatter.notes === "string" ? frontmatter.notes.trim() : void 0;
+  const rawStatus = typeof frontmatter.status === "string" ? frontmatter.status.trim() : void 0;
+  const status = rawStatus === "established" || rawStatus === "proposed" || rawStatus === "unresolved" ? rawStatus : void 0;
+  return {
+    id,
+    unitId,
+    symbol,
+    environment: environment || void 0,
+    status,
+    language: language || void 0,
+    languageId: languageId || void 0,
+    notes: notes || void 0,
+    path
+  };
+}
 function parsePhonologicalUnit(frontmatter, path) {
   var _a, _b, _c, _d;
   const type = typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
@@ -1351,6 +1384,13 @@ var PhonologyInventory = class {
     this.app = app;
     this.all = [];
     this.byId = /* @__PURE__ */ new Map();
+    // Realizations are kept in their own collection because they are evidence
+    // about how canonical units are expressed, not canonical units themselves.
+    this.realizations = [];
+    // Stable realization IDs support direct lookup, while the unit index lets
+    // callers ask which realizations belong to a particular canonical unit.
+    this.realizationsById = /* @__PURE__ */ new Map();
+    this.realizationsByUnitId = /* @__PURE__ */ new Map();
   }
   /**
    * Remove every currently loaded unit.
@@ -1361,6 +1401,9 @@ var PhonologyInventory = class {
   clear() {
     this.all = [];
     this.byId.clear();
+    this.realizations = [];
+    this.realizationsById.clear();
+    this.realizationsByUnitId.clear();
   }
   /**
    * Return a copy of the loaded inventory rather than exposing the mutable
@@ -1368,6 +1411,47 @@ var PhonologyInventory = class {
    */
   allUnits() {
     return this.all.slice();
+  }
+  /**
+   * Return a copy of every loaded realization.
+   */
+  allRealizations() {
+    return this.realizations.slice();
+  }
+  /**
+   * Find realizations by their own stable ID.
+   *
+   * Optional language filters mirror lookupId() so realization IDs can remain
+   * local to a language when multiple active languages are loaded together.
+   */
+  lookupRealizationId(id, languageId, language) {
+    var _a;
+    const normalized = id.trim().toLowerCase();
+    if (!normalized) return [];
+    const matches = (_a = this.realizationsById.get(normalized)) != null ? _a : [];
+    return matches.filter((realization) => {
+      if (languageId && realization.languageId !== languageId) return false;
+      if (language && realization.language !== language) return false;
+      return true;
+    });
+  }
+  /**
+   * Find every realization associated with one canonical phonological unit.
+   *
+   * This is the important relationship lookup for the realization layer:
+   * callers can begin with a canonical unit and discover its documented
+   * realized forms without treating those forms as canonical units themselves.
+   */
+  lookupRealizationsForUnit(unitId, languageId, language) {
+    var _a;
+    const normalized = unitId.trim().toLowerCase();
+    if (!normalized) return [];
+    const matches = (_a = this.realizationsByUnitId.get(normalized)) != null ? _a : [];
+    return matches.filter((realization) => {
+      if (languageId && realization.languageId !== languageId) return false;
+      if (language && realization.language !== language) return false;
+      return true;
+    });
   }
   /**
    * Find units by their stable ID.
@@ -1417,20 +1501,38 @@ var PhonologyInventory = class {
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
         const unit = this.readUnit(file);
-        if (!unit) continue;
-        if (source.language && unit.language && unit.language !== source.language) {
+        if (unit) {
+          if (source.language && unit.language && unit.language !== source.language) {
+            continue;
+          }
+          if (source.languageId && unit.languageId && unit.languageId !== source.languageId) {
+            continue;
+          }
+          if (!unit.language && source.language) {
+            unit.language = source.language;
+          }
+          if (!unit.languageId && source.languageId) {
+            unit.languageId = source.languageId;
+          }
+          this.addUnit(unit);
+          count++;
           continue;
         }
-        if (source.languageId && unit.languageId && unit.languageId !== source.languageId) {
+        const realization = this.readRealization(file);
+        if (!realization) continue;
+        if (source.language && realization.language && realization.language !== source.language) {
           continue;
         }
-        if (!unit.language && source.language) {
-          unit.language = source.language;
+        if (source.languageId && realization.languageId && realization.languageId !== source.languageId) {
+          continue;
         }
-        if (!unit.languageId && source.languageId) {
-          unit.languageId = source.languageId;
+        if (!realization.language && source.language) {
+          realization.language = source.language;
         }
-        this.addUnit(unit);
+        if (!realization.languageId && source.languageId) {
+          realization.languageId = source.languageId;
+        }
+        this.addRealization(realization);
         count++;
       }
     }
@@ -1467,6 +1569,19 @@ var PhonologyInventory = class {
     return parsePhonologicalUnit(frontmatter, file.path);
   }
   /**
+   * Parse one Markdown file as a phonological realization.
+   *
+   * Reading remains separate from indexing so parsing can later support other
+   * storage representations without changing how the inventory is queried.
+   */
+  readRealization(file) {
+    var _a;
+    const cache = this.app.metadataCache.getFileCache(file);
+    if (!cache) return null;
+    const frontmatter = (_a = cache.frontmatter) != null ? _a : {};
+    return parsePhonologicalRealization(frontmatter, file.path);
+  }
+  /**
    * Add one validated unit to both the complete inventory and the stable-ID
    * lookup index.
    */
@@ -1477,6 +1592,25 @@ var PhonologyInventory = class {
     const existing = (_a = this.byId.get(key)) != null ? _a : [];
     existing.push(unit);
     this.byId.set(key, existing);
+  }
+  /**
+   * Add one validated realization to its complete collection and both lookup
+   * indexes.
+   *
+   * One index answers "which realization has this ID?" while the other answers
+   * the more linguistically useful "how can this canonical unit be realized?"
+   */
+  addRealization(realization) {
+    var _a, _b;
+    this.realizations.push(realization);
+    const idKey = realization.id.trim().toLowerCase();
+    const byId = (_a = this.realizationsById.get(idKey)) != null ? _a : [];
+    byId.push(realization);
+    this.realizationsById.set(idKey, byId);
+    const unitKey = realization.unitId.trim().toLowerCase();
+    const byUnit = (_b = this.realizationsByUnitId.get(unitKey)) != null ? _b : [];
+    byUnit.push(realization);
+    this.realizationsByUnitId.set(unitKey, byUnit);
   }
 };
 
