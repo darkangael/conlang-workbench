@@ -368,28 +368,28 @@ For each area:
 
 | Area | Status | Priority | Notes |
 | --- | --- | --- | --- |
-| Language identity and profiles | Planned | Foundation | Language identity must be distinct from plugin configuration; stable identity and relationships must remain possible |
+| Language identity and profiles | Supported | Foundation | Basic operative Language Profile support establishes language identity separately from plugin configuration; richer relationships remain future work |
 | Guided language creation and proposal workflow | Planned | Early | Generation should offer explainable proposals, scoped regeneration, modification, and explicit human acceptance rather than silently establishing language data |
 | Naming traditions and name generation | Planned | Early | Naming systems should support generated proposals, multiple simultaneous or historical traditions, cultural scope, revision, revival, and stable previously established names |
-| Lexicon and lexical senses | Partial | Foundation | Existing dictionary and lookup provide a strong base; richer sense representation is needed |
+| Lexicon and lexical senses | Supported | Foundation | Basic structured lexical senses and sense-aware English lookup are implemented while simple dictionary entries remain supported |
 | Phonetics and phonology | Planned | Early | Language-level inventories, realization, allophony, and unresolved analyses are not yet represented |
 | Phonotactics and prosody | Planned | Early | Documentation must precede optional machine validation; spoken-language assumptions must not be universal |
 | Orthography and writing systems | Planned | Early | Must distinguish lexical identity, native orthography, romanization, transliteration, and transcription |
-| Morphology | Partial | Foundation | Existing affixational inflection engine is useful but must not define the limits of morphology |
+| Morphology | Partial | Foundation | Morpheme Inventory and existing inflection engine provide an operative foundation; broader morphological processes and analysis remain future work |
 | Morphophonology | Planned | Early | Architecture must permit morphology and phonology to interact without forcing all processes into `strip` / `add` rules |
 | Syntax | Planned | Early | Construction-oriented documentation is needed; universal English-shaped sentence models should be avoided |
-| Semantics | Partial | Early | Existing definitions and multi-candidate lookup are useful; structured senses and semantic relationships remain needed |
+| Semantics | Partial | Early | Existing definitions, structured lexical senses, and sense-aware lookup provide a useful base; broader semantic relationships and culturally specific semantic organization remain needed |
 | Pragmatics and discourse | Planned | Later | Primarily descriptive initially; must permit contextual, discourse, and multimodal information |
 | Sociolinguistics and register | Planned | Later | Variation must be treated as legitimate language data rather than automatically as inconsistency |
 | Semantic and cultural domains | Planned | Later | Creator-defined domains should support culturally specific conceptual organization without imposing a universal taxonomy |
-| Linguistic examples | Planned | Foundation | A reusable internal example model is needed before glossing, texts, and evidence can share examples cleanly |
-| Interlinear glossing | Planned | Early | Leipzig-informed representation with Ling Gloss interoperability; external syntax should not become the internal model |
+| Linguistic examples | Supported | Foundation | Standalone linguistic examples with optional analysis tiers, browsing, search, and source-note navigation are implemented |
+| Interlinear glossing | Planned | Early | Leipzig-informed representation can build upon the internal linguistic-example model; external syntax should not become the internal model |
 | Connected texts and corpora | Planned | Later | Markdown texts should remain first-class evidence; corpus organization need not require a separate database |
 | Historical development | Planned | Later | Must distinguish descent, borrowing, reconstruction, cognacy, synchronic derivation, and historical processes |
 | Language families and varieties | Planned | Later | Typed relationships are needed; family trees should be generated views rather than the canonical relationship model |
 | Validation and completeness | Planned | Later | Must distinguish invalid, inconsistent, exceptional, incomplete, absent, unresolved, predicted, and attested data |
 | Publication and export | Planned | Later | Canonical Markdown should remain separate from presentation; specialist publishing tools should not be unnecessarily reimplemented |
-| External-format interoperability | Planned | Foundation | Architecture must support preservation, provenance, loss awareness, and eventual round-trip adapters without making external syntax canonical |
+| External-format interoperability | Planned | Foundation | Architectural requirements established; adapters translate between Workbench's canonical models and external representations, with import and export treated as independent capabilities; implementation deliberately deferred until needed |
 
 ---
 
@@ -605,7 +605,7 @@ and prosodic representation and should therefore remain a later-use feature.
 
 ## 1. Language Identity and Profiles
 
-**Status:** Planned  
+**Status:** Supported
 **Priority:** Foundation
 
 ### What needs to be representable
@@ -629,50 +629,84 @@ family, has dialects, or possesses a reconstructed history.
 
 ### Current support
 
-The inherited plugin already has a `LanguageConfig` concept and supports
-multiple configured languages.
+Conlang Workbench now provides a basic Language Profile model distinct from
+plugin configuration.
 
-Current configuration includes information such as:
+The current profile can represent:
 
-- language display name
-- dictionary folder
-- cypher sheets
-- hover behavior
-- inflection rules
+- a stable language identifier;
+- language name;
+- autonym;
+- alternate names;
+- status;
+- modality;
+- documentation language.
 
-This provides a useful technical distinction between languages, but it is
-primarily plugin configuration rather than a descriptive Language Profile.
+Workbench language configuration remains responsible for operational behavior
+such as:
 
-### Gap
+- dictionary folder;
+- morpheme folder;
+- linguistic-example folder;
+- Language Profile location;
+- active and primary language selection;
+- hover behavior;
+- inflection rules;
+- other plugin-specific settings.
 
-Conlang Workbench currently lacks a canonical Markdown document representing
-the language itself.
+This establishes the architectural distinction between:
 
-The distinction established in the data model must be preserved:
+- the **Language Profile**, which describes the language; and
+- **plugin settings**, which describe how Workbench operates upon that
+  language.
 
-- the **Language Profile** describes the language
-- **plugin settings** describe Workbench behavior
+The current implementation is intentionally small. It establishes language
+identity without requiring the full future relationship or historical model.
 
-Some inherited language configuration may eventually move into or be derived
-from the Language Profile, while operational preferences should remain in
-settings.
+### Foundation outcome
 
-### Initial requirement
+The initial Foundation requirement has been met.
 
-Implement recognition of a minimal Language Profile without requiring the
-entire future linguistic schema.
+Workbench now has a language-level identity model that can grow independently
+of operational plugin configuration.
 
-A minimal profile should be sufficient to establish a language identity and
-associate language documents with it.
+The profile's stable identifier allows Workbench data to refer to a language
+without requiring the language's human-readable name to function as its
+identity.
+
+The architecture also leaves room for richer relationships among languages,
+historical stages, dialects, and varieties without requiring those
+relationships to be implemented as part of the initial Foundation.
+
+### Remaining development
+
+The current Language Profile does not yet provide the richer relationship
+model described elsewhere in this audit.
+
+Future development may add support for:
+
+- language families;
+- parent or ancestral languages;
+- historical stages;
+- dialect and variety relationships;
+- typed relationships among languages;
+- richer modality documentation;
+- inheritance or shared documentation where appropriate.
+
+These are extensions of the established Language Profile foundation rather
+than prerequisites for basic language identity.
 
 ### Open questions
 
-- How should the Workbench locate Language Profiles?
-- Should `language:` use a stable identifier, display name, or both?
-- How should renamed languages preserve relationships?
-- How should dialects and historical stages relate to a parent profile?
-- Which current `LanguageConfig` properties describe the language itself,
-  and which are purely application settings?
+- Which additional descriptive properties belong directly in the Language
+  Profile?
+- How should dialects and historical stages relate to a broader or ancestral
+  profile?
+- Which relationships should receive typed structured representation?
+- When should a variety receive its own Language Profile rather than being
+  documented within another profile?
+- How should future relationship and inheritance mechanisms remain readable
+  in ordinary Markdown?
 
 ---
 
@@ -703,44 +737,84 @@ Not every entry requires every field.
 
 ### Current support
 
-The inherited dictionary model already represents useful lexical information,
+Conlang Workbench provides a functional lexicon built upon Markdown dictionary
+entries.
+
+Dictionary entries can currently represent useful lexical information
 including:
 
-- conlang headword
-- English definition
-- source file path
-- part of speech
-- IPA
-- etymology
-- notes
-- language
-- proper-noun category
-- aliases
-- declared forms
+- conlang headword or lemma;
+- concise definition or gloss;
+- part of speech;
+- IPA;
+- etymology;
+- notes;
+- language;
+- aliases;
+- declared forms;
+- inflection behavior;
+- source-file identity.
 
-The dictionary also supports English-direction lookup, phrase entries, and
-multiple dictionary entries sharing an English meaning.
+Workbench accepts both its inherited `word` / `definition` conventions and
+compatible `lemma` / `gloss` metadata, allowing existing language
+documentation to participate without requiring unnecessary migration.
 
-### Gap
+The dictionary supports:
 
-The current `definition` remains fundamentally a single string.
+- conlang-to-documentation-language lookup;
+- English-direction lookup;
+- phrase entries;
+- multiple entries sharing a lookup meaning;
+- inflected-form recognition;
+- multiple active languages;
+- language-specific dictionary loading.
 
-This is adequate for simple entries but insufficient for robust polysemy,
-sense-specific examples, register, semantic domains, or sense-specific
-relationships.
+### Structured lexical senses
 
-The current model also reflects its origins as a dictionary/lookup plugin
-rather than a complete lexical documentation system.
+Conlang Workbench now supports structured lexical senses documented within
+dictionary-entry bodies.
 
-### Initial requirement
+A lexical sense may currently provide information such as:
 
-Preserve compatibility with simple dictionary entries.
+- a stable or explicit sense identifier;
+- a concise gloss;
+- a fuller definition;
+- additional lookup terms.
 
-Do not require migration to rich lexical senses merely to use Conlang
-Workbench.
+Structured sense information is indexed for English-direction lookup.
 
-Design future sense representation so that a simple `gloss` or `definition`
-can coexist with richer sense documentation.
+Workbench can therefore return not only the lexical entry that matched a
+lookup term, but also the particular structured sense responsible for that
+match.
+
+This establishes a basic distinction between:
+
+    lexical entry
+        ↓
+    one or more lexical senses
+        ↓
+    sense-aware lookup
+
+rather than requiring every meaning associated with a lexeme to be collapsed
+into one flat definition string.
+
+Simple dictionary entries remain valid. A creator does not need to define
+structured senses merely to add or use a word.
+
+### Foundation outcome
+
+The initial Foundation requirement for lexical senses has been met.
+
+Workbench now has an operative model in which:
+
+- simple lexical entries remain usable;
+- richer structured senses can coexist with them;
+- individual senses can contribute their own lookup terms;
+- lookup can preserve which sense produced a match.
+
+This provides a foundation for later sense-specific examples, semantic
+relationships, register, domains, historical development, and other richer
+lexical documentation without requiring those systems to be implemented now.
 
 ### Lookup Coverage and Quick Lexical Development
 
@@ -762,10 +836,8 @@ clear.
 
 For example:
 
-```text
-Lexical coverage: 8 of 11 source tokens resolved
-Coverage: 73%
-```
+    Lexical coverage: 8 of 11 source tokens resolved
+    Coverage: 73%
 
 Coverage should describe what the Workbench actually knows from the documented
 language. It should not count cypher output, generated guesses, or other
@@ -793,28 +865,54 @@ Generated suggestions remain proposals.
 
 Quick-add should therefore shorten the route from:
 
-```text
-unresolved concept
-        ↓
-lexical development
-        ↓
-accepted lexical entry
-        ↓
-lookup reruns with new documented data
-```
+    unresolved concept
+            ↓
+    lexical development
+            ↓
+    accepted lexical entry
+            ↓
+    lookup reruns with new documented data
 
 without creating a second simplified lexicon model that bypasses the canonical
 dictionary-entry structure.
 
+### Remaining development
+
+The current lexical-sense model is deliberately small.
+
+Important future capabilities may include:
+
+- sense-specific examples;
+- register and usage restrictions;
+- semantic domains;
+- semantic relationships among senses;
+- richer sense notes;
+- historical relationships among senses;
+- provenance and borrowing information;
+- improved lexical-coverage reporting;
+- quick creation of lexical entries from unresolved lookup items.
+
+Dictionary loading also needs better diagnostics for entries that cannot be
+loaded because of malformed metadata, language mismatch, or other structural
+problems.
+
+These are extensions of the existing lexical foundation rather than reasons to
+replace the current model.
+
 ### Open questions
 
-- What is the minimum structured representation of a lexical sense?
-- Should senses live entirely in Markdown body sections?
-- How should the plugin assign stable identities to individual senses?
-- How should English-direction lookup behave when several senses or lexemes
-  share the same translation?
+- How much additional structure should an individual lexical sense acquire
+  before prose or linked documents become preferable?
+- How should stable sense identities behave when senses are reordered,
+  divided, combined, or substantially revised?
+- How should semantic relationships connect individual senses, whole lexemes,
+  or both?
 - How should semantic domains be represented without imposing a universal
   ontology?
+- How should provenance distinguish dictionary ownership from donor language
+  or historical source?
+- How should quick lexical creation reuse the canonical dictionary-entry model
+  without creating a second simplified representation?
 
 ---
 
@@ -871,27 +969,82 @@ It does not provide a general model for:
 - full paradigms
 - context-conditioned allomorphy
 
-### Initial requirement
+### Current Foundation
 
-Preserve the existing inflection engine as a useful simple mechanism.
+Conlang Workbench now has two complementary pieces of operative morphology
+support:
 
-Do **not** generalize the existing prefix/suffix rule structure into the
-definition of morphology for Conlang Workbench.
+1. the inherited inflection engine; and
+2. the Morpheme Inventory.
 
-The broader architecture must leave room for other morphological systems.
+The inflection engine remains useful for relatively simple productive
+prefix and suffix rules. It supports:
 
-A future general morphology model should distinguish among:
+- reverse recognition of derived inflected forms;
+- forward generation;
+- part-of-speech filtering;
+- manually declared forms;
+- irregular forms overriding generated forms of the same category.
+
+The Morpheme Inventory provides a separate documentation model for reusable
+morphological material.
+
+Morpheme notes can currently represent information including:
+
+- form;
+- meaning or grammatical function;
+- morpheme type;
+- language;
+- distribution;
+- notes;
+- source-note identity.
+
+The inventory can be browsed, searched, and filtered by morpheme type and
+distribution.
+
+Morphemes remain distinct from lexical entries. A documented morpheme does
+not automatically become an independently usable dictionary word.
+
+This separation is important because the inventory documents linguistic
+material, while the inflection engine performs one particular kind of
+machine-applicable morphological operation.
+
+### Foundation outcome
+
+The initial Foundation requirement for morphology has been met.
+
+Workbench no longer relies upon the inherited prefix/suffix inflection engine
+as its only representation of morphology.
+
+The architecture now distinguishes between:
+
+- documented morphemes and their linguistic functions;
+- lexical entries;
+- simple productive inflection rules;
+- future morphological processes and analyses.
+
+The current implementation deliberately does not claim that every documented
+morpheme is productive or machine-generatable.
+
+Likewise, the existence of a reusable form in the Morpheme Inventory does not
+by itself establish how that form participates in word formation.
+
+This preserves the audit's governing principle that documentation may precede
+automation.
+
+### Broader morphology model
+
+Future morphology development should continue to distinguish among:
 
 - **morpheme or function** — the linguistic meaning or grammatical function
   being represented;
 - **realization** — how that morpheme or function appears in a particular form;
 - **process** — how the resulting form is produced or related to other forms.
 
-Concatenation should therefore be treated as one possible morphological process
-rather than as the definition of morphology itself.
+Concatenation should therefore remain one possible morphological process
+rather than becoming the definition of morphology itself.
 
-This permits Workbench to begin with straightforward roots, prefixes, suffixes,
-compounds, and other concatenative structures while leaving room for:
+This leaves room for:
 
 - infixation;
 - circumfixation;
@@ -906,35 +1059,34 @@ compounds, and other concatenative structures while leaving room for:
 
 The same architecture should eventually support both directions of work:
 
-```text
-morphemes / functions
-        ↓
-Word Builder
-        ↓
-possible or accepted form
-```
+    morphemes / functions
+            ↓
+       Word Builder
+            ↓
+    possible or accepted form
 
 and:
 
-```text
-attested or existing form
-        ↓
-Word Analyzer
-        ↓
-possible morphological analysis
-```
+    attested or existing form
+            ↓
+       Word Analyzer
+            ↓
+    possible morphological analysis
 
-Generated or automatically inferred analyses remain proposals until established
-by the user or supported by documentary evidence.
+Generated or automatically inferred analyses remain proposals until
+established by the user or supported by documentary evidence.
 
 ### Morpheme Inventory
 
-Conlang Workbench should provide an explicit inventory for documenting and
-working with morphemes rather than requiring reusable morphological material to
-exist only implicitly inside lexical entries or generation rules.
+The current Morpheme Inventory establishes the first operative version of
+explicit morpheme documentation.
 
-The inventory should be broad enough to represent language-defined units such
-as:
+Its purpose is to make reusable morphological material discoverable without
+requiring that material to exist only inside lexical entries or generation
+rules.
+
+The inventory should remain broad enough to grow toward language-defined units
+such as:
 
 - roots;
 - stems;
@@ -947,23 +1099,18 @@ as:
 - zero realizations where analytically appropriate;
 - other language-defined morpheme or realization types.
 
-These categories should not be treated as a universal closed taxonomy.
+These categories should not become a universal closed taxonomy.
 
-A morpheme may need to document information including:
+Future morpheme documentation may need additional information such as:
 
 - stable identity;
-- form or realizations;
-- meaning or grammatical function;
-- category or type;
-- language or variety;
-- distribution or constraints;
 - alternate realizations or allomorphs;
-- notes;
-- examples;
 - relationships to lexical entries;
 - relationships to other morphemes;
+- examples;
 - provenance or evidence;
-- historical information where known.
+- historical information;
+- productivity or other behavioral status.
 
 The canonical morpheme should remain distinct from any particular surface
 realization when the language requires that distinction.
@@ -971,24 +1118,31 @@ realization when the language requires that distinction.
 For example, several allomorphs may realize the same morpheme, while one
 surface sequence may potentially admit more than one morphological analysis.
 
-The inventory should support browsing, searching, filtering, and reuse during
-word construction and analysis.
+Simple languages should not be forced to populate every possible field. A
+morpheme with a form and meaning should remain useful even when no richer
+analysis has been documented.
 
-Simple languages should not be forced to populate every possible field. A root
-with a form and meaning should remain useful even when no richer analysis has
-been documented.
+### Productivity and evidence
 
-A morpheme should not automatically be treated as a lexical entry.
+The existence of a documented morpheme does not necessarily establish that it
+is synchronically productive.
 
-Some morphemes may be free forms that also function as independent lexemes, but
-others may be bound, grammatical, historical, or otherwise unavailable as
-standalone words.
+Workbench should eventually be able to distinguish cases such as:
 
-The Morpheme Inventory and Lexicon should therefore remain related but distinct.
+- a documented morpheme whose behavior is established;
+- a potentially productive pattern;
+- a candidate analysis;
+- a historical or fossilized element;
+- a form whose morphological status remains unresolved.
 
-A lexical entry may reference one or more morphemes, and a morpheme may link to
-lexical entries in which it occurs, without requiring every morpheme to
-participate directly in word-level translation or dictionary lookup.
+Evidence and analytical status should remain distinguishable from the
+morpheme's identity and meaning.
+
+This is particularly important when existing language documentation contains
+a recurring form but has not yet established whether speakers productively
+apply it as a morphological rule.
+
+Workbench should surface such uncertainty rather than silently resolving it.
 
 ### Word Builder and Word Analyzer
 
@@ -1007,30 +1161,12 @@ The Builder should be able to present:
 - warnings or notices produced by language-defined validation;
 - explanations of why those findings were triggered.
 
-The Builder should remain advisory. A form that conflicts with an ordinary rule
-may still be accepted when the creator deliberately establishes an exception or
-when documentary evidence attests the form.
+The Builder should remain advisory. A form that conflicts with an ordinary
+rule may still be accepted when the creator deliberately establishes an
+exception or when documentary evidence attests the form.
 
 The same underlying information should support a Word Analyzer working in the
 opposite direction.
-
-```text
-documented morphemes / processes
-            ↓
-       Word Builder
-            ↓
-       proposed form
-```
-
-and:
-
-```text
-existing or attested form
-            ↓
-       Word Analyzer
-            ↓
-possible segmentation / analysis
-```
 
 The Analyzer should be able to propose possible:
 
@@ -1048,9 +1184,9 @@ Automatic analysis should not be reduced to substring matching.
 A surface sequence that happens to contain the spelling of a known morpheme is
 not sufficient evidence that the morpheme actually occurs there.
 
-Analysis should instead use the language's documented morphology, realizations,
-phonology, phonotactics, and other relevant constraints where those are
-available.
+Analysis should instead use the language's documented morphology,
+realizations, phonology, phonotactics, and other relevant constraints where
+those are available.
 
 When several analyses remain plausible, Workbench should preserve and display
 that ambiguity rather than silently selecting one.
@@ -1058,70 +1194,283 @@ that ambiguity rather than silently selecting one.
 Generated analyses remain proposals until accepted by the creator or supported
 by documentary evidence.
 
+### Remaining development
+
+The morphology implementation remains Partial because the operative Foundation
+does not yet provide a general morphological analysis or generation system.
+
+Important future work includes:
+
+- richer morpheme relationships;
+- alternate realizations and allomorphy;
+- explicit evidence and productivity status;
+- relationships between morphemes and lexical entries;
+- morphology-aware linguistic examples;
+- nonconcatenative morphological processes;
+- Word Builder;
+- Word Analyzer;
+- interaction with phonology and morphophonology.
+
+These should extend the current Morpheme Inventory rather than forcing all
+morphology into the inherited inflection-rule model.
+
 ### Open questions
 
+- What is the minimum useful representation of a morpheme's realizations or
+  allomorphs?
+- How should productivity, analytical confidence, and evidence be represented
+  without conflating them?
+- How should relationships between morphemes and lexical entries be stored?
 - Should morphology eventually use a general rule engine, paradigm model,
   multiple specialized models, or some combination?
 - How should morphophonology interact with form generation?
 - How should productive rules coexist with explicitly documented forms?
 - How should the Workbench represent morphology that is well documented but
   intentionally not machine-generatable?
+- How should the Word Analyzer distinguish genuine morphological evidence from
+  accidental similarity?
 
 ---
 
 ## 4. Linguistic Examples and Interlinear Glossing
 
-**Status:** Planned  
+**Status:** Supported (linguistic examples) / Planned (interlinear glossing)
 **Priority:** Foundation (examples) / Early (interlinear glossing)
 
 ### What needs to be representable
 
 A linguistic example may contain:
 
-- original language text
-- pronunciation or realization
-- morphological segmentation
-- morpheme-by-morpheme gloss
-- natural translation
-- language or variety
-- source
-- context
-- notes
+- original language text;
+- pronunciation or realization;
+- morphological segmentation;
+- morpheme or literal gloss;
+- natural translation;
+- language or variety;
+- source;
+- context;
+- notes.
 
 Not every example requires every tier.
 
+The representation must preserve the distinction between:
+
+- morphological or literal gloss; and
+- natural translation.
+
+That distinction is essential for languages whose conceptual organization
+differs significantly from the documentation language.
+
 ### Current support
 
-The current plugin contains lookup and gloss-oriented functionality, but it
-does not yet provide the structured example model described by the
-Conlang Workbench data model.
+Conlang Workbench now provides a basic operative linguistic-example model.
 
-### External implementation reference
+Standalone Markdown notes explicitly identified as linguistic examples can
+represent:
 
-The Interlinear Glossing (`ling-gloss`) Obsidian plugin demonstrates an
-existing human-readable Markdown approach to aligned linguistic examples.
+- original language text;
+- pronunciation or realization;
+- morphological segmentation;
+- morpheme or literal gloss;
+- natural translation;
+- language;
+- source;
+- context;
+- notes.
 
-Conlang Workbench should aim for interoperability rather than replacement.
+Not every tier is required. Missing analytical tiers remain absent rather
+than being inferred or generated by the Workbench.
 
-### Initial requirement
+The Examples browser provides:
 
-The Workbench's internal example representation must distinguish linguistic
-meaning from external-format position.
+- browsing of documented examples;
+- search across visible and analytical fields;
+- compact example cards;
+- expandable analytical tiers;
+- navigation back to the canonical source note.
 
-Ling Gloss blocks should eventually be recognizable without requiring users
-to rewrite existing examples.
+Search includes analytical information that may not currently be visible on
+the collapsed card, allowing examples to be found through information such as
+their gloss or context.
 
-Unsupported external directives should be preserved during round-trip editing
-where practical.
+### Internal representation
+
+The internal model describes the linguistic roles of the information rather
+than the positional syntax or directives of any external glossing format.
+
+Conceptually:
+
+```text
+LinguisticExample
+ ├─ text
+ ├─ realization?
+ ├─ segmentation?
+ ├─ gloss?
+ ├─ translation?
+ ├─ language?
+ ├─ source?
+ ├─ context?
+ └─ notes?
+```
+
+This internal representation is canonical for Workbench-owned linguistic
+example data.
+
+External formats should later translate to or from this representation rather
+than determining its structure.
+
+### Foundation outcome
+
+The initial Foundation requirement for linguistic examples has been met.
+
+Workbench now has an internal example representation independent of external
+serialization formats.
+
+This provides the canonical structure upon which later:
+
+- interlinear glossing;
+- embedded examples;
+- connected texts;
+- evidence links;
+- relationships among examples;
+- external-format adapters
+
+can build.
+
+Standalone linguistic-example notes are currently supported.
+
+Embedded examples inside lexical entries or prose documents remain a separate
+future problem. They should eventually be exposed through adapters or parsers
+appropriate to those source structures rather than requiring every example to
+be rewritten as a standalone note.
+
+### Missing analytical tiers
+
+Workbench does not infer missing analytical tiers merely to make an example
+look complete.
+
+For example, a documented example containing only:
+
+```text
+original text
+natural translation
+```
+
+remains a valid example.
+
+Workbench should not manufacture:
+
+```text
+segmentation
+morphological gloss
+pronunciation
+```
+
+unless those analyses are explicitly documented or deliberately generated as
+proposals through a future analytical workflow.
+
+This preserves the distinction between documented linguistic evidence and
+machine-generated interpretation.
+
+### Interlinear glossing
+
+Full interlinear-glossing support remains planned.
+
+The Leipzig Glossing Rules provide useful conventions and terminology for
+interlinear presentation, but Workbench should not assume that every language
+or every example can or should be forced into a single fixed tier structure.
+
+Future interlinear support should therefore build upon the internal
+linguistic-example model rather than replacing it.
+
+The Workbench should eventually be able to distinguish among:
+
+- original text;
+- realization or transcription;
+- segmentation;
+- morpheme-by-morpheme or literal gloss;
+- grammatical annotation;
+- natural translation;
+- additional analytical or documentary information.
+
+The precise visible arrangement may depend upon which tiers actually exist for
+the example.
+
+### External glossing formats
+
+No external glossing format is currently required for the linguistic-example
+Foundation to be operative.
+
+Ling Gloss remains the leading candidate for a future dedicated glossing
+integration, but no Ling Gloss import, export, or round-trip capability is
+currently claimed.
+
+Any future adapter should translate between Workbench's canonical example model
+and the external format.
+
+The external format should not become Workbench's internal data model merely
+because Workbench can exchange information with it.
+
+### Future example relationships
+
+Examples may eventually participate in richer documentary relationships.
+
+Potential relationships include:
+
+- examples illustrating the same lexical item;
+- examples illustrating the same morpheme;
+- examples illustrating the same construction;
+- examples belonging to the same source or connected text;
+- explicitly related examples;
+- variants or contrasting examples.
+
+Workbench may also eventually identify examples that are **possibly related**
+because they share documented lexical items, morphemes, glosses, or other
+evidence.
+
+Such automatically identified relationships should remain suggestions rather
+than established linguistic facts.
+
+The creator should be able to confirm, reject, or leave such relationships
+unresolved.
+
+Machine-suggested relationships and user-established relationships should
+remain distinguishable.
+
+### Remaining development
+
+Important future work includes:
+
+- full interlinear-glossing presentation;
+- embedded-example recognition;
+- links between examples and lexical senses;
+- links between examples and morphemes;
+- construction-level relationships;
+- connected-text integration;
+- explicit and suggested relationships among examples;
+- human-facing example labels or numbering;
+- optional example categories or types;
+- external-format adapters.
+
+These should extend the existing linguistic-example model rather than requiring
+a replacement representation.
 
 ### Open questions
 
-- What constitutes the minimum internal `Example` representation?
-- Should examples be standalone notes, embedded blocks, or both?
-- How should individual examples receive stable identities when embedded?
-- How much Ling Gloss syntax can be recognized without depending directly on
-  Ling Gloss?
-- How should dictionary entries link back to examples in which they occur?
+- What additional analytical tiers should Workbench support without assuming
+  they apply universally?
+- How should embedded examples be identified without requiring intrusive
+  Markdown conventions?
+- How should examples link to lexical senses, morphemes, constructions, or
+  historical evidence?
+- Should human-facing labels such as `12a` remain separate from stable internal
+  example identity?
+- How should related-example suggestions communicate the strength and basis of
+  a proposed relationship?
+- Which example relationships should be explicit metadata and which should be
+  derived views?
+- How should interlinear examples be rendered when only some analytical tiers
+  are present?
 
 ---
 
@@ -2044,249 +2393,261 @@ goal.
 
 ### What needs to be representable
 
-Semantic documentation may need to describe meaning at several levels,
-including:
+Semantic documentation may need to distinguish among:
 
-- lexical meaning
-- multiple senses of a lexeme
-- polysemy
-- homonymy
-- synonymy
-- antonymy
-- hyponymy and hypernymy
-- semantic domains
-- semantic roles
-- grammatical meaning
-- compositional meaning
-- idiomatic or non-compositional meaning
-- metaphor and metonymy
-- semantic restrictions
-- animacy
-- definiteness
-- specificity
-- quantification
-- deixis
-- evidential or epistemic meaning
-- modality
-- semantic change
-- culturally specific concepts
-- lexical gaps
-- distinctions that do not map neatly onto the documentation language
+- lexemes;
+- individual lexical senses;
+- semantic relationships;
+- semantic domains;
+- culturally important conceptual distinctions;
+- literal meaning;
+- contextual meaning;
+- pragmatic interpretation;
+- historical change in meaning.
 
-Not every language needs all of these distinctions represented structurally.
-
-### Structural distinction
-
-Conlang Workbench should distinguish among:
-
-- a concise lookup gloss
-- a fuller definition
-- an individual lexical sense
-- relationships among meanings
-- grammatical meaning
-- culturally specific explanation
-
-A translation equivalent is useful for lookup, but it is not necessarily a
-complete description of meaning.
-
-For example, two lexemes may both have the English lookup gloss `river` while
-differing in what kinds of waterways they can describe, their register,
-cultural associations, grammatical behavior, or other semantic restrictions.
-
-The Workbench must therefore avoid treating translation equivalence as
-semantic identity.
-
-### Reference findings
-
-*The Language Construction Kit* treats lexical creation as more than replacing
-English words with invented forms.
-
-Languages divide conceptual space differently and may:
-
-- combine distinctions English keeps separate
-- distinguish concepts English combines
-- lexicalize culturally important distinctions
-- use metaphor and semantic extension differently
-- develop polysemy through historical relationships
-- lack convenient one-word equivalents for concepts expressed lexically in
-  another language
-
-Rosenfelder also uses translation and text creation as ways to expose missing
-semantic distinctions and lexical gaps.
-
-This supports treating English or another documentation language as a lookup
-and explanatory aid rather than as the semantic structure of the conlang.
+These layers should not be collapsed merely because the documentation language
+uses the same word for several of them.
 
 ### Current support
 
-The inherited dictionary already represents several useful pieces of lexical
-semantics.
+Conlang Workbench now provides a basic operative foundation for lexical
+semantics through structured lexical senses.
 
-These include:
+A dictionary entry may contain multiple structured senses rather than requiring
+all meanings of a lexeme to be collapsed into a single definition.
 
-- a `definition` string
-- English-direction lookup
-- multiple dictionary entries matching the same English input
-- multiple candidate entries surfaced during gloss lookup
-- phrase entries
-- notes
-- etymological information
+Individual senses can currently provide information such as:
 
-The gloss system deliberately treats translation as lookup rather than
-automatic translation.
+- a stable or explicit sense identifier;
+- a concise gloss;
+- a fuller definition;
+- additional lookup terms.
 
-When several entries match an English word or phrase, the system can preserve
-those candidates rather than silently claiming that one is the uniquely
-correct translation.
+Structured sense information participates in English-direction lookup.
 
-This is an important semantic foundation.
+Workbench can therefore preserve not only which lexical entry matched a lookup
+term, but also which documented sense produced that match.
 
-### Gap
+Simple dictionary entries remain supported. A creator does not need to create
+structured senses when a single definition adequately describes the lexical
+entry.
 
-The current `definition` model remains fundamentally flat.
+This provides a useful semantic foundation while preserving a gradual path from
+simple lexical documentation to richer analysis.
 
-It does not adequately represent:
+### Lexeme and sense distinction
 
-- multiple separately documented senses of one lexeme
-- sense-specific examples
-- sense-specific register
-- semantic relationships among senses or lexemes
-- semantic domains
-- selectional or usage restrictions
-- lexical hierarchies
-- grammatical semantics
-- culturally specific conceptual explanations
-- semantic change over time
+Workbench should continue to distinguish the lexical entry from the meanings
+associated with it.
 
-English-direction lookup can identify candidate entries, but it cannot by
-itself determine which meaning is appropriate in context.
+Conceptually:
 
-### Initial requirement
+```text
+lexeme
+  ├─ sense A
+  ├─ sense B
+  └─ sense C
+```
 
-Preserve the current simple definition/gloss workflow.
+This distinction matters because different senses of the same form may have
+different:
 
-A creator should not need to build a formal semantic network merely to add a
-word to the dictionary.
+- glosses;
+- definitions;
+- lookup terms;
+- examples;
+- semantic relationships;
+- registers;
+- domains;
+- histories;
+- usage restrictions.
 
-Conlang Workbench should eventually allow richer lexical senses to coexist
-with the concise gloss used for indexes and lookup.
-
-A richer sense should be capable of documenting information such as:
-
-- definition
-- concise gloss
-- usage restrictions
-- register
-- semantic domain
-- examples
-- notes
-- relationships to other senses
-
-without requiring every sense to contain every field.
-
-### Translation and lookup
-
-Conlang Workbench should continue to treat translation cautiously.
-
-Dictionary lookup may provide:
-
-- exact lexical matches
-- multiple possible senses
-- phrase matches
-- inflected matches
-- approximate or fallback results
-
-These should remain distinguishable.
-
-The Workbench should not silently convert dictionary lookup into claims of
-grammatically and semantically correct translation.
-
-A successful word-by-word lookup does not establish that the resulting
-sentence has the intended meaning.
+Only the first group of these properties is currently represented in the
+structured sense model. The architecture should permit richer sense-specific
+information to be added later without requiring the lexical model to be
+replaced.
 
 ### Semantic relationships
 
-The architecture should leave room for typed semantic relationships such as:
+Broader semantic relationships remain future work.
 
-- synonym of
-- antonym of
-- broader than
-- narrower than
-- related sense
-- metaphorical extension of
-- metonymic extension of
-- semantic descendant of
+Workbench should eventually be able to document relationships such as:
 
-These relationships should remain optional.
+- synonymy;
+- antonymy;
+- hypernymy;
+- hyponymy;
+- meronymy;
+- holonymy;
+- metaphorical extension;
+- semantic derivation;
+- culturally specific lexical relationships.
 
-A conlanger may prefer prose explanation when a formal semantic relationship
-would oversimplify the language.
+These relationships may connect:
 
-### Semantic and cultural domains
+- whole lexemes;
+- individual senses;
+- semantic domains;
+- culturally defined concepts.
 
-Semantic domains may be useful for organization, discovery, and completeness
+The system should not assume that every relationship belongs at the whole-word
+level.
+
+For example, two lexemes may overlap in one sense while differing substantially
+in others.
+
+Semantic relationships should therefore be capable of referring to the
+appropriate semantic level when that distinction matters.
+
+### Semantic domains
+
+Workbench should eventually support creator-defined semantic domains.
+
+Possible domains might include:
+
+- kinship;
+- water;
+- ritual;
+- movement;
+- social hierarchy;
+- color;
+- emotion;
+- navigation;
+- agriculture;
+- spiritual concepts.
+
+These are examples rather than a universal taxonomy.
+
+Languages may organize meaning according to conceptual divisions that do not
+align cleanly with categories familiar from English or other documentation
+languages.
+
+Workbench should therefore allow creators to establish the domains that are
+useful for their own languages rather than requiring every language to conform
+to one predefined semantic ontology.
+
+Broader cultural-domain organization is addressed separately in
+**Semantic and Cultural Domains**.
+
+### Literal meaning and natural translation
+
+Workbench should preserve distinctions between literal or morphological meaning
+and natural translation.
+
+A form or expression may have a documented internal organization that differs
+substantially from the most natural translation into the documentation
+language.
+
+For example:
+
+```text
+documented internal meaning
+        ↓
+language-specific conceptual organization
+        ↓
+natural translation
+```
+
+The natural translation should not overwrite or replace the internal semantic
 analysis.
 
-However, Conlang Workbench should not impose a universal domain hierarchy.
+This distinction is already reflected in the linguistic-example model, where
+`gloss` and `translation` are separate analytical roles.
 
-A language may define culturally important domains that do not correspond
-cleanly to familiar English categories.
+Future semantic tooling should preserve the same principle.
 
-The creator should therefore be able to define and organize language-specific
-domains.
+### Cultural and relational meaning
 
-Detailed cultural-domain modeling is audited separately under Semantic and
-Cultural Domains.
+Semantic structure should not assume that meanings are best described as
+direct substitutions for documentation-language words.
 
-### Relationship to grammar
+A language may organize concepts relationally, spatially, culturally,
+historically, or according to distinctions that do not have a concise
+documentation-language equivalent.
 
-Meaning may be encoded through:
+Workbench should permit those meanings to be documented directly.
 
-- lexical choice
-- morphology
-- syntax
-- prosody
-- discourse
-- context
-- combinations of these
+A concise gloss may remain useful for lookup and navigation, but it should not
+be treated as the complete semantic definition when richer documentation
+exists.
 
-Semantic documentation should therefore be able to reference grammatical
-constructions and morphological categories without duplicating their
-canonical descriptions.
+This is especially important for culturally significant lexical items whose
+meaning depends upon relationships among people, places, actions, social roles,
+environmental features, or other language-specific concepts.
 
-### Later capabilities
+### Translation assistance
 
-Possible later capabilities include:
+Future translation assistance should use documented semantic information to
+help determine whether a proposed expression actually fits the intended
+meaning.
 
-- structured lexical senses
-- sense-aware dictionary lookup
-- semantic-domain browsing
-- semantic relationship graphs
-- synonym and antonym discovery
-- lexical hierarchy browsing
-- sense-specific examples
-- context-assisted sense selection
-- detection of potentially missing lexical distinctions
-- historical semantic-development links
-- semantic search across the lexicon
-- dictionary export with numbered senses
+The goal should not merely be:
 
-These tools should assist analysis rather than silently determine meaning.
+```text
+documentation-language word
+        ↓
+nearest conlang word
+```
+
+A richer workflow may instead consider:
+
+```text
+intended meaning
+        ↓
+candidate lexical senses
+        ↓
+grammatical and conceptual fit
+        ↓
+language-specific expression
+        ↓
+back-translation or explanation
+```
+
+When several senses or expressions are plausible, Workbench should preserve
+that ambiguity rather than silently selecting one.
+
+Machine-generated semantic interpretations remain proposals unless established
+by the creator or supported by documented evidence.
+
+### Remaining development
+
+The semantic implementation remains Partial.
+
+Structured lexical senses establish an operative lexical-semantic foundation,
+but broader semantic modeling remains future work.
+
+Important future capabilities may include:
+
+- richer sense-specific metadata;
+- sense-specific examples;
+- semantic relationships;
+- creator-defined semantic domains;
+- culturally specific conceptual relationships;
+- register and usage restrictions;
+- semantic change over time;
+- links between senses and constructions;
+- links between senses and linguistic examples;
+- ambiguity-aware translation assistance;
+- semantic comparison and diagnostics.
+
+These should extend the existing lexical-sense model rather than replacing it.
 
 ### Open questions
 
-- What is the minimum useful structure for an individual lexical sense?
-- How should stable sense identities be maintained as definitions are edited?
-- Should semantic relationships connect lexemes, individual senses, or both?
-- How should semantic domains be defined without imposing an external
-  ontology?
-- How should lookup distinguish a convenient translation equivalent from a
-  precise semantic match?
-- How much contextual sense selection should the Workbench attempt?
-- How should grammatical meanings such as tense, aspect, evidentiality, case,
-  or number connect to semantic documentation?
-- How should concepts that require substantial cultural explanation appear in
-  dictionary and lookup interfaces?
+- Which semantic relationships should receive explicit structured
+  representation?
+- How should relationships distinguish whole lexemes from individual senses?
+- How should creator-defined semantic domains be represented without imposing
+  a universal ontology?
+- How much semantic information belongs directly in a lexical sense before a
+  linked explanatory document becomes preferable?
+- How should culturally specific concepts be made searchable without reducing
+  them to documentation-language equivalents?
+- How should semantic change over time relate to stable sense identity?
+- How should Workbench distinguish a genuinely broad sense from several related
+  but distinct senses?
+- How should translation assistance expose semantic ambiguity without becoming
+  cumbersome?
 
 ---
 
@@ -5264,434 +5625,428 @@ These should operate upon canonical data rather than replace it.
 **Status:** Planned  
 **Priority:** Foundation
 
-### What needs to be representable
-
-Conlang Workbench may need to coexist with linguistic information created by
-other tools, plugins, conventions, or data formats.
-
-Interoperability may involve:
-
-- recognizing external syntax
-- importing external data
-- exporting Workbench data
-- preserving external data
-- converting between representations
-- round-trip editing
-- linking to externally maintained resources
-
-Different formats require different levels of support.
-
-Conlang Workbench should not assume that interoperability means taking
-ownership of every external format it encounters.
-
 ### Governing principle
 
-Interoperability should preserve information whenever practical.
+Conlang Workbench should remain interoperable with other linguistic and
+conlanging tools without allowing any external format to dictate Workbench's
+internal architecture.
 
-The preferred relationship is:
+Workbench's internal data models are canonical for information owned by
+Workbench.
+
+External formats should be treated as representations that can be translated
+to or from those canonical models.
+
+This distinction allows Workbench to exchange useful linguistic information
+without making another application's serialization format the foundation of
+Workbench's own data model.
+
+### Canonical Translation Boundary
+
+External-format support should operate through translation adapters that map
+between Workbench's canonical models and the representation expected by an
+external tool or format.
+
+Conceptually:
 
 ```text
 external representation
+        ↓ import
+translation adapter
         ↓
-recognized interpretation
+Workbench canonical model
         ↓
-Workbench internal model
-        ↓
-edited linguistic information
-        ↓
-compatible external representation
+translation adapter
+        ↓ export
+external representation
 ```
 
-When the Workbench does not understand part of an external representation,
-it should prefer preserving that information over silently discarding it.
+An external format should not determine the structure of Workbench's canonical
+model merely because Workbench supports exchanging information with it.
 
-### Levels of interoperability
+This is particularly important when the external format:
 
-External formats may receive different levels of support.
+- represents only part of the information Workbench can store;
+- combines concepts that Workbench keeps distinct;
+- requires information that Workbench treats as optional;
+- uses positional or serialization-specific structures;
+- cannot represent uncertainty or unresolved analysis;
+- assumes a particular linguistic theory or workflow.
 
-#### Recognized
+The adapter is responsible for reconciling those representational differences
+as explicitly as possible.
 
-Conlang Workbench knows that the content belongs to an external format and
-avoids damaging it.
+### Import and export are independent capabilities
 
-#### Readable
+Import and export should not be treated as an inseparable pair.
 
-The Workbench can interpret useful portions of the external format.
+An integration may support:
 
-#### Importable
+- import only;
+- export only;
+- both import and export.
 
-External information can be converted into Workbench's internal
-representation.
+Workbench should advertise only the directions that have actually been
+implemented and tested.
 
-#### Exportable
-
-Workbench information can be written in the external format.
-
-#### Round-trip capable
-
-The Workbench can read, edit, and write the external representation while
-preserving supported information and, where practical, unsupported
-information.
-
-Not every external format needs every level.
-
-### Canonical ownership
-
-Interoperability should make clear which representation is canonical.
-
-Possible relationships include:
+For example:
 
 ```text
-Workbench canonical
-    → external export
+Ling Gloss export supported
 ```
+
+would not imply:
 
 ```text
-external canonical
-    → Workbench reads without taking ownership
+Ling Gloss import supported
 ```
 
-or:
+Likewise, supporting both import and export does not by itself imply that
+arbitrary data can make a perfectly lossless round trip through both systems.
+
+Capability descriptions should remain precise about what has actually been
+verified.
+
+### Lossy translation
+
+Not every external representation will be capable of expressing everything in
+a Workbench model, and Workbench may likewise be unable to reconstruct every
+piece of information contained in an external representation.
+
+Lossy conversion is acceptable when the limitation is made visible.
+
+Where a translation cannot represent all source information, the adapter
+should identify that limitation rather than silently:
+
+- discard information;
+- invent missing information;
+- normalize meaningful distinctions away;
+- reinterpret unresolved information as established fact.
+
+Where practical, an import or export operation should be able to report what
+could not be represented.
+
+For example:
 
 ```text
-shared editable representation
-    ↔ Workbench
+Export completed with limitations:
+
+- source format cannot represent example context
+- two unresolved analytical fields were omitted
+- Workbench-specific relationship metadata was not exported
 ```
 
-The Workbench should not silently create two independent canonical copies of
-the same linguistic information.
+The exact reporting mechanism can be designed when a real adapter is
+implemented.
 
-### Flexible Import Mapping
+### Internal semantic roles versus external syntax
 
-Conlang Workbench should eventually support configurable import mapping for
-existing linguistic material whose structure is understandable but does not
-already use Workbench's canonical representation.
+Workbench models should describe what information **means**, not where another
+format expects that information to appear.
 
-A user may possess older dictionaries, root lists, word lists, grammar data, or
-other language documentation in formats such as:
+For example, the linguistic-example model describes roles such as:
 
-- delimited text;
-- Markdown tables;
-- consistently formatted lines;
-- spreadsheets;
-- exported data from another language tool;
-- user-defined textual templates.
+```text
+text
+realization
+segmentation
+gloss
+translation
+context
+source
+notes
+```
 
-Where practical, Workbench should allow the user to describe or map fields such
-as:
+An external adapter may serialize those roles into positional lines,
+directives, markup, JSON properties, or some other representation.
 
-- lemma or form;
-- definition or gloss;
-- lexical category;
-- pronunciation;
-- morpheme type;
-- source;
-- notes;
-- language or variety;
-- other recognizable fields.
+That serialization belongs to the adapter.
 
-Import should provide a preview before canonical data is created or changed.
+The internal model should not be reshaped merely to resemble one external
+format's syntax.
 
-The importer should identify information it cannot map reliably rather than
-silently discarding it.
+The same principle should apply to future interoperability involving:
 
-Where possible, imported material should retain provenance identifying its
-source and import process.
+- lexical entries;
+- lexical senses;
+- morphemes;
+- phonological data;
+- linguistic examples;
+- historical relationships;
+- corpora;
+- other structured language documentation.
 
-Import mapping should convert external structure into the same canonical
-Workbench models used by manually created data rather than maintaining a
-separate simplified import-only representation.
+### Current architectural support
 
-### Generated Relationship Views
+Although no dedicated external-format adapter has yet been implemented,
+several Foundation features now provide canonical internal structures that
+future adapters can target.
 
-Workbench may eventually provide generated visual views of documented
-relationships among linguistic objects.
+These include:
 
-Possible views may include relationships among:
+- Language Profiles;
+- dictionary entries;
+- structured lexical senses;
+- the Morpheme Inventory;
+- linguistic examples.
 
-- morphemes and lexical entries;
-- lexical entries and derived forms;
-- source forms and loanwords;
-- historical forms and descendants;
-- languages and varieties;
-- lexical senses and semantic relationships;
-- linguistic examples and the forms they attest.
+This means future interoperability work can translate external representations
+into established Workbench concepts rather than requiring an external format
+to define those concepts.
 
-These visualizations should be generated from canonical typed relationships.
-
-The graph or diagram itself should not become the only place where those
-relationships are stored.
-
-This follows the same principle already established for language-family trees:
-visual graphs are useful views of linguistic data rather than substitutes for
-the underlying canonical relationships.
-
-### Reference findings
-
-The investigation of existing Obsidian conlang tools identified Interlinear
-Glossing (`ling-gloss`) as an important interoperability target.
-
-Ling Gloss already provides a human-readable Markdown syntax for interlinear
-linguistic examples.
-
-Its existence demonstrates an important architectural principle:
-
-> Conlang Workbench does not need to invent a new external syntax merely
-> because it needs to understand the same linguistic information.
-
-Where an established representation is useful and compatible with the
-Workbench's goals, interoperability may be preferable to replacement.
-
-### Current support
-
-The inherited plugin primarily operates upon its own Markdown dictionary
-conventions and plugin configuration.
-
-It already benefits from ordinary Markdown and YAML rather than storing all
-language information in an opaque proprietary database.
-
-However, there is not yet a general interoperability layer.
-
-The plugin does not currently define:
-
-- levels of external-format support
-- preservation requirements
-- canonical ownership
-- round-trip behavior
-- handling of unsupported external directives
+The linguistic-example implementation is particularly important for future
+interlinear-glossing interoperability because it already distinguishes
+semantic roles such as original text, segmentation, gloss, and natural
+translation independently of any external serialization syntax.
 
 ### Ling Gloss
 
-Ling Gloss is the first explicit interoperability target identified for
-Conlang Workbench.
+Ling Gloss is currently the leading candidate for Conlang Workbench's first
+dedicated external-format adapter.
 
-Relevant syntax includes constructs such as:
+Its interlinear-glossing focus makes it a useful candidate for testing the
+translation-boundary architecture against a real external representation.
 
-```text
-\ex   original/source text
-\gla  aligned level A
-\glb  aligned level B
-\glc  optional third aligned level
-\ft   free translation
-\num  numbering
-\src  source attribution
-```
+A likely first implementation would be export from Workbench linguistic
+examples into a Ling Gloss-compatible representation.
 
-Conlang Workbench should aim to recognize the linguistic roles represented by
-these tiers rather than treating them merely as arbitrary text lines.
+However, no Ling Gloss:
 
-### Ling Gloss preservation
+- import;
+- export;
+- synchronization;
+- round-trip editing
 
-When Conlang Workbench encounters an existing Ling Gloss block, it should
-avoid rewriting or normalizing that block merely because the user opened or
-viewed it.
+capability is currently claimed.
 
-Where practical, round-trip editing should preserve:
+Implementation is intentionally deferred until the integration provides a
+practical benefit.
 
-- supported tiers
-- unsupported directives
-- ordering
-- source information
-- numbering information
-- user-authored content not understood by the Workbench
+This avoids building speculative adapter infrastructure merely to satisfy an
+audit category.
 
-The principle should be:
+When a concrete interoperability need appears, the real target format should
+be used to prove and refine the adapter architecture.
 
-> Understand what we can; preserve what we do not.
+### Foundation outcome
 
-### Internal representation
+The architectural requirement for external-format interoperability has been
+established.
 
-Ling Gloss syntax should not become the canonical internal linguistic model.
-
-For example, the Workbench may internally understand concepts such as:
+Workbench now has a clear governing boundary:
 
 ```text
-Example
-    ├── source text
-    ├── segmentation
-    ├── morpheme gloss
-    ├── additional aligned tier
-    ├── free translation
-    ├── source
-    └── numbering
+Workbench canonical model
+        ↕
+translation adapter
+        ↕
+external representation
 ```
 
-Ling Gloss is one possible serialization of those concepts.
+The Foundation therefore establishes **how interoperability should be built**
+without claiming that a particular external integration already exists.
 
-This separation allows other formats to map to the same underlying
-linguistic information later.
+Implementation remains Planned.
 
-### Lossless and lossy conversion
+The first real adapter should be developed when there is a useful integration
+to build, and that implementation should be used to validate whether the
+proposed translation boundary is sufficient.
 
-Conversions should distinguish between lossless and lossy operations.
+This is preferable to constructing an unused generic framework whose
+abstractions have not yet been tested against a real external format.
 
-A conversion is effectively lossless when all meaningful information needed
-for the intended round trip can be preserved.
+### Future adapter requirements
 
-A conversion is lossy when the destination cannot represent some source
-information.
+When the first external adapter is implemented, it should help establish a
+reusable pattern for later integrations.
 
-Lossy conversion may still be useful, but the Workbench should not silently
-pretend that nothing was lost.
+A future adapter may need to declare capabilities such as:
 
-Where practical, the user should be warned before an editing operation
-discards information.
+- supported import direction;
+- supported export direction;
+- source or target format version;
+- Workbench models it can translate;
+- known representational limitations;
+- whether conversion is expected to be lossless;
+- warnings produced during translation.
 
-### Unknown data
+A conceptual capability model might eventually resemble:
 
-Unknown external data should not automatically be considered invalid.
+```text
+format
+ ├─ can import?
+ ├─ can export?
+ ├─ supported Workbench models
+ └─ known limitations
+```
 
-For example, a future Ling Gloss version or user extension might introduce a
-directive that Conlang Workbench does not recognize.
+This is a design requirement rather than a request to implement that
+abstraction before it is needed.
 
-If possible, the Workbench should preserve that directive verbatim during
-editing.
-
-This is especially important for forward compatibility.
-
-### External files and linked resources
-
-Some useful resources may remain external to the vault or be maintained by
-specialized software.
-
-Conlang Workbench may eventually need to reference:
-
-- audio
-- fonts
-- images
-- script charts
-- corpus files
-- linguistic datasets
-- bibliography databases
-- specialized linguistic-tool output
-
-Referencing such resources does not necessarily mean importing them into
-Workbench's canonical data model.
-
-### Specialist tools
-
-Conlang Workbench should prefer interoperability over reimplementation when
-a specialist tool already solves a problem well.
-
-Potential examples include tools for:
-
-- typography
-- font creation
-- desktop publishing
-- audio editing
-- acoustic analysis
-- statistical corpus analysis
-- bibliography management
-- specialized linguistic annotation
-
-The Workbench's responsibility is to preserve enough linguistic structure to
-exchange useful information with such tools where appropriate.
-
-### Markdown interoperability
-
-Ordinary Markdown is itself an important interoperability format.
-
-Workbench-authored documents should remain:
-
-- readable
-- editable
-- searchable
-- linkable
-- reasonably understandable
-
-without requiring the plugin.
-
-Workbench-specific enhancements should therefore avoid making canonical
-language documentation opaque to ordinary Markdown tools.
-
-### YAML interoperability
-
-YAML frontmatter should likewise remain conventional enough for other
-Obsidian tools to inspect and manipulate where practical.
-
-Workbench metadata should avoid unnecessary structures that are difficult for
-Obsidian or common plugins to interpret.
-
-This does not mean reducing the linguistic data model to whatever YAML can
-conveniently express.
-
-Complex linguistic information may remain in Markdown body content or other
-appropriate representations.
-
-### Version tolerance
-
-External formats may evolve.
-
-Interoperability code should therefore avoid assuming that one observed
-version of an external format defines all future valid content.
-
-Where practical, parsers should:
-
-- recognize supported structures
-- preserve unknown structures
-- fail gracefully
-- avoid destructive normalization
-
-### Import provenance
-
-Imported information should retain useful provenance where practical.
-
-The Workbench may need to record:
-
-- source format
-- source file
-- import date
-- conversion notes
-- unresolved conversion issues
-
-Imported material should not falsely appear to have been authored natively in
-Workbench when its origin matters.
-
-### Later capabilities
-
-Possible later capabilities include:
-
-- Ling Gloss import
-- Ling Gloss export
-- Ling Gloss round-trip editing
-- structured dictionary interchange
-- tabular lexicon import/export
-- corpus-format interchange
-- bibliography integration
-- audio-resource linking
-- external linguistic-tool adapters
-- format conversion previews
-- loss reports
-- import provenance
-- extensible format adapters
-
-Support should be added because a format provides real value to conlangers,
-not merely because the format exists.
+The first concrete adapter should determine how much shared infrastructure is
+actually useful.
 
 ### Open questions
 
-- What exact subset of Ling Gloss should the first interoperability
-  implementation support?
-- How should unsupported Ling Gloss directives be preserved during editing?
-- Should external-format adapters share a common interface?
-- How should the Workbench identify which representation is canonical?
-- When should imported data become native Workbench data?
-- How should lossy conversion be communicated to the user?
-- Which dictionary or lexicon interchange formats are worth supporting?
-- How should external format versions be detected?
-- How should external files be referenced when they are outside the vault?
-- Which specialist tools are valuable enough to justify dedicated
-  integration?
+- Which external format will provide enough practical value to justify the
+  first adapter?
+- Should Ling Gloss begin as export-only, or will a real use case justify
+  import as well?
+- What information should an adapter return when a conversion is lossy?
+- How should Workbench preserve external information that has no canonical
+  internal equivalent?
+- When should imported information become canonical Workbench data, and when
+  should it remain an unresolved proposal?
+- How should format versions and changing external specifications be handled?
+- Which adapter capabilities should be visible to the user before they attempt
+  an import or export?
+- How much common adapter infrastructure should exist before more than one real
+  integration has demonstrated the need for it?
 
 ---
 
-# Audit Queue
+## Audit Queue
 
-The initial linguistic coverage audit is complete.
+This queue records the current development sequence suggested by the audit.
 
-Future audit items should be added here when implementation work, user
-feedback, new references, or interoperability research reveals an area that
-requires separate coverage analysis.
+Completion of a Foundation item means that Conlang Workbench has an operative
+architectural base for that area. It does not mean that every capability
+described in the corresponding audit section has been implemented.
+
+### Foundation established
+
+The following Foundation areas now have sufficient operative support to serve
+as bases for later development.
+
+1. **Language identity and profiles**
+   - Basic Language Profile support is implemented.
+   - Language identity is separated from plugin configuration.
+   - Stable language identity can support later relationships, varieties, and
+     historical development.
+   - Richer language relationships remain future work.
+
+2. **Lexicon and lexical senses**
+   - Existing simple dictionary entries remain supported.
+   - Structured lexical senses are implemented.
+   - Sense-specific lookup terms participate in English-direction lookup.
+   - Lookup can preserve which structured sense produced a match.
+   - Richer lexical semantics, provenance, diagnostics, and lexical-development
+     workflows remain future work.
+
+3. **Morphology**
+   - The existing inflection engine remains available for simple productive
+     prefix and suffix behavior.
+   - A separate Morpheme Inventory now provides explicit morpheme
+     documentation.
+   - Documented morphemes are not automatically treated as productive rules.
+   - Broader morphological processes, evidence, productivity, Word Builder,
+     and Word Analyzer remain future work.
+
+4. **Linguistic examples**
+   - A canonical internal linguistic-example model is implemented.
+   - Standalone example notes may contain optional analytical tiers.
+   - Missing tiers remain absent rather than being invented.
+   - Examples can be browsed, searched, expanded for analysis, and opened in
+     their source notes.
+   - Interlinear glossing and embedded-example recognition remain future work.
+
+### Foundation architecture established; implementation deferred
+
+5. **External-format interoperability**
+   - Workbench's internal models are canonical.
+   - External representations should be handled through translation adapters.
+   - Import and export are independent capabilities.
+   - Lossy conversions should identify representational limitations rather
+     than silently discard or invent information.
+   - No external-format adapter is currently implemented.
+   - Ling Gloss is the leading candidate for a first dedicated adapter,
+     probably beginning with export.
+   - Implementation is intentionally deferred until a concrete integration
+     provides practical value.
+
+### Next development phase — Early
+
+With the operative Foundation established, development can proceed into the
+Early-priority areas.
+
+The audit currently identifies the following Early areas:
+
+- guided language creation and proposal workflow;
+- naming traditions and name generation;
+- phonetics and phonology;
+- phonotactics and prosody;
+- orthography and writing systems;
+- morphophonology;
+- syntax;
+- semantics;
+- interlinear glossing.
+
+These areas do not need to be implemented strictly in the order listed above.
+
+Dependencies should guide development where useful.
+
+In particular:
+
+```text
+phonetics and phonology
+        ↓
+phonotactics and prosody
+        ↓
+generation and validation
+
+phonetics and phonology
+        +
+morphology
+        ↓
+morphophonology
+
+linguistic examples
+        +
+morphology
+        +
+syntax
+        ↓
+richer grammatical analysis
+
+linguistic examples
+        ↓
+interlinear glossing
+        ↓
+possible external glossing adapter
+```
+
+Because phonological information can support phonotactics, morphophonology,
+pronunciation-aware generation, rhyme, orthographic relationships, and later
+speech-related tooling, **Phonetics and Phonology is a strong candidate for
+the first major Early implementation**.
+
+That is a dependency-based recommendation rather than a required development
+order.
+
+The next Early feature should still be chosen according to practical value,
+dogfooding needs, and which area provides the most useful foundation for
+subsequent work.
+
+### Continuing cross-cutting work
+
+Some useful improvements do not require promoting an entire audit area into
+active development.
+
+These may be addressed when they become useful or when related code is already
+being touched.
+
+Examples include:
+
+- skipped-entry diagnostics for malformed or mismatched dictionary notes;
+- lexical provenance and loanword metadata;
+- richer morpheme evidence and productivity information;
+- links among lexical senses, morphemes, and linguistic examples;
+- example labels, categories, and relationships;
+- improved lexical-coverage reporting;
+- quick lexical creation from unresolved lookup items.
+
+These should remain incremental improvements rather than blocking progression
+into the Early phase.
 
 ---
 
