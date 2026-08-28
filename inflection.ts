@@ -28,7 +28,7 @@ export interface InflectionMatch {
 export function findInflection(
   word: string,
   dictionary: Dictionary,
-  rules: InflectionRule[] | undefined
+  rules: InflectionRule[] | undefined,
 ): InflectionMatch | null {
   if (!rules || rules.length === 0) return null;
   const lower = word.toLowerCase();
@@ -86,12 +86,15 @@ function effectivePos(entry: {
  */
 function posMatches(
   filter: string | undefined,
-  entry: { partOfSpeech?: string; inflectAs?: string }
+  entry: { partOfSpeech?: string; inflectAs?: string },
 ): boolean {
   if (!filter || filter.trim() === "") return true;
   const entryPos = effectivePos(entry);
   if (entryPos.length === 0) return false;
-  const allowed = filter.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s);
+  const allowed = filter
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s);
   if (allowed.length === 0) return true;
   return allowed.some((a) => entryPos.includes(a));
 }
@@ -147,7 +150,7 @@ export interface GeneratedForm {
  */
 export function generateInflections(
   lemma: DictionaryEntry,
-  rules: InflectionRule[] | undefined
+  rules: InflectionRule[] | undefined,
 ): GeneratedForm[] {
   if (!rules || rules.length === 0) return [];
   const out: GeneratedForm[] = [];
@@ -158,7 +161,7 @@ export function generateInflections(
   // alongside a hardcoded "went". Other categories are unaffected —
   // declaring a plural leaves the genitive rule free to fire.
   const declared = new Set(
-    (lemma.forms ?? []).map((f) => f.label.trim().toLowerCase())
+    (lemma.forms ?? []).map((f) => f.label.trim().toLowerCase()),
   );
 
   for (const rule of rules) {

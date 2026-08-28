@@ -367,7 +367,8 @@ function parseInflectedForms(value) {
   if (Array.isArray(value)) {
     for (const item of value) {
       if (isRecord(item)) pushFromRecord(item);
-      else if (item !== null && item !== void 0) pushFromString(String(item));
+      else if (item !== null && item !== void 0)
+        pushFromString(String(item));
     }
   } else if (isRecord(value)) {
     pushFromRecord(value);
@@ -471,7 +472,10 @@ function matchPhraseAt(words, startIdx, phrases, source) {
     if (!allMatch) continue;
     let cleanGaps = true;
     for (let i = 0; i < wc - 1; i++) {
-      const gap = source.slice(words[startIdx + i].end, words[startIdx + i + 1].start);
+      const gap = source.slice(
+        words[startIdx + i].end,
+        words[startIdx + i + 1].start
+      );
       if (!/^\s+$/.test(gap)) {
         cleanGaps = false;
         break;
@@ -2962,14 +2966,22 @@ function tokeniseEnglishAgainstDictionary(text, dictionary, lang) {
     }
     const conlangDirect = dictionary.lookup(word);
     if (conlangDirect) {
-      out.push({ kind: "dictionary", source: word, candidates: [conlangDirect] });
+      out.push({
+        kind: "dictionary",
+        source: word,
+        candidates: [conlangDirect]
+      });
       i++;
       continue;
     }
     if (lang) {
       const cyphered = applyCypher(word, lang.sheets);
       if (cyphered !== word) {
-        out.push({ kind: "cypher-fallback", source: word, cypherOutput: cyphered });
+        out.push({
+          kind: "cypher-fallback",
+          source: word,
+          cypherOutput: cyphered
+        });
         i++;
         continue;
       }
@@ -2998,7 +3010,9 @@ function renderTransliterationString(tokens) {
       case "inflected":
         if (t.inflection) {
           const sense = firstSense(t.inflection.lemma.definition);
-          out.push(`${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`);
+          out.push(
+            `${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`
+          );
         } else {
           out.push(t.source);
         }

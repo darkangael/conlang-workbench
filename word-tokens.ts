@@ -41,10 +41,7 @@ export function isWordChar(ch: string): boolean {
  */
 export function applyCasing(source: string, target: string): string {
   if (source.length === 0 || target.length === 0) return target;
-  if (
-    source === source.toUpperCase() &&
-    source !== source.toLowerCase()
-  ) {
+  if (source === source.toUpperCase() && source !== source.toLowerCase()) {
     return target.toUpperCase();
   }
   if (
@@ -65,7 +62,6 @@ export function applyCasing(source: string, target: string): string {
 export function firstSense(definition: string): string {
   return definition.split(/[,;]/)[0].trim();
 }
-
 
 /**
  * Default label used when a declared form arrives with no `label:` prefix.
@@ -95,7 +91,7 @@ export const DEFAULT_FORM_LABEL = "variant";
  * dative and one mystery.
  */
 export function parseInflectedForms(
-  value: unknown
+  value: unknown,
 ): { label: string; form: string }[] | undefined {
   const out: { label: string; form: string }[] = [];
 
@@ -145,7 +141,8 @@ export function parseInflectedForms(
   if (Array.isArray(value)) {
     for (const item of value) {
       if (isRecord(item)) pushFromRecord(item);
-      else if (item !== null && item !== undefined) pushFromString(String(item));
+      else if (item !== null && item !== undefined)
+        pushFromString(String(item));
     }
   } else if (isRecord(value)) {
     pushFromRecord(value);

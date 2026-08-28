@@ -59,7 +59,7 @@ export interface GlossToken {
 export function glossEnglishToConlang(
   text: string,
   dictionary: Dictionary,
-  lang: LanguageConfig | null
+  lang: LanguageConfig | null,
 ): GlossToken[] {
   return tokeniseEnglishAgainstDictionary(text, dictionary, lang);
 }
@@ -74,7 +74,7 @@ export function glossEnglishToConlang(
 export function glossConlangToEnglish(
   text: string,
   dictionary: Dictionary,
-  lang: LanguageConfig | null
+  lang: LanguageConfig | null,
 ): GlossToken[] {
   const tokens: GlossToken[] = [];
   const phrases = dictionary.phraseIndex();
@@ -146,7 +146,7 @@ export function glossConlangToEnglish(
 function tokeniseEnglishAgainstDictionary(
   text: string,
   dictionary: Dictionary,
-  lang: LanguageConfig | null
+  lang: LanguageConfig | null,
 ): GlossToken[] {
   const segments: { text: string; isWord: boolean }[] = [];
   const wordRe = new RegExp(WORD_RE.source, "gu");
@@ -208,7 +208,7 @@ function tokeniseEnglishAgainstDictionary(
         // `candidates` list while preserving every sense match separately in
         // `englishMatches`.
         const candidates = Array.from(
-          new Set(englishMatches.map((match) => match.entry))
+          new Set(englishMatches.map((match) => match.entry)),
         );
 
         out.push({
@@ -233,7 +233,7 @@ function tokeniseEnglishAgainstDictionary(
 
     if (englishMatches.length > 0) {
       const candidates = Array.from(
-        new Set(englishMatches.map((match) => match.entry))
+        new Set(englishMatches.map((match) => match.entry)),
       );
 
       out.push({
@@ -251,7 +251,11 @@ function tokeniseEnglishAgainstDictionary(
     // the entry — clearer than pretending we don't know it and cyphering.
     const conlangDirect = dictionary.lookup(word);
     if (conlangDirect) {
-      out.push({ kind: "dictionary", source: word, candidates: [conlangDirect] });
+      out.push({
+        kind: "dictionary",
+        source: word,
+        candidates: [conlangDirect],
+      });
       i++;
       continue;
     }
@@ -260,7 +264,11 @@ function tokeniseEnglishAgainstDictionary(
     if (lang) {
       const cyphered = applyCypher(word, lang.sheets);
       if (cyphered !== word) {
-        out.push({ kind: "cypher-fallback", source: word, cypherOutput: cyphered });
+        out.push({
+          kind: "cypher-fallback",
+          source: word,
+          cypherOutput: cyphered,
+        });
         i++;
         continue;
       }
@@ -296,7 +304,9 @@ export function renderTransliterationString(tokens: GlossToken[]): string {
         if (t.inflection) {
           // For reverse direction: produce gloss-style "lemma.LABEL" form
           const sense = firstSense(t.inflection.lemma.definition);
-          out.push(`${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`);
+          out.push(
+            `${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`,
+          );
         } else {
           out.push(t.source);
         }

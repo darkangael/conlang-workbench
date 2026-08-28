@@ -60,7 +60,7 @@ function normWord(s: string, caseSensitive: boolean): string {
  */
 export function buildPhraseIndex(
   phrases: DictionaryEntry[],
-  caseSensitive = false
+  caseSensitive = false,
 ): PhraseIndex {
   const byFirstWord = new Map<string, IndexedPhrase[]>();
   let size = 0;
@@ -92,7 +92,7 @@ export function buildPhraseIndex(
  */
 export function tokeniseWithPhrases(
   text: string,
-  phrases: PhraseIndex
+  phrases: PhraseIndex,
 ): MatchedToken[] {
   const out: MatchedToken[] = [];
   // Build a word-and-separator stream using the shared Unicode-aware
@@ -159,7 +159,7 @@ function matchPhraseAt(
   words: { text: string; start: number; end: number }[],
   startIdx: number,
   phrases: PhraseIndex,
-  source: string
+  source: string,
 ): { entry: DictionaryEntry; wordCount: number } | null {
   const cs = phrases.caseSensitive;
   const bucket = phrases.byFirstWord.get(normWord(words[startIdx].text, cs));
@@ -186,7 +186,10 @@ function matchPhraseAt(
     // between them, this isn't the phrase "good morning".
     let cleanGaps = true;
     for (let i = 0; i < wc - 1; i++) {
-      const gap = source.slice(words[startIdx + i].end, words[startIdx + i + 1].start);
+      const gap = source.slice(
+        words[startIdx + i].end,
+        words[startIdx + i + 1].start,
+      );
       if (!/^\s+$/.test(gap)) {
         cleanGaps = false;
         break;
@@ -206,7 +209,7 @@ function matchPhraseAt(
  */
 export function matchPhraseAtStart(
   text: string,
-  phrases: PhraseIndex
+  phrases: PhraseIndex,
 ): { entry: DictionaryEntry; matchedText: string } | null {
   const tokens = tokeniseWithPhrases(text, phrases);
   // Find the first non-separator token; if it's a phrase, we have a match.
