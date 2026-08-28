@@ -23,7 +23,7 @@ function isLetter(ch: string | undefined): boolean {
 function contextMatches(
   type: HashType,
   before: string | undefined,
-  after: string | undefined
+  after: string | undefined,
 ): boolean {
   const beforeIsLetter = isLetter(before);
   const afterIsLetter = isLetter(after);
@@ -97,7 +97,7 @@ function preserveCasing(inputSegment: string, output: string): string {
 function findBestMatch(
   text: string,
   index: number,
-  indexed: IndexedSheet
+  indexed: IndexedSheet,
 ): { rule: CypherRule; matched: string } | null {
   const remaining = text.length - index;
   const maxCheck = Math.min(indexed.maxLen, remaining);
@@ -164,7 +164,10 @@ export function applyCypher(text: string, sheets: CypherSheet[]): string {
 // (substitutions can collide). But for the curated dictionary case we
 // can attempt a best-effort reverse by running each sheet's rules backwards.
 // We expose this as a separate function so callers know its limitations.
-export function applyCypherReverse(text: string, sheets: CypherSheet[]): string {
+export function applyCypherReverse(
+  text: string,
+  sheets: CypherSheet[],
+): string {
   // Reverse the sheet order, and within each sheet flip input/output
   const reversedSheets: CypherSheet[] = sheets
     .slice()

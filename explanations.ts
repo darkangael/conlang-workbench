@@ -12,45 +12,43 @@
 
 const EXPLANATIONS: Record<string, string> = {
   // === Nominal categories ===
-  "plural":
+  plural:
     "More than one of something. English: cat → cats. Many languages also mark dual (exactly two) or paucal (a few) as separate categories.",
-  "singular":
+  singular:
     "Exactly one of something. The default 'unmarked' form in many languages, but explicit in others.",
-  "dual":
-    "Exactly two of something. Found in Arabic, Slovene, and older Indo-European. Distinct from plural (3+).",
+  dual: "Exactly two of something. Found in Arabic, Slovene, and older Indo-European. Distinct from plural (3+).",
 
   // === Case markers ===
-  "nominative":
+  nominative:
     "The subject of a sentence — the doer of the action. 'The CAT slept.' In English this case is unmarked.",
-  "accusative":
+  accusative:
     "The direct object — what the action is done to. 'I saw the CAT.' Latin -m, German -n, Finnish -n.",
-  "genitive":
+  genitive:
     "Possession or 'of' relationships. 'the cat's tail' / 'the tail of the cat'. English uses 's, Latin uses -i/-ae/-is.",
-  "dative":
+  dative:
     "The indirect object — usually the recipient. 'I gave the book to the CAT.' Often translated as 'to' or 'for'.",
-  "locative":
+  locative:
     "Location — where something happens. 'in the house', 'at the river'. Finnish, Russian, Latin all have one.",
-  "ablative":
+  ablative:
     "Movement away from, or means by which. 'from the city', 'by sword'. Common in Latin.",
-  "instrumental":
+  instrumental:
     "The tool used to do something. 'with a hammer', 'by train'. Found in Russian, Sanskrit, Finnish.",
-  "vocative":
+  vocative:
     "Direct address — calling out to someone. 'O Caesar!', 'Hey, John!' Marked in Latin, Greek, Czech.",
-  "possessive":
+  possessive:
     "Indicates ownership. English 's (the cat's bowl) or whose-form pronouns (my, your, their).",
 
   // === Verbal categories - tense ===
-  "past":
-    "An action that has already happened. English usually -ed (walked) or irregular (went, ate).",
-  "present":
+  past: "An action that has already happened. English usually -ed (walked) or irregular (went, ate).",
+  present:
     "Happening now, or generally true. English often unmarked, but 3rd person singular takes -s (walks).",
-  "future":
+  future:
     "Will happen later. English uses 'will' as a separate word; other languages affix it (Spanish -ré).",
-  "perfect":
+  perfect:
     "A completed action with present relevance. 'I have eaten.' Distinct from simple past in many languages.",
-  "imperfect":
+  imperfect:
     "Past action that was ongoing or habitual. 'I was walking' / 'I used to walk.' Important in Romance languages.",
-  "pluperfect":
+  pluperfect:
     "An action completed before another past action. 'I HAD eaten before you arrived.'",
 
   // === Verbal categories - aspect ===
@@ -58,21 +56,21 @@ const EXPLANATIONS: Record<string, string> = {
     "The -ing form. Used for ongoing action ('walking') or as an adjective ('the running water').",
   "past participle":
     "The -en/-ed form. Used in perfect tenses ('I have eaten') and as a passive adjective ('the eaten apple').",
-  "gerund":
+  gerund:
     "A verb form used as a noun. 'Swimming is fun.' Looks like -ing in English; distinct from participle in Latin.",
-  "infinitive":
+  infinitive:
     "The base form of the verb, often with 'to'. 'I want TO RUN.' The dictionary lemma in many languages.",
 
   // === Verbal categories - voice and mood ===
-  "passive":
+  passive:
     "The subject receives the action rather than doing it. 'The cat was seen' instead of 'I saw the cat'.",
-  "subjunctive":
+  subjunctive:
     "Used for hypotheticals, wishes, doubts. 'If I WERE rich...' Strong in Romance languages, weakening in English.",
-  "imperative":
+  imperative:
     "A command. 'Run!' Often a distinct verb form in inflected languages.",
-  "causative":
+  causative:
     "Indicates causing someone else to do the action. 'Make her run' / 'have him fix it'. A whole verb form in Japanese/Turkish.",
-  "negation":
+  negation:
     "Marks negative meaning. English 'un-' or 'not'; Finnish has a whole negation verb 'ei'.",
 
   // === Verbal categories - agreement ===
@@ -82,17 +80,17 @@ const EXPLANATIONS: Record<string, string> = {
     "Third person singular — he/she/it. English marks this with -s on present-tense verbs (walks, runs).",
 
   // === Derivational categories ===
-  "agent":
+  agent:
     "A person or thing that performs the action. English -er (teacher, runner). Technically derivation, not inflection.",
-  "comparative":
+  comparative:
     "Indicates 'more' of a quality. English -er (taller). Some languages use a separate word ('more X').",
-  "superlative":
+  superlative:
     "Indicates 'most' of a quality. English -est (tallest). Sometimes formed with 'most' instead.",
-  "diminutive":
+  diminutive:
     "Indicates smallness or affection. Spanish -ito (gatito = kitten), German -chen (Mädchen).",
-  "augmentative":
+  augmentative:
     "Indicates largeness or intensity. Italian -one (libro → librone = big book). Opposite of diminutive.",
-  "adverb":
+  adverb:
     "Turns an adjective into an adverb. English -ly (quick → quickly). Many languages have a dedicated suffix.",
 };
 
