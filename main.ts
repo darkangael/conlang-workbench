@@ -21,6 +21,7 @@ import {
 import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
 import { MorphemeInventory } from "./morphemes";
+import { LinguisticExampleInventory } from "./linguistic-examples";
 import { loadLanguageProfile } from "./language-profile";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
@@ -54,6 +55,12 @@ export default class ConlangPlugin extends Plugin {
   // Morphemes do not automatically participate in dictionary lookup,
   // translation, highlighting, or inflection.
   morphemes: MorphemeInventory = new MorphemeInventory(this.app);
+
+  // Standalone linguistic examples are loaded into their own feature-specific
+  // inventory. Keeping this state here lets future UI components share the same
+  // loaded examples without taking ownership of the parsing/loading logic.
+  linguisticExamples: LinguisticExampleInventory =
+    new LinguisticExampleInventory(this.app);
 
   // Parsed canonical Language Profiles for currently active languages.
   // Keyed by LanguageConfig.name for compatibility with the inherited
@@ -414,6 +421,19 @@ export default class ConlangPlugin extends Plugin {
         .filter((l) => Boolean(l.morphemeFolder?.trim()))
         .map((l) => ({
           folder: l.morphemeFolder!.trim(),
+          language: l.name,
+          languageId: this.getLanguageProfile(l)?.id,
+        }))
+    );
+
+    // Standalone linguistic examples are loaded from their own optional canonical
+    // folders. The inventory handles parsing and validation; main.ts only supplies
+    // the configured sources for the currently active languages.
+    await this.linguisticExamples.loadFromFolders(
+      active
+        .filter((l) => Boolean(l.exampleFolder?.trim()))
+        .map((l) => ({
+          folder: l.exampleFolder!.trim(),
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
         }))

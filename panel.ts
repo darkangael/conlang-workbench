@@ -1,16 +1,31 @@
-// Translation panel: a side-panel view with two tabs.
+// Translation panel: the main Conlang Workbench side-panel interface.
 //
-// Tab 1 ("Translate"): updates live whenever the user's selection changes,
-// translates in both directions, surfaces matching dictionary entries.
+// Tab 1 ("Selection"): updates live whenever the user's selection changes,
+// translates in both directions, and surfaces matching dictionary entries.
 //
-// Tab 2 ("Dictionary"): browsable, searchable, sortable list of every
-// dictionary entry for the active language.
+// Tab 2 ("Translator"): provides free-form dictionary-assisted lookup,
+// glossing, and transliteration without requiring selected note text.
+//
+// Tab 3 ("Dictionary"): provides a browsable, searchable, sortable list of
+// dictionary entries for the active languages.
+//
+// Tab 4 ("Morphemes"): provides the modular Morpheme Inventory browser for
+// inspecting documented morphemes across the active languages.
+//
+// Tab 5 ("Examples"): provides the modular Linguistic Examples browser for
+// searching documented language use and expanding available analysis tiers.
 
 import { ItemView, WorkspaceLeaf, MarkdownView, TFile, Notice } from "obsidian";
 import type ConlangPlugin from "./main";
 import { DictionaryEntry, InflectedForm, LexicalSense } from "./types";
+import { MorphemeTab } from "./morpheme-tab";
+import { LinguisticExampleTab } from "./linguistic-example-tab";
 import { applyCypherReverse } from "./cypher";
-import { findInflection, generateInflections, GeneratedForm } from "./inflection";
+import {
+  findInflection,
+  generateInflections,
+  GeneratedForm,
+} from "./inflection";
 import { explainInflection } from "./explanations";
 import { tokeniseWithPhrases, matchPhraseAtStart } from "./phrases";
 import { WORD_RE, cleanWord, applyCasing, firstSense } from "./word-tokens";
@@ -20,11 +35,11 @@ import {
   renderTransliterationString,
   GlossToken,
 } from "./gloss";
-import { MorphemeTab } from "./morpheme-tab";
 
 export const VIEW_TYPE_PANEL = "made-up-words-panel";
 
-type TabId = "translate" | "dictionary" | "translator" | "morphemes";
+type TabId =
+  "translate" | "dictionary" | "translator" | "morphemes" | "examples";
 type SortKey = "alphabetical" | "recent" | "partOfSpeech";
 type TranslatorDirection = "english-to-conlang" | "conlang-to-english";
 
@@ -35,6 +50,11 @@ export class TranslationPanelView extends ItemView {
   private pollHandle: number | null = null;
   private morphemeEl!: HTMLElement;
   private morphemeTab!: MorphemeTab;
+  // The Examples tab has its own renderer, just like Morphemes. The panel owns
+  // only the container and the tab instance; example-specific UI remains in the
+  // dedicated LinguisticExampleTab module.
+  private exampleEl!: HTMLElement;
+  private exampleTab!: LinguisticExampleTab;
 
   // Browser state (persisted across re-renders within a session)
   private searchQuery: string = "";
@@ -124,6 +144,7 @@ export class TranslationPanelView extends ItemView {
     this.buildTranslatorTab();
     this.buildDictionaryTab();
     this.buildMorphemeTab();
+    this.buildExampleTab();
     this.showActiveTab();
 
     // Update Translate tab on selection change
@@ -145,10 +166,12 @@ export class TranslationPanelView extends ItemView {
       window.clearInterval(this.pollHandle);
       this.pollHandle = null;
     }
+
     if (this.translatorDebounceTimer !== null) {
       window.clearTimeout(this.translatorDebounceTimer);
       this.translatorDebounceTimer = null;
     }
+
     if (this.searchDebounceTimer !== null) {
       window.clearTimeout(this.searchDebounceTimer);
       this.searchDebounceTimer = null;
@@ -161,10 +184,22 @@ export class TranslationPanelView extends ItemView {
     this.renderHeader();
     this.updateTranslate();
     this.renderBrowser();
+
     // Update translator labels in case the active language name changed,
     // and re-translate in case the dictionary changed.
     this.updateTranslatorLabels();
     this.runTranslatorTranslation();
+
+    /*
+     * Feature inventories may also have changed during a language-data reload.
+     * Refresh whichever modular feature tab is currently visible. Inactive tabs
+     * will render from the latest inventory when the user switches to them.
+     */
+    if (this.activeTab === "morphemes") {
+      this.morphemeTab.render();
+    } else if (this.activeTab === "examples") {
+      this.exampleTab.render(this.exampleEl);
+    }
   }
 
   // ===== Header =====
@@ -188,7 +223,9 @@ export class TranslationPanelView extends ItemView {
     const subtitle = this.headerEl.createDiv({ cls: "conlang-panel-subtitle" });
     if (activeLangs.length > 0) {
       const count = this.plugin.dictionary.allEntries().length;
-      subtitle.setText(`${count} dictionary ${count === 1 ? "entry" : "entries"}`);
+      subtitle.setText(
+        `${count} dictionary ${count === 1 ? "entry" : "entries"}`,
+      );
     }
 
     // Language chips — only shown when there's more than one configured
@@ -233,7 +270,9 @@ export class TranslationPanelView extends ItemView {
 
     // Quick-action row: buttons to add dictionary entries.
     if (primary) {
-      const actions = this.headerEl.createDiv({ cls: "conlang-panel-header-actions" });
+      const actions = this.headerEl.createDiv({
+        cls: "conlang-panel-header-actions",
+      });
 
       const wordBtn = actions.createEl("button", {
         // The sentence-case rule counts the leading glyph as the first word and
@@ -243,7 +282,10 @@ export class TranslationPanelView extends ItemView {
         cls: "conlang-panel-btn",
       });
       wordBtn.title = `Add a new word to ${primary.name} (the primary language). Click a star above to change the primary.`;
-      wordBtn.addEventListener("click", () => void this.plugin.createWordFromPanel());
+      wordBtn.addEventListener(
+        "click",
+        () => void this.plugin.createWordFromPanel(),
+      );
 
       const nameBtn = actions.createEl("button", {
         // The sentence-case rule counts the leading glyph as the first word and
@@ -320,6 +362,7 @@ export class TranslationPanelView extends ItemView {
         else if (id === "dictionary") this.renderBrowser();
         else if (id === "translator") this.runTranslatorTranslation();
         else if (id === "morphemes") this.morphemeTab.render();
+        else if (id === "examples") this.exampleTab.render(this.exampleEl);
       });
       return tab;
     };
@@ -327,6 +370,7 @@ export class TranslationPanelView extends ItemView {
     mkTab("translator", "Translator");
     mkTab("dictionary", "Dictionary");
     mkTab("morphemes", "Morphemes");
+    mkTab("examples", "Examples");
   }
 
   private showActiveTab() {
@@ -335,6 +379,7 @@ export class TranslationPanelView extends ItemView {
     this.browserEl.addClass("conlang-hidden");
     this.translatorEl.addClass("conlang-hidden");
     this.morphemeEl.addClass("conlang-hidden");
+    this.exampleEl.addClass("conlang-hidden");
 
     if (this.activeTab === "translate") {
       // The updateTranslate method decides between empty and body visibility
@@ -349,40 +394,55 @@ export class TranslationPanelView extends ItemView {
     } else if (this.activeTab === "morphemes") {
       this.morphemeEl.removeClass("conlang-hidden");
       this.morphemeTab.render();
+    } else if (this.activeTab === "examples") {
+      this.exampleEl.removeClass("conlang-hidden");
+      this.exampleTab.render(this.exampleEl);
     }
   }
 
   // ===== Translate tab =====
 
   private buildTranslateTab() {
-    this.translateEmptyEl = this.tabContentEl.createDiv({ cls: "conlang-panel-empty" });
+    this.translateEmptyEl = this.tabContentEl.createDiv({
+      cls: "conlang-panel-empty",
+    });
     this.translateEmptyEl.createDiv({
       text: "Highlight text in a note.",
       cls: "conlang-empty-headline",
     });
     const hint = this.translateEmptyEl.createDiv({ cls: "conlang-empty-hint" });
     hint.setText(
-      "This tab updates automatically as you select text. Select English to see how it translates, or select a conlang word to see its dictionary entry. For free-form typing, use the translator tab instead."
+      "This tab updates automatically as you select text. Select English to see how it translates, or select a conlang word to see its dictionary entry. For free-form typing, use the translator tab instead.",
     );
 
     this.translateBodyEl = this.tabContentEl.createDiv({
       cls: "conlang-panel-body conlang-hidden",
     });
 
-    const translationBlock = this.translateBodyEl.createDiv({ cls: "conlang-panel-block" });
-    this.sourceLabel = translationBlock.createDiv({ cls: "conlang-panel-label" });
+    const translationBlock = this.translateBodyEl.createDiv({
+      cls: "conlang-panel-block",
+    });
+    this.sourceLabel = translationBlock.createDiv({
+      cls: "conlang-panel-label",
+    });
     this.sourceText = translationBlock.createDiv({
       cls: "conlang-panel-text conlang-panel-source",
     });
     const arrow = translationBlock.createDiv({ cls: "conlang-panel-arrow" });
     arrow.setText("↓");
-    this.translationLabel = translationBlock.createDiv({ cls: "conlang-panel-label" });
+    this.translationLabel = translationBlock.createDiv({
+      cls: "conlang-panel-label",
+    });
     this.translationText = translationBlock.createDiv({
       cls: "conlang-panel-text conlang-panel-translation",
     });
 
-    this.actionsEl = this.translateBodyEl.createDiv({ cls: "conlang-panel-actions" });
-    this.entriesEl = this.translateBodyEl.createDiv({ cls: "conlang-panel-entries" });
+    this.actionsEl = this.translateBodyEl.createDiv({
+      cls: "conlang-panel-actions",
+    });
+    this.entriesEl = this.translateBodyEl.createDiv({
+      cls: "conlang-panel-entries",
+    });
   }
 
   private updateScheduled: boolean = false;
@@ -446,12 +506,15 @@ export class TranslationPanelView extends ItemView {
       // For phrase matches, only enter word-details mode if the ENTIRE selection
       // is one phrase. Partial phrase matches fall through to the standard
       // translation view.
-      if (phraseMatch && phraseMatch.matchedText.toLowerCase() === trimmed.toLowerCase()) {
+      if (
+        phraseMatch &&
+        phraseMatch.matchedText.toLowerCase() === trimmed.toLowerCase()
+      ) {
         // A multi-word declared form is indexed as a synthetic phrase entry.
         // Show the real lemma with a "this is the X form of Y" note rather
         // than presenting the form itself as a headword.
         const declaredLemma = this.plugin.dictionary.lemmaForDeclaredPhrase(
-          phraseMatch.entry
+          phraseMatch.entry,
         );
         if (declaredLemma && phraseMatch.entry.viaFormLabel) {
           return {
@@ -492,7 +555,11 @@ export class TranslationPanelView extends ItemView {
     // Inflected form
     const lang = this.plugin.getActiveLanguage();
     if (lang) {
-      const m = findInflection(cleaned, this.plugin.dictionary, lang.inflections);
+      const m = findInflection(
+        cleaned,
+        this.plugin.dictionary,
+        lang.inflections,
+      );
       if (m) {
         return {
           entry: m.lemma,
@@ -521,7 +588,9 @@ export class TranslationPanelView extends ItemView {
       const anchor = sel.anchorNode;
       if (anchor instanceof Node) {
         const el =
-          anchor.nodeType === Node.ELEMENT_NODE ? (anchor as Element) : anchor.parentElement;
+          anchor.nodeType === Node.ELEMENT_NODE
+            ? (anchor as Element)
+            : anchor.parentElement;
         if (el && el.closest(".conlang-panel")) return "";
       }
       return sel.toString();
@@ -549,7 +618,11 @@ export class TranslationPanelView extends ItemView {
           entry = this.plugin.dictionary.lookupForm(t.text)[0]?.lemma;
         }
         if (!entry && lang) {
-          const m = findInflection(t.text, this.plugin.dictionary, lang.inflections);
+          const m = findInflection(
+            t.text,
+            this.plugin.dictionary,
+            lang.inflections,
+          );
           if (m) entry = m.lemma;
         }
       }
@@ -564,7 +637,7 @@ export class TranslationPanelView extends ItemView {
   private renderTranslation(
     text: string,
     direction: "english-to-conlang" | "conlang-to-english",
-    conlangWords: DictionaryEntry[]
+    conlangWords: DictionaryEntry[],
   ) {
     // Make sure the translation block is visible (might have been hidden
     // by a previous word-details render).
@@ -606,7 +679,7 @@ export class TranslationPanelView extends ItemView {
   private renderWordDetails(
     selectedText: string,
     entry: DictionaryEntry,
-    viaInflection: { form: string; label: string } | null
+    viaInflection: { form: string; label: string } | null,
   ) {
     // The translation block is hidden; the entries container holds everything.
     this.setTranslationBlockVisible(false);
@@ -641,7 +714,7 @@ export class TranslationPanelView extends ItemView {
     if (viaInflection) {
       const note = card.createDiv({ cls: "conlang-word-card-note" });
       note.setText(
-        `"${viaInflection.form}" is the ${viaInflection.label} form of ${entry.word}`
+        `"${viaInflection.form}" is the ${viaInflection.label} form of ${entry.word}`,
       );
       const explanation = explainInflection(viaInflection.label);
       if (explanation) {
@@ -684,17 +757,19 @@ export class TranslationPanelView extends ItemView {
       if (!entry.partOfSpeech) {
         empty.setText(
           "No inflected forms predicted — this entry has no part of speech, so POS-filtered rules don't apply. " +
-            "Edit the entry's frontmatter to add a partOfSpeech."
+            "Edit the entry's frontmatter to add a partOfSpeech.",
         );
       } else {
         empty.setText(
-          `No inflection rules apply to ${entry.partOfSpeech}s. Add rules in Settings → Conlang → Inflection rules.`
+          `No inflection rules apply to ${entry.partOfSpeech}s. Add rules in Settings → Conlang → Inflection rules.`,
         );
       }
       return;
     }
 
-    const header = this.entriesEl.createDiv({ cls: "conlang-panel-section-header" });
+    const header = this.entriesEl.createDiv({
+      cls: "conlang-panel-section-header",
+    });
     header.setText("Predicted forms");
 
     // Group by inflection label so e.g. two "plural" rules show side-by-side
@@ -731,7 +806,7 @@ export class TranslationPanelView extends ItemView {
     // Helpful hint at the bottom
     const hint = this.entriesEl.createDiv({ cls: "conlang-forms-hint" });
     hint.setText(
-      "Forms are predicted from your inflection rules. Hover any of them in a note to see this entry."
+      "Forms are predicted from your inflection rules. Hover any of them in a note to see this entry.",
     );
   }
 
@@ -742,7 +817,9 @@ export class TranslationPanelView extends ItemView {
    * grouped directly below.
    */
   private renderDeclaredForms(forms: InflectedForm[]) {
-    const section = this.entriesEl.createDiv({ cls: "conlang-declared-section" });
+    const section = this.entriesEl.createDiv({
+      cls: "conlang-declared-section",
+    });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
     header.setText("Declared forms");
 
@@ -771,7 +848,7 @@ export class TranslationPanelView extends ItemView {
 
     const hint = section.createDiv({ cls: "conlang-forms-hint" });
     hint.setText(
-      "Set by this entry's `forms:` property. A declared label replaces the same-named rule's prediction for this entry."
+      "Set by this entry's `forms:` property. A declared label replaces the same-named rule's prediction for this entry.",
     );
   }
 
@@ -835,7 +912,11 @@ export class TranslationPanelView extends ItemView {
         continue;
       }
       if (lang) {
-        const m = findInflection(word, this.plugin.dictionary, lang.inflections);
+        const m = findInflection(
+          word,
+          this.plugin.dictionary,
+          lang.inflections,
+        );
         if (m) {
           const sense = firstSense(m.lemma.definition) || m.lemma.word;
           out.push(`${sense}.${m.rule.label.toUpperCase()}`);
@@ -851,7 +932,7 @@ export class TranslationPanelView extends ItemView {
 
   private renderActions(
     text: string,
-    direction: "english-to-conlang" | "conlang-to-english"
+    direction: "english-to-conlang" | "conlang-to-english",
   ) {
     this.actionsEl.empty();
     const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
@@ -863,7 +944,8 @@ export class TranslationPanelView extends ItemView {
         cls: "conlang-panel-btn conlang-panel-btn-primary",
       });
       replaceBtn.disabled = !hasEditor;
-      if (!hasEditor) replaceBtn.title = "Make a selection in an editor to enable.";
+      if (!hasEditor)
+        replaceBtn.title = "Make a selection in an editor to enable.";
       replaceBtn.addEventListener("click", () => {
         if (view) void this.plugin.commitSelectionToConlang(view.editor);
       });
@@ -883,7 +965,7 @@ export class TranslationPanelView extends ItemView {
   private renderEntries(
     entries: DictionaryEntry[],
     text: string,
-    direction: "english-to-conlang" | "conlang-to-english"
+    direction: "english-to-conlang" | "conlang-to-english",
   ) {
     this.entriesEl.empty();
 
@@ -901,15 +983,20 @@ export class TranslationPanelView extends ItemView {
         }
       }
       if (matched.length > 0) {
-        const header = this.entriesEl.createDiv({ cls: "conlang-panel-section-header" });
+        const header = this.entriesEl.createDiv({
+          cls: "conlang-panel-section-header",
+        });
         header.setText("Matched dictionary entries");
-        for (const entry of matched) this.renderEntryCard(this.entriesEl, entry);
+        for (const entry of matched)
+          this.renderEntryCard(this.entriesEl, entry);
       }
       return;
     }
 
     if (entries.length === 0) return;
-    const header = this.entriesEl.createDiv({ cls: "conlang-panel-section-header" });
+    const header = this.entriesEl.createDiv({
+      cls: "conlang-panel-section-header",
+    });
     header.setText("Dictionary entries");
     for (const entry of entries) this.renderEntryCard(this.entriesEl, entry);
   }
@@ -949,11 +1036,17 @@ export class TranslationPanelView extends ItemView {
   // ===== Translator tab (free-form text input) =====
 
   private buildTranslatorTab() {
-    this.translatorEl = this.tabContentEl.createDiv({ cls: "conlang-translator" });
+    this.translatorEl = this.tabContentEl.createDiv({
+      cls: "conlang-translator",
+    });
 
     // Source row: label
-    const sourceRow = this.translatorEl.createDiv({ cls: "conlang-translator-row" });
-    this.translatorSourceLabel = sourceRow.createDiv({ cls: "conlang-translator-label" });
+    const sourceRow = this.translatorEl.createDiv({
+      cls: "conlang-translator-row",
+    });
+    this.translatorSourceLabel = sourceRow.createDiv({
+      cls: "conlang-translator-label",
+    });
 
     this.translatorInputEl = this.translatorEl.createEl("textarea", {
       cls: "conlang-translator-input",
@@ -967,7 +1060,9 @@ export class TranslationPanelView extends ItemView {
     });
 
     // Swap button between input and output
-    const swapRow = this.translatorEl.createDiv({ cls: "conlang-translator-swap-row" });
+    const swapRow = this.translatorEl.createDiv({
+      cls: "conlang-translator-swap-row",
+    });
     this.translatorSwapBtn = swapRow.createEl("button", {
       // The sentence-case rule counts the leading glyph as the first word and
       // asks for "swap direction" — which reads worse than the label users
@@ -975,15 +1070,26 @@ export class TranslationPanelView extends ItemView {
       text: "↑↓ Swap direction",
       cls: "conlang-panel-btn conlang-translator-swap",
     });
-    this.translatorSwapBtn.title = "Swap which language is the source and which is the target.";
-    this.translatorSwapBtn.addEventListener("click", () => this.swapTranslatorDirection());
+    this.translatorSwapBtn.title =
+      "Swap which language is the source and which is the target.";
+    this.translatorSwapBtn.addEventListener("click", () =>
+      this.swapTranslatorDirection(),
+    );
 
     // Mode toggle: Gloss (default, per-word breakdown) vs Transliterate (flat output)
-    const modeRow = this.translatorEl.createDiv({ cls: "conlang-translator-mode-row" });
-    const modeLabel = modeRow.createSpan({ cls: "conlang-browser-control-label" });
+    const modeRow = this.translatorEl.createDiv({
+      cls: "conlang-translator-mode-row",
+    });
+    const modeLabel = modeRow.createSpan({
+      cls: "conlang-browser-control-label",
+    });
     modeLabel.setText("Mode");
     const modeGroup = modeRow.createDiv({ cls: "conlang-browser-segmented" });
-    const modes: { value: "gloss" | "transliterate"; label: string; tooltip: string }[] = [
+    const modes: {
+      value: "gloss" | "transliterate";
+      label: string;
+      tooltip: string;
+    }[] = [
       {
         value: "gloss",
         label: "Gloss",
@@ -998,26 +1104,39 @@ export class TranslationPanelView extends ItemView {
       },
     ];
     for (const m of modes) {
-      const btn = modeGroup.createEl("button", { text: m.label, cls: "conlang-browser-segment" });
+      const btn = modeGroup.createEl("button", {
+        text: m.label,
+        cls: "conlang-browser-segment",
+      });
       btn.title = m.tooltip;
       if (m.value === this.translatorMode) btn.addClass("active");
       btn.addEventListener("click", () => {
         this.translatorMode = m.value;
-        modeGroup.querySelectorAll(".conlang-browser-segment").forEach((el) => el.removeClass("active"));
+        modeGroup
+          .querySelectorAll(".conlang-browser-segment")
+          .forEach((el) => el.removeClass("active"));
         btn.addClass("active");
         this.runTranslatorTranslation();
       });
     }
 
     // Target row: label
-    const targetRow = this.translatorEl.createDiv({ cls: "conlang-translator-row" });
-    this.translatorTargetLabel = targetRow.createDiv({ cls: "conlang-translator-label" });
+    const targetRow = this.translatorEl.createDiv({
+      cls: "conlang-translator-row",
+    });
+    this.translatorTargetLabel = targetRow.createDiv({
+      cls: "conlang-translator-label",
+    });
     this.translatorCopyBtn = targetRow.createEl("button", {
       text: "Copy",
       cls: "conlang-translator-copy-btn",
     });
-    this.translatorCopyBtn.title = "Copy the transliteration output to your clipboard. (Gloss mode is rich content and isn't copyable as plain text.)";
-    this.translatorCopyBtn.addEventListener("click", () => void this.copyTranslation());
+    this.translatorCopyBtn.title =
+      "Copy the transliteration output to your clipboard. (Gloss mode is rich content and isn't copyable as plain text.)";
+    this.translatorCopyBtn.addEventListener(
+      "click",
+      () => void this.copyTranslation(),
+    );
 
     // Output area: either a gloss render (rich token list) or a flat string
     this.translatorOutputEl = this.translatorEl.createDiv({
@@ -1051,7 +1170,7 @@ export class TranslationPanelView extends ItemView {
       // a combined list when more than one is active.
       if (activeLangs.length > 1) {
         this.translatorSourceLabel?.setText(
-          activeLangs.map((l) => l.name).join(" / ")
+          activeLangs.map((l) => l.name).join(" / "),
         );
       } else {
         this.translatorSourceLabel?.setText(primaryName);
@@ -1084,7 +1203,7 @@ export class TranslationPanelView extends ItemView {
       this.translatorOutputEl.setText(
         this.translatorMode === "gloss"
           ? "Type to see a word-by-word breakdown."
-          : "Translation will appear here."
+          : "Translation will appear here.",
       );
       return;
     }
@@ -1108,7 +1227,9 @@ export class TranslationPanelView extends ItemView {
    * representation: it does NOT pretend to assemble fluent translation.
    */
   private renderGloss(tokens: GlossToken[]) {
-    const list = this.translatorOutputEl.createDiv({ cls: "conlang-gloss-list" });
+    const list = this.translatorOutputEl.createDiv({
+      cls: "conlang-gloss-list",
+    });
     const visibleTokens = tokens.filter((t) => t.kind !== "separator");
     if (visibleTokens.length === 0) {
       this.translatorOutputEl.addClass("is-empty");
@@ -1119,14 +1240,18 @@ export class TranslationPanelView extends ItemView {
       this.renderGlossToken(list, t);
     }
     // Honest footer: explain what the user is looking at
-    const footer = this.translatorOutputEl.createDiv({ cls: "conlang-gloss-footer" });
+    const footer = this.translatorOutputEl.createDiv({
+      cls: "conlang-gloss-footer",
+    });
     footer.setText(
-      "This is a per-word lookup — not a fluent translation. Real translation requires grammar your dictionary entries don't encode."
+      "This is a per-word lookup — not a fluent translation. Real translation requires grammar your dictionary entries don't encode.",
     );
   }
 
   private renderGlossToken(parent: HTMLElement, t: GlossToken) {
-    const card = parent.createDiv({ cls: `conlang-gloss-token kind-${t.kind}` });
+    const card = parent.createDiv({
+      cls: `conlang-gloss-token kind-${t.kind}`,
+    });
 
     const head = card.createDiv({ cls: "conlang-gloss-token-head" });
     const source = head.createSpan({ cls: "conlang-gloss-token-source" });
@@ -1196,15 +1321,21 @@ export class TranslationPanelView extends ItemView {
         arrow.setText("≈");
         const target = head.createSpan({ cls: "conlang-gloss-token-target" });
         target.setText(t.cypherOutput ?? "");
-        const tag = head.createSpan({ cls: "conlang-gloss-token-tag conlang-gloss-warn" });
+        const tag = head.createSpan({
+          cls: "conlang-gloss-token-tag conlang-gloss-warn",
+        });
         tag.setText("Cypher only");
-        tag.title = "No dictionary entry — this is a phonological placeholder from the cypher rules, not a real translation.";
+        tag.title =
+          "No dictionary entry — this is a phonological placeholder from the cypher rules, not a real translation.";
         break;
       }
       case "no-match": {
-        const tag = head.createSpan({ cls: "conlang-gloss-token-tag conlang-gloss-warn" });
+        const tag = head.createSpan({
+          cls: "conlang-gloss-token-tag conlang-gloss-warn",
+        });
         tag.setText("No match");
-        tag.title = "No dictionary entry and the cypher rules don't apply. Consider adding this to the dictionary.";
+        tag.title =
+          "No dictionary entry and the cypher rules don't apply. Consider adding this to the dictionary.";
         break;
       }
     }
@@ -1219,7 +1350,7 @@ export class TranslationPanelView extends ItemView {
    */
   private getMatchedSenses(
     token: GlossToken,
-    entry: DictionaryEntry
+    entry: DictionaryEntry,
   ): LexicalSense[] {
     return (
       token.englishMatches
@@ -1237,7 +1368,7 @@ export class TranslationPanelView extends ItemView {
    */
   private getSingleMatchedSense(
     token: GlossToken,
-    entry: DictionaryEntry
+    entry: DictionaryEntry,
   ): LexicalSense | undefined {
     const senses = this.getMatchedSenses(token, entry);
     return senses.length === 1 ? senses[0] : undefined;
@@ -1256,7 +1387,7 @@ export class TranslationPanelView extends ItemView {
     card: HTMLElement,
     entry: DictionaryEntry,
     matchedSense?: LexicalSense,
-    showSimpleDefinition = true
+    showSimpleDefinition = true,
   ) {
     const meta = card.createDiv({ cls: "conlang-gloss-token-meta" });
     const parts: string[] = [];
@@ -1311,10 +1442,7 @@ export class TranslationPanelView extends ItemView {
    * use the fuller definition directly instead. Stable sense IDs remain
    * structural metadata and are intentionally not shown here.
    */
-  private renderMatchedSenses(
-    card: HTMLElement,
-    senses: LexicalSense[]
-  ) {
+  private renderMatchedSenses(card: HTMLElement, senses: LexicalSense[]) {
     const note = card.createDiv({ cls: "conlang-gloss-multi-note" });
     note.setText(`${senses.length} matching senses`);
 
@@ -1354,7 +1482,7 @@ export class TranslationPanelView extends ItemView {
   private renderCandidates(
     card: HTMLElement,
     candidates: DictionaryEntry[],
-    token: GlossToken
+    token: GlossToken,
   ) {
     const list = card.createDiv({ cls: "conlang-gloss-candidates" });
     // Only show language tags when more than one language is active —
@@ -1400,7 +1528,9 @@ export class TranslationPanelView extends ItemView {
    * span so the user can see at a glance which words are placeholders.
    */
   private renderTransliteration(tokens: GlossToken[]) {
-    const container = this.translatorOutputEl.createDiv({ cls: "conlang-translit" });
+    const container = this.translatorOutputEl.createDiv({
+      cls: "conlang-translit",
+    });
     for (const t of tokens) {
       switch (t.kind) {
         case "separator":
@@ -1423,27 +1553,37 @@ export class TranslationPanelView extends ItemView {
           if (t.inflection) {
             const span = container.createSpan({ cls: "conlang-translit-dict" });
             const sense = firstSense(t.inflection.lemma.definition);
-            span.setText(`${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`);
+            span.setText(
+              `${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`,
+            );
           }
           break;
         case "cypher-fallback": {
-          const cspan = container.createSpan({ cls: "conlang-translit-cypher" });
+          const cspan = container.createSpan({
+            cls: "conlang-translit-cypher",
+          });
           cspan.setText(t.cypherOutput ?? t.source);
-          cspan.title = "Cypher placeholder — no dictionary entry exists for this word.";
+          cspan.title =
+            "Cypher placeholder — no dictionary entry exists for this word.";
           break;
         }
         case "no-match": {
-          const nspan = container.createSpan({ cls: "conlang-translit-nomatch" });
+          const nspan = container.createSpan({
+            cls: "conlang-translit-nomatch",
+          });
           nspan.setText(t.source);
-          nspan.title = "No dictionary entry and no cypher transformation. Original word unchanged.";
+          nspan.title =
+            "No dictionary entry and no cypher transformation. Original word unchanged.";
           break;
         }
       }
     }
 
-    const footer = this.translatorOutputEl.createDiv({ cls: "conlang-gloss-footer" });
+    const footer = this.translatorOutputEl.createDiv({
+      cls: "conlang-gloss-footer",
+    });
     footer.setText(
-      "Words from your dictionary are in plain text. Italicised words are cypher placeholders — they preserve sound but don't carry conlang grammar."
+      "Words from your dictionary are in plain text. Italicised words are cypher placeholders — they preserve sound but don't carry conlang grammar.",
     );
   }
 
@@ -1513,7 +1653,9 @@ export class TranslationPanelView extends ItemView {
     this.browserEl = this.tabContentEl.createDiv({ cls: "conlang-browser" });
 
     // Toolbar: search + filter + sort
-    this.browserToolbarEl = this.browserEl.createDiv({ cls: "conlang-browser-toolbar" });
+    this.browserToolbarEl = this.browserEl.createDiv({
+      cls: "conlang-browser-toolbar",
+    });
 
     const searchInput = this.browserToolbarEl.createEl("input", {
       type: "search",
@@ -1534,18 +1676,27 @@ export class TranslationPanelView extends ItemView {
       }, 200);
     });
 
-    const controlsRow = this.browserEl.createDiv({ cls: "conlang-browser-controls" });
+    const controlsRow = this.browserEl.createDiv({
+      cls: "conlang-browser-controls",
+    });
 
-    const sortLabel = controlsRow.createSpan({ cls: "conlang-browser-control-label" });
+    const sortLabel = controlsRow.createSpan({
+      cls: "conlang-browser-control-label",
+    });
     sortLabel.setText("Sort");
-    const sortSelect = controlsRow.createEl("select", { cls: "conlang-browser-select" });
+    const sortSelect = controlsRow.createEl("select", {
+      cls: "conlang-browser-select",
+    });
     const sortOptions: { value: SortKey; label: string }[] = [
       { value: "alphabetical", label: "Alphabetical" },
       { value: "recent", label: "Recently added" },
       { value: "partOfSpeech", label: "Part of speech" },
     ];
     for (const opt of sortOptions) {
-      const o = sortSelect.createEl("option", { text: opt.label, value: opt.value });
+      const o = sortSelect.createEl("option", {
+        text: opt.label,
+        value: opt.value,
+      });
       if (opt.value === this.sortKey) o.selected = true;
     }
     sortSelect.addEventListener("change", () => {
@@ -1553,9 +1704,13 @@ export class TranslationPanelView extends ItemView {
       this.renderBrowserList();
     });
 
-    const posLabel = controlsRow.createSpan({ cls: "conlang-browser-control-label" });
+    const posLabel = controlsRow.createSpan({
+      cls: "conlang-browser-control-label",
+    });
     posLabel.setText("Type");
-    const posSelect = controlsRow.createEl("select", { cls: "conlang-browser-select" });
+    const posSelect = controlsRow.createEl("select", {
+      cls: "conlang-browser-select",
+    });
     // The "all" option is always present; specific POS values are filled in
     // dynamically by renderBrowser() based on what's actually in the dictionary.
     posSelect.addEventListener("change", () => {
@@ -1567,17 +1722,33 @@ export class TranslationPanelView extends ItemView {
 
     // Names filter: a 3-way segmented control. Toggle to focus on (or hide)
     // proper nouns without re-typing them into the search box.
-    const namesLabel = controlsRow.createSpan({ cls: "conlang-browser-control-label" });
+    const namesLabel = controlsRow.createSpan({
+      cls: "conlang-browser-control-label",
+    });
     namesLabel.setText("Names");
-    const namesGroup = controlsRow.createDiv({ cls: "conlang-browser-segmented" });
+    const namesGroup = controlsRow.createDiv({
+      cls: "conlang-browser-segmented",
+    });
     const namesOptions: {
       value: "all" | "names-only" | "hide-names";
       label: string;
       tooltip: string;
     }[] = [
-      { value: "all", label: "All", tooltip: "Show all entries, including proper nouns." },
-      { value: "names-only", label: "Only", tooltip: "Show only proper nouns (characters, places, factions, etc.)." },
-      { value: "hide-names", label: "Hide", tooltip: "Hide all proper nouns from the list." },
+      {
+        value: "all",
+        label: "All",
+        tooltip: "Show all entries, including proper nouns.",
+      },
+      {
+        value: "names-only",
+        label: "Only",
+        tooltip: "Show only proper nouns (characters, places, factions, etc.).",
+      },
+      {
+        value: "hide-names",
+        label: "Hide",
+        tooltip: "Hide all proper nouns from the list.",
+      },
     ];
     for (const opt of namesOptions) {
       const btn = namesGroup.createEl("button", {
@@ -1588,7 +1759,9 @@ export class TranslationPanelView extends ItemView {
       if (opt.value === this.nameFilter) btn.addClass("active");
       btn.addEventListener("click", () => {
         this.nameFilter = opt.value;
-        namesGroup.querySelectorAll(".conlang-browser-segment").forEach((el) => el.removeClass("active"));
+        namesGroup
+          .querySelectorAll(".conlang-browser-segment")
+          .forEach((el) => el.removeClass("active"));
         btn.addClass("active");
         this.renderBrowserList();
       });
@@ -1598,9 +1771,13 @@ export class TranslationPanelView extends ItemView {
     // Empty string = show all active languages.
     const activeLangs = this.plugin.getActiveLanguages();
     if (activeLangs.length > 1) {
-      const langLabel = controlsRow.createSpan({ cls: "conlang-browser-control-label" });
+      const langLabel = controlsRow.createSpan({
+        cls: "conlang-browser-control-label",
+      });
       langLabel.setText("Language");
-      const langSelect = controlsRow.createEl("select", { cls: "conlang-browser-select" });
+      const langSelect = controlsRow.createEl("select", {
+        cls: "conlang-browser-select",
+      });
       langSelect.createEl("option", { text: "All", value: "" });
       for (const l of activeLangs) {
         langSelect.createEl("option", { text: l.name, value: l.name });
@@ -1613,29 +1790,52 @@ export class TranslationPanelView extends ItemView {
     }
 
     // Stats line
-    this.browserStatsEl = this.browserEl.createDiv({ cls: "conlang-browser-stats" });
+    this.browserStatsEl = this.browserEl.createDiv({
+      cls: "conlang-browser-stats",
+    });
 
     // List + empty state. The text gets swapped depending on whether the
     // dictionary is genuinely empty or just hidden by filters.
-    this.browserListEl = this.browserEl.createDiv({ cls: "conlang-browser-list" });
+    this.browserListEl = this.browserEl.createDiv({
+      cls: "conlang-browser-list",
+    });
     this.browserEmptyEl = this.browserEl.createDiv({
       cls: "conlang-browser-empty conlang-hidden",
     });
   }
 
   /**
-  * Build the host container for the modular Morpheme Inventory tab.
-  *
-  * The parent panel owns tab placement and visibility. MorphemeTab owns the
-  * feature-specific UI rendered inside this container.
-  */
- private buildMorphemeTab() {
+   * Build the host container for the modular Morpheme Inventory tab.
+   *
+   * The parent panel owns tab placement and visibility. MorphemeTab owns the
+   * feature-specific UI rendered inside this container.
+   */
+  private buildMorphemeTab() {
     this.morphemeEl = this.tabContentEl.createDiv({
       cls: "conlang-morpheme-tab conlang-hidden",
     });
-          
+
     this.morphemeTab = new MorphemeTab(this.plugin);
     this.morphemeTab.mount(this.morphemeEl);
+  }
+
+  /**
+   * Build the container for the standalone linguistic example browser.
+   *
+   * The panel only provides the host element and passes the already-loaded
+   * shared inventory into the feature-specific tab renderer.
+   */
+  private buildExampleTab() {
+    this.exampleEl = this.tabContentEl.createDiv({
+      cls: "conlang-example-tab conlang-hidden",
+    });
+
+    this.exampleTab = new LinguisticExampleTab(
+      this.app,
+      this.plugin.linguisticExamples,
+    );
+
+    this.exampleTab.render(this.exampleEl);
   }
 
   private renderBrowser() {
@@ -1643,7 +1843,7 @@ export class TranslationPanelView extends ItemView {
     // actual parts of speech. This handles the case where the user adds
     // a word with a new POS we've not seen before.
     const posSelect = this.browserToolbarEl.parentElement?.querySelector(
-      ".conlang-pos-select"
+      ".conlang-pos-select",
     ) as HTMLSelectElement | null;
     if (posSelect) {
       const previous = this.posFilter;
@@ -1682,9 +1882,13 @@ export class TranslationPanelView extends ItemView {
 
     // Reset the row cap whenever the effective filter/sort changes, so a new
     // search starts from the first page again.
-    const sig = [q, this.posFilter, this.nameFilter, this.languageFilter, this.sortKey].join(
-      " "
-    );
+    const sig = [
+      q,
+      this.posFilter,
+      this.nameFilter,
+      this.languageFilter,
+      this.sortKey,
+    ].join(" ");
     if (sig !== this.browserFilterSig) {
       this.browserFilterSig = sig;
       this.browserLimit = TranslationPanelView.BROWSER_PAGE;
@@ -1696,7 +1900,8 @@ export class TranslationPanelView extends ItemView {
       if (this.nameFilter === "hide-names" && isName) return false;
 
       // Language filter (only meaningful when multiple languages active)
-      if (this.languageFilter && entry.language !== this.languageFilter) return false;
+      if (this.languageFilter && entry.language !== this.languageFilter)
+        return false;
 
       if (this.posFilter && entry.partOfSpeech !== this.posFilter) return false;
       if (!q) return true;
@@ -1711,9 +1916,7 @@ export class TranslationPanelView extends ItemView {
           if (sense.gloss?.toLowerCase().includes(q)) return true;
           if (sense.definition?.toLowerCase().includes(q)) return true;
           if (
-            sense.lookupTerms?.some((term) =>
-              term.toLowerCase().includes(q)
-            )
+            sense.lookupTerms?.some((term) => term.toLowerCase().includes(q))
           ) {
             return true;
           }
@@ -1724,7 +1927,8 @@ export class TranslationPanelView extends ItemView {
       }
 
       // For names, also search by category (e.g. "place" finds all places)
-      if (entry.nameCategory && entry.nameCategory.toLowerCase().includes(q)) return true;
+      if (entry.nameCategory && entry.nameCategory.toLowerCase().includes(q))
+        return true;
       return false;
     });
 
@@ -1755,9 +1959,11 @@ export class TranslationPanelView extends ItemView {
           text: "No entries match your filters.",
           cls: "conlang-empty-headline",
         });
-        const hint = this.browserEmptyEl.createDiv({ cls: "conlang-empty-hint" });
+        const hint = this.browserEmptyEl.createDiv({
+          cls: "conlang-empty-hint",
+        });
         hint.setText(
-          "Try clearing the search box, changing the type filter, or showing all names."
+          "Try clearing the search box, changing the type filter, or showing all names.",
         );
       } else {
         // Genuinely empty dictionary — first-time onboarding hint
@@ -1766,11 +1972,13 @@ export class TranslationPanelView extends ItemView {
           text: "Your dictionary is empty.",
           cls: "conlang-empty-headline",
         });
-        const hint = this.browserEmptyEl.createDiv({ cls: "conlang-empty-hint" });
+        const hint = this.browserEmptyEl.createDiv({
+          cls: "conlang-empty-hint",
+        });
         hint.setText(
           primary
             ? `Add your first word by clicking + Word at the top, or highlight any English text in a note and use the "Create dictionary entry from selection" command. Words are saved as markdown files in ${primary.dictionaryFolder}.`
-            : "Activate at least one language in Settings → Conlang to start adding entries."
+            : "Activate at least one language in Settings → Conlang to start adding entries.",
         );
       }
       return;
@@ -1805,7 +2013,9 @@ export class TranslationPanelView extends ItemView {
     const total = all.length;
     const shown = filtered.length;
 
-    const summary = this.browserStatsEl.createSpan({ cls: "conlang-browser-stats-summary" });
+    const summary = this.browserStatsEl.createSpan({
+      cls: "conlang-browser-stats-summary",
+    });
     if (shown === total) {
       summary.setText(`${total} ${total === 1 ? "entry" : "entries"}`);
     } else {
@@ -1819,7 +2029,9 @@ export class TranslationPanelView extends ItemView {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     if (counts.size > 0 && counts.size <= 8) {
-      const breakdown = this.browserStatsEl.createSpan({ cls: "conlang-browser-stats-breakdown" });
+      const breakdown = this.browserStatsEl.createSpan({
+        cls: "conlang-browser-stats-breakdown",
+      });
       const parts: string[] = [];
       const sortedKeys = Array.from(counts.keys()).sort();
       for (const k of sortedKeys) {
@@ -1868,7 +2080,9 @@ export class TranslationPanelView extends ItemView {
       const sensesEl = row.createDiv({ cls: "conlang-browser-row-senses" });
 
       for (const sense of entry.senses) {
-        const senseEl = sensesEl.createDiv({ cls: "conlang-browser-row-sense" });
+        const senseEl = sensesEl.createDiv({
+          cls: "conlang-browser-row-sense",
+        });
 
         if (sense.gloss) {
           const gloss = senseEl.createDiv({

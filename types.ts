@@ -225,6 +225,9 @@ export interface LanguageConfig {
   // standalone words or translation candidates.
   morphemeFolder?: string;
 
+  // Optional folder containing standalone linguistic examples.
+  exampleFolder?: string;
+
   // Optional vault path to the canonical Language Profile note.
   // Omitted for backwards compatibility with existing configurations.
   profilePath?: string;

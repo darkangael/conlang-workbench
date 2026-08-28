@@ -478,6 +478,22 @@ export class ConlangSettingTab extends PluginSettingTab {
         })
       );
 
+    // Standalone linguistic examples have their own optional canonical folder.
+    // Keeping this separate from the dictionary and morpheme folders lets the
+    // examples feature load documented language use without treating every note
+    // that happens to contain an example as a standalone example.
+    new Setting(body)
+      .setName("Examples folder")
+      .setDesc(
+        "Optional folder of standalone linguistic example notes. Only notes explicitly marked as linguistic examples are loaded."
+      )
+      .addText((t) =>
+        t.setValue(lang.exampleFolder ?? "").onChange(async (v) => {
+          lang.exampleFolder = v.trim() || undefined;
+          await this.plugin.saveSettings();
+        })
+      );
+
     new Setting(body)
       .setName("Language profile")
       .setDesc("Optional vault path to this language's canonical language profile note.")

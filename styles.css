@@ -1821,3 +1821,131 @@ body.conlang-hl-background .conlang-known-word.is-phrase {
 .conlang-morpheme-row.type-clitic {
   border-left: 3px solid var(--color-red, var(--interactive-accent));
 }
+
+/* ===== Linguistic examples ===== */
+
+/*
+ * Example results are presented as cards rather than plain stacked text.
+ * The original-language example is the strongest element, while language
+ * metadata and actions stay visually secondary.
+ */
+.conlang-example-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.conlang-example-summary {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/*
+ * The card is deliberately simple for now. Richer linguistic analysis will
+ * later expand inside this same boundary rather than opening a separate panel.
+ */
+.conlang-example-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 0.8rem 0.9rem;
+  background: var(--background-secondary);
+}
+
+/*
+ * Keep the example itself and its language on the same row when space allows.
+ * Wrapping lets the layout remain usable in a narrow Obsidian sidebar.
+ */
+.conlang-example-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/*
+ * The documented language text is the primary content of the card, so it
+ * receives the strongest visual emphasis.
+ */
+.conlang-example-text {
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+/*
+ * Language identifies where the example belongs but should not compete with
+ * the example itself for attention.
+ */
+.conlang-example-language {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/*
+ * The natural translation acts as the reader-facing meaning of the example.
+ * It remains visually distinct from both the original text and the separate
+ * morphological gloss that may appear in the analysis tiers.
+ */
+.conlang-example-translation {
+  margin-top: 0.45rem;
+  font-style: italic;
+  color: var(--text-normal);
+}
+
+/*
+ * Optional analytical tiers are grouped beneath the translation and revealed
+ * only when the user expands the card's analysis. Missing tiers are simply
+ * omitted rather than represented by empty placeholders.
+ */
+.conlang-example-tier {
+  margin-top: 0.6rem;
+}
+
+.conlang-example-tier-label {
+  margin-bottom: 0.15rem;
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.conlang-example-tier-value {
+  color: var(--text-normal);
+}
+
+/*
+ * Analysis and source navigation share the bottom row. Show analysis belongs
+ * on the left because it changes the current card; Open note is always pushed
+ * to the right because it navigates to the underlying Markdown source.
+ *
+ * This also handles simple examples correctly: when there is no Show analysis
+ * control, Open note still remains right-aligned instead of moving left.
+ */
+.conlang-example-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.conlang-example-actions button {
+  font-size: var(--font-ui-smaller);
+}
+
+/*
+ * Open note is currently the final action in the row. Auto left margin consumes
+ * the available space before it, keeping source navigation at the right edge
+ * whether or not an analysis control is present.
+ */
+.conlang-example-actions button:last-child {
+  margin-left: auto;
+}
+
+/*
+ * Empty states should remain quieter than actual example content while still
+ * making it clear whether there are no examples or merely no search matches.
+ */
+.conlang-example-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
