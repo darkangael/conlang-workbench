@@ -120,6 +120,30 @@ radius is vault-wide.
 - Recovery should be considered part of feature design for any mutating
   operation.
 
+## Forward Data-Safety Posture
+
+Data preservation is a continuing design requirement rather than a final
+validation step.
+
+When a feature is designed or substantially changed, consider:
+
+- whether it reads or mutates user-authored data
+- the maximum amount of data that a mistake could affect
+- whether unknown or future metadata is preserved
+- whether the operation can be previewed, reversed, or safely repeated
+- what happens if parsing, writing, or execution fails midway
+- whether questionable data can be diagnosed instead of silently changed
+- whether the safest practical behavior is the default
+
+Features that begin as read-only should be re-reviewed when editing,
+normalization, migration, import, or bulk behavior is added.
+
+A completed audit section does not permanently certify future implementations.
+Material changes require targeted re-review.
+
+> **A feature is not complete merely because it works on valid input. It should
+> also fail safely, preserve user work, and stay within its intended authority.**
+
 ---
 
 ## 1. Read-Only vs Mutating Behavior
