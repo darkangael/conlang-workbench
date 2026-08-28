@@ -1,6 +1,10 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
 import { Morpheme } from "./types";
-import { parseStringList } from "./word-tokens";
+import {
+  MorphemeSourceInput,
+  parseMorphemeSource,
+} from "./morpheme-source";
+import { WorkbenchSourceRecord } from "./workbench-source";
 
 /**
  * A configured source folder for one language's morpheme inventory.
@@ -25,6 +29,17 @@ export interface MorphemeSource {
 export class MorphemeInventory {
   private all: Morpheme[] = [];
 
+  /**
+   * Every source recognized as a morpheme, including sources that are
+   * temporarily too malformed to become a complete Morpheme object.
+   */
+  private sourceRecords: WorkbenchSourceRecord<Morpheme>[] = [];
+
+  private byWorkbenchID = new Map<
+    string,
+    WorkbenchSourceRecord<Morpheme>
+  >();
+
   // Stable morpheme IDs may be unique only within a language, so keep all
   // matches rather than assuming one globally unique ID across the vault.
   private byId = new Map<string, Morpheme[]>();
@@ -33,6 +48,8 @@ export class MorphemeInventory {
 
   clear() {
     this.all = [];
+    this.sourceRecords = [];
+    this.byWorkbenchID.clear();
     this.byId.clear();
   }
 
@@ -44,6 +61,26 @@ export class MorphemeInventory {
    */
   allMorphemes(): Morpheme[] {
     return this.all.slice();
+  }
+
+  /**
+   * Return every source that Workbench recognized as a morpheme.
+   *
+   * Records with `value: null` remain available here so malformed source data
+   * can be surfaced and repaired rather than silently disappearing.
+   */
+  allSourceRecords(): WorkbenchSourceRecord<Morpheme>[] {
+    return this.sourceRecords.slice();
+  }
+
+  /**
+   * Resolve Workbench's own identity back to the currently loaded source
+   * record. This identity is intentionally separate from morpheme IDs.
+   */
+  lookupWorkbenchID(
+    workbenchID: string,
+  ): WorkbenchSourceRecord<Morpheme> | undefined {
+    return this.byWorkbenchID.get(workbenchID);
   }
 
   /**
@@ -106,36 +143,47 @@ export class MorphemeInventory {
       const files = this.collectMarkdownFiles(folder);
 
       for (const file of files) {
-        const morpheme = this.readMorpheme(file);
+        const record = this.readMorphemeSource(file);
+        if (!record) continue;
+
+        const morpheme = record.value;
+
+        if (morpheme) {
+          // Do not allow entries explicitly assigned to another language to
+          // leak into this configured source merely because folders overlap.
+          if (
+            source.language &&
+            morpheme.language &&
+            morpheme.language !== source.language
+          ) {
+            continue;
+          }
+
+          if (
+            source.languageId &&
+            morpheme.languageId &&
+            morpheme.languageId !== source.languageId
+          ) {
+            continue;
+          }
+
+          // Preserve compatibility with simple notes: language identity may be
+          // inherited from configuration rather than repeated in every file.
+          if (!morpheme.language && source.language) {
+            morpheme.language = source.language;
+          }
+
+          if (!morpheme.languageId && source.languageId) {
+            morpheme.languageId = source.languageId;
+          }
+        }
+
+        // Store the source record even when it could not become a complete
+        // Morpheme. That is what keeps malformed-but-recognized user work
+        // visible to Workbench rather than silently discarding it.
+        this.addSourceRecord(record);
+
         if (!morpheme) continue;
-
-        // Do not allow entries explicitly assigned to another language to leak
-        // into this configured source merely because folders overlap.
-        if (
-          source.language &&
-          morpheme.language &&
-          morpheme.language !== source.language
-        ) {
-          continue;
-        }
-
-        if (
-          source.languageId &&
-          morpheme.languageId &&
-          morpheme.languageId !== source.languageId
-        ) {
-          continue;
-        }
-
-        // Preserve compatibility with simple notes: language identity may be
-        // inherited from configuration rather than repeated in every file.
-        if (!morpheme.language && source.language) {
-          morpheme.language = source.language;
-        }
-
-        if (!morpheme.languageId && source.languageId) {
-          morpheme.languageId = source.languageId;
-        }
 
         this.addMorpheme(morpheme);
         count++;
@@ -166,84 +214,37 @@ export class MorphemeInventory {
   }
 
   /**
-   * Parse one canonical morpheme note from frontmatter.
+   * Convert one Obsidian Markdown file into Workbench's source-facing
+   * morpheme representation.
    *
-   * Minimal valid note:
-   *
-   * type: morpheme
-   * morpheme_id: plural-s
-   * form: -s
-   * gloss: plural
-   *
-   * Richer fields remain optional.
+   * Raw frontmatter interpretation lives in morpheme-source.ts so this
+   * inventory only coordinates source storage and valid feature objects.
    */
-  private readMorpheme(file: TFile): Morpheme | null {
+  private readMorphemeSource(
+    file: TFile,
+  ): WorkbenchSourceRecord<Morpheme> | null {
     const cache: CachedMetadata | null =
       this.app.metadataCache.getFileCache(file);
 
     if (!cache) return null;
 
-    const fm = cache.frontmatter ?? {};
-
-    const asString = (value: unknown): string | undefined => {
-      if (value === undefined || value === null) return undefined;
-
-      if (typeof value === "string") return value;
-
-      if (typeof value === "number" || typeof value === "boolean") {
-        return String(value);
-      }
-
-      // Arrays and objects are not meaningful for scalar fields.
-      return undefined;
-    };
-
-    // A morpheme folder may eventually contain supporting Markdown notes.
-    // Requiring an explicit document type prevents those from being mistaken
-    // for morphemes.
-    const documentType = asString(fm.type)?.trim();
-    if (documentType !== "morpheme") return null;
-
-    // Stable identity is deliberately explicit rather than filename-derived.
-    // Renaming a note or changing its display form must not change references.
-    const id = asString(fm.morpheme_id ?? fm.id)?.trim();
-    if (!id) return null;
-
-    // `form:` overrides the filename. Filename fallback keeps simple authoring
-    // comfortable while the stable identity remains explicit above.
-    const formOverride = asString(fm.form)?.trim();
-    const form = formOverride || file.basename;
-    if (!form.trim()) return null;
-
-    const gloss = asString(fm.gloss ?? fm.meaning ?? fm.function)?.trim();
-
-    if (!gloss) return null;
-
-    const distributionRaw = asString(fm.distribution)?.trim().toLowerCase();
-
-    const distribution =
-      distributionRaw === "free" ||
-      distributionRaw === "bound" ||
-      distributionRaw === "both" ||
-      distributionRaw === "unknown"
-        ? distributionRaw
-        : undefined;
-
-    return {
-      id,
-      form,
-      gloss,
-      type: asString(
-        fm.morpheme_type ?? fm.morphemeType ?? fm.category,
-      )?.trim(),
-      distribution,
-      realizations: parseStringList(fm.realizations ?? fm.allomorphs),
-      language: asString(fm.language)?.trim(),
-      languageId: asString(fm.language_id ?? fm.languageId)?.trim(),
+    const input: MorphemeSourceInput = {
       path: file.path,
-      notes: asString(fm.notes)?.trim(),
+      basename: file.basename,
       mtime: file.stat.mtime,
+      frontmatter: cache.frontmatter ?? {},
     };
+
+    return parseMorphemeSource(input);
+  }
+
+  /**
+   * Retain a recognized source independently of whether it produced a valid
+   * linguistic object.
+   */
+  private addSourceRecord(record: WorkbenchSourceRecord<Morpheme>) {
+    this.sourceRecords.push(record);
+    this.byWorkbenchID.set(record.identity.workbenchID, record);
   }
 
   /**

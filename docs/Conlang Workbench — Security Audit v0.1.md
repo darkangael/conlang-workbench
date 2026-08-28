@@ -830,9 +830,16 @@ The initial parser inventory identified the following current input surfaces:
 - `body-preview.ts` — Markdown-body preview extraction
 - `main.ts` — metadata-cache coordination around dictionary creation/reload
 
-The Language Profile parser and shared `word-tokens.ts` helpers have been
-reviewed in this pass. The remaining parsers still require individual review
-before §4 can be completed.
+The Language Profile parser, shared `word-tokens.ts` helpers, and morpheme
+source/frontmatter handling have now been reviewed in this pass. The remaining
+parsers still require individual review before §4 can be completed.
+
+Morpheme parsing is now separated from inventory storage. Raw Obsidian
+frontmatter is interpreted by `morpheme-source.ts`, which produces a
+source-facing Workbench record containing independent Workbench, source, and
+linguistic identities, diagnostics, and either a clean `Morpheme` value or
+`null` when the recognized source cannot yet be safely represented as a
+complete morpheme.
 
 ### Type Validation
 
@@ -875,6 +882,18 @@ Regression coverage in `test:frontmatter` now verifies that:
 - unsupported nested arrays are skipped rather than stringified
 - neighboring usable values are preserved when one item is malformed
 - a field containing only unsupported structures produces no interpreted data
+- malformed preferred morpheme aliases do not suppress valid fallback aliases
+- blank preferred morpheme aliases do not suppress valid fallback aliases
+- a recognized morpheme source with no usable linguistic ID remains retained
+  under its Workbench/source identity with `value: null`
+- a recognized morpheme source with no usable required gloss remains retained
+  with diagnostics rather than disappearing
+- malformed explicit morpheme form data may use the already-supported filename
+  fallback while reporting the unusable source field
+- unsupported morpheme distribution values remain uninterpreted and produce a
+  diagnostic without invalidating an otherwise usable morpheme
+- supporting Markdown and other explicit document types inside configured
+  morpheme folders are not misclassified as malformed morphemes
 
 Malformed YAML itself, duplicate/unusual-key behavior, and malformed values in
 the remaining feature parsers still require review.
@@ -892,6 +911,16 @@ specific parser.
 
 Canonicalization or normalization remains a separate explicit operation. The
 reader does not rewrite tolerated input into Workbench's preferred YAML form.
+
+For reviewed morpheme aliases, Workbench now selects the first value that can
+actually be interpreted rather than the first merely present value. A malformed
+or blank preferred alias therefore cannot suppress a valid supported fallback.
+
+Rejected preferred aliases are retained as diagnostics. If required morpheme
+data cannot be safely interpreted at all, the source is still retained as a
+Workbench source record with its independent `workbenchID` and `sourceID`; its
+`linguisticID` may remain absent and its feature-facing value is `null`.
+Workbench does not substitute its own identity for missing linguistic identity.
 
 ### Unexpected Content
 
@@ -928,11 +957,63 @@ Regression coverage is provided by:
 
 `npm run test:frontmatter`
 
+#### SEC-004-H2 — Invalid preferred aliases could suppress usable fallback data
+
+- **Severity:** Hardening
+- **Primary impact:** Data integrity
+- **Data-safety relevance:** Yes
+- **Status:** Partially remediated — morpheme parsing regression-tested
+
+Several frontmatter readers selected compatibility aliases with nullish
+coalescing before validating whether the preferred field could actually be
+interpreted. A malformed but non-null preferred value could therefore suppress
+a valid supported fallback.
+
+For example, a structured `morpheme_id` value could prevent a valid legacy
+`id` field from being considered, causing an otherwise recoverable morpheme
+note to disappear from the loaded inventory. Blank preferred values could
+produce the same result when validation occurred only after alias selection.
+
+The source Markdown was not modified, but Workbench could silently lose usable
+information or omit a recognized source from feature-facing state.
+
+The morpheme remediation introduces first-usable alias selection through shared
+frontmatter helpers. Structurally incompatible or blank preferred aliases are
+rejected for interpretation, recorded for diagnostics, and do not prevent later
+supported aliases from being considered.
+
+Morpheme source interpretation is now separated into `morpheme-source.ts`.
+Once a source is positively identified as `type: morpheme`, Workbench retains a
+source record even when required linguistic data cannot be interpreted. That
+record keeps independent:
+
+- `workbenchID` — Workbench's internal handle
+- `sourceID` — identity of the source-side object as represented by its adapter
+- `linguisticID` — user/source-authored linguistic identity when available
+
+A malformed recognized source therefore remains addressable with `value: null`
+and diagnostics rather than being silently discarded. Workbench does not invent
+a linguistic ID from its own internal identity.
+
+`MorphemeInventory` now stores source records separately from valid
+feature-facing `Morpheme` objects. Existing `allMorphemes()` and `lookupId()`
+behavior remains limited to valid morphemes, while source-facing APIs retain
+recognized malformed sources for diagnosis and later reparse.
+
+Regression coverage verifies valid parsing, malformed and blank preferred
+aliases, missing required ID/gloss values, safe filename fallback, unsupported
+distribution values, retained Workbench identity, and non-morpheme Markdown
+classification boundaries.
+
+The same alias-selection pattern remains to be reviewed and, where applicable,
+remediated in dictionary and phonology parsing before §4 is complete.
+
 ### Status
 
-**In Progress — Language Profile and shared frontmatter helpers reviewed;
-SEC-004-H1 remediated and regression-tested. Remaining parsers still require
-review.**
+**In Progress — Language Profile, shared frontmatter helpers, and morpheme
+source parsing reviewed; SEC-004-H1 remediated and regression-tested;
+SEC-004-H2 partially remediated with morpheme parsing regression-tested.
+Dictionary, phonology, and the remaining input surfaces still require review.**
 
 ---
 
@@ -1382,6 +1463,7 @@ audit section.
 | SEC-003-M1 | §3 Path Handling and Traversal | Remediated and verified | Medium | Mutating paths containing `..` can be normalized to a different logical destination by Obsidian mutation APIs. | Controlled raw-API test; Workbench adversarial runtime test; `test:vault-paths` regression coverage | Workbench now validates logical write paths before mutation and rejects traversal rather than normalizing it. |
 | SEC-003-H1 | §3 Path Handling and Traversal | Remediated and verified | Hardening | Raw string-prefix folder comparison can match unrelated sibling paths. | Code review; `Mer` / `Mermaid` regression coverage in `test:vault-paths` | Replaced raw prefix comparison with component-aware `isPathWithinFolder()`. |
 | SEC-004-H1 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Unsupported structured frontmatter values could be silently stringified into values the user did not supply as text. | Code review; scalar/structure boundary regression coverage in `test:frontmatter` | Shared parsing now tolerates simple scalars but leaves unsupported structures uninterpreted; no automatic writeback or normalization occurs. |
+| SEC-004-H2 | §4 Frontmatter and Markdown Input | Partially remediated — morpheme parsing regression-tested | Hardening | Malformed or blank preferred frontmatter aliases could suppress valid supported fallback values and cause recoverable morpheme sources to disappear from the loaded inventory. | Code review; first-usable alias tests; morpheme source-record regression coverage in `test:frontmatter` | Morpheme parsing now selects the first interpretable alias, retains recognized malformed sources under independent Workbench/source identity, reports diagnostics, and never substitutes internal identity for missing linguistic identity. Dictionary and phonology alias families remain to be reviewed. |
 
 ---
 

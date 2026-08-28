@@ -1,3 +1,5 @@
+import { parseYamlScalarText } from "./frontmatter-values";
+
 // Shared word-tokenisation helpers.
 //
 // The plugin used to use /[A-Za-z']+/ everywhere, which broke for any conlang
@@ -70,31 +72,6 @@ export function firstSense(definition: string): string {
  */
 export const DEFAULT_FORM_LABEL = "variant";
 
-/**
- * Convert a YAML scalar into text without inventing a representation for
- * structured data.
- *
- * Frontmatter is deliberately read tolerantly: users may reasonably supply a
- * number or boolean where Workbench ultimately needs textual data, so those
- * simple scalar values can be interpreted as text in memory.
- *
- * Objects and arrays are different. Stringifying them would manufacture values
- * such as "[object Object]" that the user never actually supplied as text.
- * Those structures therefore remain uninterpreted unless a parser explicitly
- * supports their shape.
- *
- * This helper never changes the source note. Canonicalising or rewriting YAML
- * is a separate, explicit operation that requires user intent.
- */
-function yamlScalarToString(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
-
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-
-  return undefined;
-}
 
 /**
  * Parse the `forms:` frontmatter property into label/form pairs.
@@ -151,7 +128,7 @@ export function parseInflectedForms(
       if (!label) continue;
       const values = Array.isArray(v) ? v : [v];
       for (const item of values) {
-        const scalar = yamlScalarToString(item);
+        const scalar = parseYamlScalarText(item);
         if (scalar === undefined) continue;
 
         // The value may itself be comma-separated ("kalim, kalum").
@@ -174,7 +151,7 @@ export function parseInflectedForms(
         continue;
       }
 
-      const scalar = yamlScalarToString(item);
+      const scalar = parseYamlScalarText(item);
       if (scalar !== undefined) pushFromString(scalar);
     }
   } else if (isRecord(value)) {
@@ -202,7 +179,7 @@ export function parseStringList(value: unknown): string[] | undefined {
     // String(object) would manufacture "[object Object]", which is not data
     // the user actually supplied as an alias, part, modality, etc.
     out = value
-      .map((item) => yamlScalarToString(item)?.trim())
+      .map((item) => parseYamlScalarText(item)?.trim())
       .filter((item): item is string => Boolean(item));
   } else if (typeof value === "string" && value.trim()) {
     out = value.split(",").map((item) => item.trim());

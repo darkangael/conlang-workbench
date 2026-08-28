@@ -324,6 +324,38 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// frontmatter-values.ts
+function parseYamlScalarText(value) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return void 0;
+}
+function parseNonBlankYamlScalarText(value) {
+  var _a;
+  const parsed = (_a = parseYamlScalarText(value)) == null ? void 0 : _a.trim();
+  return parsed ? parsed : void 0;
+}
+function firstParsedFrontmatterValue(candidates, parser) {
+  const rejectedKeys = [];
+  for (const candidate of candidates) {
+    if (candidate.value === void 0 || candidate.value === null) {
+      continue;
+    }
+    const parsed = parser(candidate.value);
+    if (parsed !== void 0) {
+      return {
+        value: parsed,
+        key: candidate.key,
+        rejectedKeys
+      };
+    }
+    rejectedKeys.push(candidate.key);
+  }
+  return { rejectedKeys };
+}
+
 // word-tokens.ts
 var WORD_RE = /\p{L}[\p{L}'-]*/gu;
 function cleanWord(s) {
@@ -346,13 +378,6 @@ function firstSense(definition) {
   return definition.split(/[,;]/)[0].trim();
 }
 var DEFAULT_FORM_LABEL = "variant";
-function yamlScalarToString(value) {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return void 0;
-}
 function parseInflectedForms(value) {
   const out = [];
   const tidy = (s) => s.trim().replace(/\s+/g, " ");
@@ -378,7 +403,7 @@ function parseInflectedForms(value) {
       if (!label) continue;
       const values = Array.isArray(v) ? v : [v];
       for (const item of values) {
-        const scalar = yamlScalarToString(item);
+        const scalar = parseYamlScalarText(item);
         if (scalar === void 0) continue;
         for (const f of scalar.split(",")) {
           const form = tidy(f);
@@ -394,7 +419,7 @@ function parseInflectedForms(value) {
         pushFromRecord(item);
         continue;
       }
-      const scalar = yamlScalarToString(item);
+      const scalar = parseYamlScalarText(item);
       if (scalar !== void 0) pushFromString(scalar);
     }
   } else if (isRecord(value)) {
@@ -411,7 +436,7 @@ function parseStringList(value) {
   if (Array.isArray(value)) {
     out = value.map((item) => {
       var _a;
-      return (_a = yamlScalarToString(item)) == null ? void 0 : _a.trim();
+      return (_a = parseYamlScalarText(item)) == null ? void 0 : _a.trim();
     }).filter((item) => Boolean(item));
   } else if (typeof value === "string" && value.trim()) {
     out = value.split(",").map((item) => item.trim());
@@ -1019,16 +1044,174 @@ var Dictionary = _Dictionary;
 
 // morphemes.ts
 var import_obsidian2 = require("obsidian");
+
+// workbench-id.ts
+function createObsidianWorkbenchIdentity(path, linguisticID) {
+  const sourceID = `obsidian-file:${path}`;
+  return {
+    workbenchID: `wb:obsidian-file:${encodeURIComponent(path)}`,
+    sourceID,
+    linguisticID
+  };
+}
+
+// morpheme-source.ts
+function addRejectedAliasDiagnostics(diagnostics, result) {
+  for (const field of result.rejectedKeys) {
+    diagnostics.push({
+      code: "frontmatter.unusable-alias",
+      severity: "warning",
+      field,
+      message: `Frontmatter field "${field}" could not be interpreted; Workbench continued checking supported fallback fields.`
+    });
+  }
+}
+function parseMorphemeSource(input) {
+  var _a, _b, _c, _d;
+  const fm = input.frontmatter;
+  const documentType = (_a = parseYamlScalarText(fm.type)) == null ? void 0 : _a.trim();
+  if (documentType !== "morpheme") {
+    return null;
+  }
+  const diagnostics = [];
+  const idResult = firstParsedFrontmatterValue(
+    [
+      { key: "morpheme_id", value: fm.morpheme_id },
+      { key: "id", value: fm.id }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(diagnostics, idResult);
+  const glossResult = firstParsedFrontmatterValue(
+    [
+      { key: "gloss", value: fm.gloss },
+      { key: "meaning", value: fm.meaning },
+      { key: "function", value: fm.function }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(diagnostics, glossResult);
+  const typeResult = firstParsedFrontmatterValue(
+    [
+      { key: "morpheme_type", value: fm.morpheme_type },
+      { key: "morphemeType", value: fm.morphemeType },
+      { key: "category", value: fm.category }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(diagnostics, typeResult);
+  const realizationsResult = firstParsedFrontmatterValue(
+    [
+      { key: "realizations", value: fm.realizations },
+      { key: "allomorphs", value: fm.allomorphs }
+    ],
+    parseStringList
+  );
+  addRejectedAliasDiagnostics(diagnostics, realizationsResult);
+  const languageIdResult = firstParsedFrontmatterValue(
+    [
+      { key: "language_id", value: fm.language_id },
+      { key: "languageId", value: fm.languageId }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(diagnostics, languageIdResult);
+  const id = idResult.value;
+  const gloss = glossResult.value;
+  const identity = createObsidianWorkbenchIdentity(input.path, id);
+  if (!id) {
+    diagnostics.push({
+      code: "morpheme.missing-id",
+      severity: "error",
+      field: "morpheme_id",
+      message: "This source is identified as a morpheme, but no usable morpheme ID could be interpreted."
+    });
+  }
+  if (!gloss) {
+    diagnostics.push({
+      code: "morpheme.missing-gloss",
+      severity: "error",
+      field: "gloss",
+      message: "This source is identified as a morpheme, but no usable gloss, meaning, or function could be interpreted."
+    });
+  }
+  const formRaw = parseYamlScalarText(fm.form);
+  const formOverride = formRaw == null ? void 0 : formRaw.trim();
+  const form = formOverride || input.basename;
+  if (fm.form !== void 0 && fm.form !== null && formRaw === void 0) {
+    diagnostics.push({
+      code: "frontmatter.unusable-value",
+      severity: "warning",
+      field: "form",
+      message: 'Frontmatter field "form" could not be interpreted; Workbench used the source filename as the display form instead.'
+    });
+  }
+  if (!form.trim()) {
+    diagnostics.push({
+      code: "morpheme.missing-form",
+      severity: "error",
+      field: "form",
+      message: "No usable morpheme form could be derived from frontmatter or the source filename."
+    });
+  }
+  const distributionRaw = (_b = parseYamlScalarText(fm.distribution)) == null ? void 0 : _b.trim().toLowerCase();
+  const distribution = distributionRaw === "free" || distributionRaw === "bound" || distributionRaw === "both" || distributionRaw === "unknown" ? distributionRaw : void 0;
+  if (distributionRaw && distribution === void 0) {
+    diagnostics.push({
+      code: "morpheme.unrecognized-distribution",
+      severity: "warning",
+      field: "distribution",
+      message: `Distribution "${distributionRaw}" is not one of the supported values: free, bound, both, or unknown.`
+    });
+  }
+  if (!id || !gloss || !form.trim()) {
+    return {
+      identity,
+      path: input.path,
+      value: null,
+      diagnostics
+    };
+  }
+  const morpheme = {
+    id,
+    form,
+    gloss,
+    type: typeResult.value,
+    distribution,
+    realizations: realizationsResult.value,
+    language: (_c = parseYamlScalarText(fm.language)) == null ? void 0 : _c.trim(),
+    languageId: languageIdResult.value,
+    path: input.path,
+    notes: (_d = parseYamlScalarText(fm.notes)) == null ? void 0 : _d.trim(),
+    mtime: input.mtime
+  };
+  return {
+    identity,
+    path: input.path,
+    value: morpheme,
+    diagnostics
+  };
+}
+
+// morphemes.ts
 var MorphemeInventory = class {
   constructor(app) {
     this.app = app;
     this.all = [];
+    /**
+     * Every source recognized as a morpheme, including sources that are
+     * temporarily too malformed to become a complete Morpheme object.
+     */
+    this.sourceRecords = [];
+    this.byWorkbenchID = /* @__PURE__ */ new Map();
     // Stable morpheme IDs may be unique only within a language, so keep all
     // matches rather than assuming one globally unique ID across the vault.
     this.byId = /* @__PURE__ */ new Map();
   }
   clear() {
     this.all = [];
+    this.sourceRecords = [];
+    this.byWorkbenchID.clear();
     this.byId.clear();
   }
   /**
@@ -1039,6 +1222,22 @@ var MorphemeInventory = class {
    */
   allMorphemes() {
     return this.all.slice();
+  }
+  /**
+   * Return every source that Workbench recognized as a morpheme.
+   *
+   * Records with `value: null` remain available here so malformed source data
+   * can be surfaced and repaired rather than silently disappearing.
+   */
+  allSourceRecords() {
+    return this.sourceRecords.slice();
+  }
+  /**
+   * Resolve Workbench's own identity back to the currently loaded source
+   * record. This identity is intentionally separate from morpheme IDs.
+   */
+  lookupWorkbenchID(workbenchID) {
+    return this.byWorkbenchID.get(workbenchID);
   }
   /**
    * Look up morphemes by stable ID.
@@ -1088,20 +1287,25 @@ var MorphemeInventory = class {
       if (!(folder instanceof import_obsidian2.TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
-        const morpheme = this.readMorpheme(file);
+        const record = this.readMorphemeSource(file);
+        if (!record) continue;
+        const morpheme = record.value;
+        if (morpheme) {
+          if (source.language && morpheme.language && morpheme.language !== source.language) {
+            continue;
+          }
+          if (source.languageId && morpheme.languageId && morpheme.languageId !== source.languageId) {
+            continue;
+          }
+          if (!morpheme.language && source.language) {
+            morpheme.language = source.language;
+          }
+          if (!morpheme.languageId && source.languageId) {
+            morpheme.languageId = source.languageId;
+          }
+        }
+        this.addSourceRecord(record);
         if (!morpheme) continue;
-        if (source.language && morpheme.language && morpheme.language !== source.language) {
-          continue;
-        }
-        if (source.languageId && morpheme.languageId && morpheme.languageId !== source.languageId) {
-          continue;
-        }
-        if (!morpheme.language && source.language) {
-          morpheme.language = source.language;
-        }
-        if (!morpheme.languageId && source.languageId) {
-          morpheme.languageId = source.languageId;
-        }
         this.addMorpheme(morpheme);
         count++;
       }
@@ -1126,56 +1330,31 @@ var MorphemeInventory = class {
     return out;
   }
   /**
-   * Parse one canonical morpheme note from frontmatter.
+   * Convert one Obsidian Markdown file into Workbench's source-facing
+   * morpheme representation.
    *
-   * Minimal valid note:
-   *
-   * type: morpheme
-   * morpheme_id: plural-s
-   * form: -s
-   * gloss: plural
-   *
-   * Richer fields remain optional.
+   * Raw frontmatter interpretation lives in morpheme-source.ts so this
+   * inventory only coordinates source storage and valid feature objects.
    */
-  readMorpheme(file) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
+  readMorphemeSource(file) {
+    var _a;
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return null;
-    const fm = (_a = cache.frontmatter) != null ? _a : {};
-    const asString = (value) => {
-      if (value === void 0 || value === null) return void 0;
-      if (typeof value === "string") return value;
-      if (typeof value === "number" || typeof value === "boolean") {
-        return String(value);
-      }
-      return void 0;
-    };
-    const documentType = (_b = asString(fm.type)) == null ? void 0 : _b.trim();
-    if (documentType !== "morpheme") return null;
-    const id = (_d = asString((_c = fm.morpheme_id) != null ? _c : fm.id)) == null ? void 0 : _d.trim();
-    if (!id) return null;
-    const formOverride = (_e = asString(fm.form)) == null ? void 0 : _e.trim();
-    const form = formOverride || file.basename;
-    if (!form.trim()) return null;
-    const gloss = (_h = asString((_g = (_f = fm.gloss) != null ? _f : fm.meaning) != null ? _g : fm.function)) == null ? void 0 : _h.trim();
-    if (!gloss) return null;
-    const distributionRaw = (_i = asString(fm.distribution)) == null ? void 0 : _i.trim().toLowerCase();
-    const distribution = distributionRaw === "free" || distributionRaw === "bound" || distributionRaw === "both" || distributionRaw === "unknown" ? distributionRaw : void 0;
-    return {
-      id,
-      form,
-      gloss,
-      type: (_l = asString(
-        (_k = (_j = fm.morpheme_type) != null ? _j : fm.morphemeType) != null ? _k : fm.category
-      )) == null ? void 0 : _l.trim(),
-      distribution,
-      realizations: parseStringList((_m = fm.realizations) != null ? _m : fm.allomorphs),
-      language: (_n = asString(fm.language)) == null ? void 0 : _n.trim(),
-      languageId: (_p = asString((_o = fm.language_id) != null ? _o : fm.languageId)) == null ? void 0 : _p.trim(),
+    const input = {
       path: file.path,
-      notes: (_q = asString(fm.notes)) == null ? void 0 : _q.trim(),
-      mtime: file.stat.mtime
+      basename: file.basename,
+      mtime: file.stat.mtime,
+      frontmatter: (_a = cache.frontmatter) != null ? _a : {}
     };
+    return parseMorphemeSource(input);
+  }
+  /**
+   * Retain a recognized source independently of whether it produced a valid
+   * linguistic object.
+   */
+  addSourceRecord(record) {
+    this.sourceRecords.push(record);
+    this.byWorkbenchID.set(record.identity.workbenchID, record);
   }
   /**
    * Add a parsed morpheme to the inventory and stable-ID index.
