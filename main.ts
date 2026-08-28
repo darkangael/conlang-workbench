@@ -22,6 +22,7 @@ import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
+import { PhonologyInventory } from "./phonology";
 import { loadLanguageProfile } from "./language-profile";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
@@ -62,6 +63,11 @@ export default class ConlangPlugin extends Plugin {
   linguisticExamples: LinguisticExampleInventory =
     new LinguisticExampleInventory(this.app);
 
+  // Canonical phonological units are loaded separately from dictionary and
+  // morphology data. Later phonology, phonotactics, and diagnostic features
+  // can share this inventory without taking ownership of its loading logic.
+  phonology: PhonologyInventory = new PhonologyInventory(this.app);
+
   // Parsed canonical Language Profiles for currently active languages.
   // Keyed by LanguageConfig.name for compatibility with the inherited
   // settings model. The profile itself carries its stable language id.
@@ -91,6 +97,7 @@ export default class ConlangPlugin extends Plugin {
     await this.loadSettings();
     this.dictionary = new Dictionary(this.app);
     this.morphemes = new MorphemeInventory(this.app);
+    this.phonology = new PhonologyInventory(this.app);
 
     this.app.workspace.onLayoutReady(async () => {
       await this.reloadActiveLanguage();
@@ -415,6 +422,8 @@ export default class ConlangPlugin extends Plugin {
     if (active.length === 0) {
       this.dictionary.clear();
       this.morphemes.clear();
+      this.linguisticExamples.clear();
+      this.phonology.clear();
       this.classifyCache.clear();
       return 0;
     }
@@ -444,6 +453,19 @@ export default class ConlangPlugin extends Plugin {
         .filter((l) => Boolean(l.exampleFolder?.trim()))
         .map((l) => ({
           folder: l.exampleFolder!.trim(),
+          language: l.name,
+          languageId: this.getLanguageProfile(l)?.id,
+        })),
+    );
+
+    // Canonical phonological units are loaded from each active language's
+    // optional phonology folder. The phonology module owns parsing and indexing;
+    // main.ts only provides the configured source and canonical language identity.
+    await this.phonology.loadFromFolders(
+      active
+        .filter((l) => Boolean(l.phonologyFolder?.trim()))
+        .map((l) => ({
+          folder: l.phonologyFolder!.trim(),
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
         })),

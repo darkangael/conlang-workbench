@@ -1949,3 +1949,94 @@ body.conlang-hl-background .conlang-known-word.is-phrase {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
+
+/* ===== Phonology inventory ===== */
+
+/*
+ * Phonological units use the same compact browser rhythm as morphemes:
+ * stacked clickable rows, small metadata, and enough spacing to scan quickly.
+ */
+.conlang-phonology-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.conlang-phonology-row {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  transition: background 0.1s;
+}
+
+.conlang-phonology-row.conlang-clickable {
+  cursor: pointer;
+}
+
+.conlang-phonology-row.conlang-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+/*
+ * Keep the visible unit and its analytical metadata on one line when possible.
+ * Wrapping preserves usability in a narrow Obsidian sidebar.
+ */
+.conlang-phonology-row-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/*
+ * The phonological symbol is the primary scan target in an inventory, so it
+ * receives slightly stronger emphasis than ordinary supporting metadata.
+ */
+.conlang-phonology-symbol {
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.conlang-phonology-meta {
+  font-style: italic;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.conlang-phonology-notes {
+  font-size: 0.85em;
+  color: var(--text-normal);
+  margin-top: 2px;
+}
+
+.conlang-phonology-language {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.conlang-phonology-summary {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/*
+ * Common spoken-language categories receive subtle visual markers. These are
+ * conveniences rather than a closed taxonomy: creator-defined or modality-
+ * specific categories remain valid and simply keep the neutral border.
+ */
+.conlang-phonology-row.category-consonant {
+  border-left: 3px solid var(--color-blue, var(--interactive-accent));
+}
+
+.conlang-phonology-row.category-vowel {
+  border-left: 3px solid var(--color-purple, var(--interactive-accent));
+}

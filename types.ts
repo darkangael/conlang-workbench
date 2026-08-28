@@ -228,6 +228,11 @@ export interface LanguageConfig {
   // Optional folder containing standalone linguistic examples.
   exampleFolder?: string;
 
+  // Optional folder containing canonical phonological-unit notes.
+  // This first phonology layer documents contrastive units independently from
+  // later realizations, allophony, phonotactics, or feature analysis.
+  phonologyFolder?: string;
+
   // Optional vault path to the canonical Language Profile note.
   // Omitted for backwards compatibility with existing configurations.
   profilePath?: string;

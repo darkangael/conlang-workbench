@@ -20,6 +20,7 @@ import type ConlangPlugin from "./main";
 import { DictionaryEntry, InflectedForm, LexicalSense } from "./types";
 import { MorphemeTab } from "./morpheme-tab";
 import { LinguisticExampleTab } from "./linguistic-example-tab";
+import { PhonologyTab } from "./phonology-tab";
 import { applyCypherReverse } from "./cypher";
 import {
   findInflection,
@@ -39,7 +40,12 @@ import {
 export const VIEW_TYPE_PANEL = "made-up-words-panel";
 
 type TabId =
-  "translate" | "dictionary" | "translator" | "morphemes" | "examples";
+  | "translate"
+  | "dictionary"
+  | "translator"
+  | "morphemes"
+  | "examples"
+  | "phonology";
 type SortKey = "alphabetical" | "recent" | "partOfSpeech";
 type TranslatorDirection = "english-to-conlang" | "conlang-to-english";
 
@@ -55,6 +61,11 @@ export class TranslationPanelView extends ItemView {
   // dedicated LinguisticExampleTab module.
   private exampleEl!: HTMLElement;
   private exampleTab!: LinguisticExampleTab;
+  // The Phonology tab follows the same modular boundary as Morphemes and
+  // Examples. panel.ts owns only the container and tab lifecycle; phonological
+  // browsing and filtering remain inside the dedicated PhonologyTab module.
+  private phonologyEl!: HTMLElement;
+  private phonologyTab!: PhonologyTab;
 
   // Browser state (persisted across re-renders within a session)
   private searchQuery: string = "";
@@ -145,6 +156,7 @@ export class TranslationPanelView extends ItemView {
     this.buildDictionaryTab();
     this.buildMorphemeTab();
     this.buildExampleTab();
+    this.buildPhonologyTab();
     this.showActiveTab();
 
     // Update Translate tab on selection change
@@ -199,6 +211,8 @@ export class TranslationPanelView extends ItemView {
       this.morphemeTab.render();
     } else if (this.activeTab === "examples") {
       this.exampleTab.render(this.exampleEl);
+    } else if (this.activeTab === "phonology") {
+      this.phonologyTab.render();
     }
   }
 
@@ -363,6 +377,7 @@ export class TranslationPanelView extends ItemView {
         else if (id === "translator") this.runTranslatorTranslation();
         else if (id === "morphemes") this.morphemeTab.render();
         else if (id === "examples") this.exampleTab.render(this.exampleEl);
+        else if (id === "phonology") this.phonologyTab.render();
       });
       return tab;
     };
@@ -371,6 +386,7 @@ export class TranslationPanelView extends ItemView {
     mkTab("dictionary", "Dictionary");
     mkTab("morphemes", "Morphemes");
     mkTab("examples", "Examples");
+    mkTab("phonology", "Phonology");
   }
 
   private showActiveTab() {
@@ -380,6 +396,7 @@ export class TranslationPanelView extends ItemView {
     this.translatorEl.addClass("conlang-hidden");
     this.morphemeEl.addClass("conlang-hidden");
     this.exampleEl.addClass("conlang-hidden");
+    this.phonologyEl.addClass("conlang-hidden");
 
     if (this.activeTab === "translate") {
       // The updateTranslate method decides between empty and body visibility
@@ -397,6 +414,9 @@ export class TranslationPanelView extends ItemView {
     } else if (this.activeTab === "examples") {
       this.exampleEl.removeClass("conlang-hidden");
       this.exampleTab.render(this.exampleEl);
+    } else if (this.activeTab === "phonology") {
+      this.phonologyEl.removeClass("conlang-hidden");
+      this.phonologyTab.render();
     }
   }
 
@@ -1836,6 +1856,22 @@ export class TranslationPanelView extends ItemView {
     );
 
     this.exampleTab.render(this.exampleEl);
+  }
+
+  /**
+   * Build the host container for the modular Phonology Inventory tab.
+   *
+   * The panel owns placement and visibility. PhonologyTab owns the feature UI,
+   * while PhonologyInventory remains responsible for loading and indexing the
+   * underlying phonological-unit data.
+   */
+  private buildPhonologyTab() {
+    this.phonologyEl = this.tabContentEl.createDiv({
+      cls: "conlang-phonology-tab conlang-hidden",
+    });
+
+    this.phonologyTab = new PhonologyTab(this.plugin);
+    this.phonologyTab.mount(this.phonologyEl);
   }
 
   private renderBrowser() {

@@ -538,6 +538,22 @@ export class ConlangSettingTab extends PluginSettingTab {
         }),
       );
 
+    // Canonical phonological units have their own source folder rather than
+    // sharing the dictionary or morphology folders. Keeping this boundary
+    // explicit lets later phonology features build on the same inventory
+    // without treating every language-documentation note as a phonological unit.
+    new Setting(body)
+      .setName("Phonology folder")
+      .setDesc(
+        "Optional folder of canonical phonological-unit notes. Only notes explicitly marked as phonological units are loaded.",
+      )
+      .addText((t) =>
+        t.setValue(lang.phonologyFolder ?? "").onChange(async (v) => {
+          lang.phonologyFolder = v.trim() || undefined;
+          await this.plugin.saveSettings();
+        }),
+      );
+
     new Setting(body)
       .setName("Language profile")
       .setDesc(
