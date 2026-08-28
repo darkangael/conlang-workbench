@@ -14,7 +14,7 @@ import { parseStringList } from "./word-tokens";
  */
 export function loadLanguageProfile(
   app: App,
-  config: LanguageConfig
+  config: LanguageConfig,
 ): LanguageProfile | null {
   const profilePath = config.profilePath?.trim();
   if (!profilePath) return null;
@@ -59,8 +59,6 @@ export function loadLanguageProfile(
       modalityList && modalityList.length > 1
         ? modalityList
         : modalityList?.[0],
-    documentationLanguage: asString(
-      fm.documentation_language
-    )?.trim(),
+    documentationLanguage: asString(fm.documentation_language)?.trim(),
   };
 }

@@ -38,8 +38,24 @@ var DEFAULT_SETTINGS = {
       inflections: [
         // Default rules use POS conditioning so they only fire on appropriate words.
         // Edit these in Settings → Made Up Words → Inflection rules, or apply a preset.
-        { label: "plural", pattern: "th", position: "suffix", strip: "th", add: "", enabled: true, pos: "noun" },
-        { label: "genitive", pattern: "en", position: "suffix", strip: "en", add: "", enabled: true, pos: "noun" }
+        {
+          label: "plural",
+          pattern: "th",
+          position: "suffix",
+          strip: "th",
+          add: "",
+          enabled: true,
+          pos: "noun"
+        },
+        {
+          label: "genitive",
+          pattern: "en",
+          position: "suffix",
+          strip: "en",
+          add: "",
+          enabled: true,
+          pos: "noun"
+        }
       ],
       // Sheets run top-to-bottom. Put whole-word substitutions FIRST,
       // before sound changes mangle the input beyond recognition.
@@ -1332,9 +1348,7 @@ function loadLanguageProfile(app, config) {
     aliases: parseStringList(fm.aliases),
     status: (_g = asString(fm.status)) == null ? void 0 : _g.trim(),
     modality: modalityList && modalityList.length > 1 ? modalityList : modalityList == null ? void 0 : modalityList[0],
-    documentationLanguage: (_h = asString(
-      fm.documentation_language
-    )) == null ? void 0 : _h.trim()
+    documentationLanguage: (_h = asString(fm.documentation_language)) == null ? void 0 : _h.trim()
   };
 }
 
@@ -1552,7 +1566,11 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
       text: "Each language is a card below. Expand one to edit its dictionary folder, cypher sheets, and inflection rules."
     });
     for (let i = 0; i < this.plugin.settings.languages.length; i++) {
-      this.renderLanguageCard(containerEl, this.plugin.settings.languages[i], i);
+      this.renderLanguageCard(
+        containerEl,
+        this.plugin.settings.languages[i],
+        i
+      );
     }
   }
   // ===== Top overview =====
@@ -1569,7 +1587,9 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
       const cb = row.createEl("input", { type: "checkbox" });
       cb.checked = isActive;
       cb.addEventListener("change", () => {
-        void this.toggleActive(lang.name, cb.checked).then(() => this.rerender());
+        void this.toggleActive(lang.name, cb.checked).then(
+          () => this.rerender()
+        );
       });
       const star = row.createSpan({
         cls: "conlang-lang-overview-star" + (isPrimary ? " is-primary" : ""),
@@ -1586,12 +1606,21 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
           this.rerender();
         })();
       });
-      const name = row.createSpan({ cls: "conlang-lang-overview-name", text: lang.name });
+      const name = row.createSpan({
+        cls: "conlang-lang-overview-name",
+        text: lang.name
+      });
       name.addEventListener("click", () => cb.click());
       if (isPrimary) {
-        row.createSpan({ cls: "conlang-badge conlang-badge-primary", text: "primary" });
+        row.createSpan({
+          cls: "conlang-badge conlang-badge-primary",
+          text: "primary"
+        });
       } else if (isActive) {
-        row.createSpan({ cls: "conlang-badge conlang-badge-active", text: "active" });
+        row.createSpan({
+          cls: "conlang-badge conlang-badge-active",
+          text: "active"
+        });
       } else {
         row.createSpan({ cls: "conlang-badge", text: "inactive" });
       }
@@ -1788,7 +1817,9 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
       if (details.open) opts.store.add(opts.key);
       else opts.store.delete(opts.key);
     });
-    const summary = details.createEl("summary", { cls: "conlang-subcollapse-summary" });
+    const summary = details.createEl("summary", {
+      cls: "conlang-subcollapse-summary"
+    });
     summary.createSpan({ cls: "conlang-subcollapse-title", text: opts.title });
     if (opts.badge != null) {
       summary.createSpan({ cls: "conlang-badge", text: opts.badge });
@@ -1808,9 +1839,15 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
     const summary = card.createEl("summary", { cls: "conlang-card-summary" });
     summary.createSpan({ cls: "conlang-card-title", text: lang.name });
     if (isPrimary) {
-      summary.createSpan({ cls: "conlang-badge conlang-badge-primary", text: "primary" });
+      summary.createSpan({
+        cls: "conlang-badge conlang-badge-primary",
+        text: "primary"
+      });
     } else if (isActive) {
-      summary.createSpan({ cls: "conlang-badge conlang-badge-active", text: "active" });
+      summary.createSpan({
+        cls: "conlang-badge conlang-badge-active",
+        text: "active"
+      });
     } else {
       summary.createSpan({ cls: "conlang-badge", text: "inactive" });
     }
@@ -1838,7 +1875,9 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian5.Setting(body).setName("Dictionary folder").setDesc("Folder of one .md file per word, each with frontmatter `definition:` set.").addText(
+    new import_obsidian5.Setting(body).setName("Dictionary folder").setDesc(
+      "Folder of one .md file per word, each with frontmatter `definition:` set."
+    ).addText(
       (t) => t.setValue(lang.dictionaryFolder).onChange(async (v) => {
         lang.dictionaryFolder = v;
         await this.plugin.saveSettings();
@@ -1866,7 +1905,9 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
         });
       }
     );
-    new import_obsidian5.Setting(body).setName("Language profile").setDesc("Optional vault path to this language's canonical language profile note.").addText(
+    new import_obsidian5.Setting(body).setName("Language profile").setDesc(
+      "Optional vault path to this language's canonical language profile note."
+    ).addText(
       (t) => {
         var _a;
         return t.setValue((_a = lang.profilePath) != null ? _a : "").onChange(async (v) => {
@@ -1879,14 +1920,18 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
     new import_obsidian5.Setting(body).setName("Profile status").setDesc(
       !lang.profilePath ? "No language profile configured." : profile ? `Loaded: ${profile.name} (${profile.id})` : "Profile not found or invalid."
     );
-    new import_obsidian5.Setting(body).setName("Active").setDesc("Include this language in hover, lookup, browsing, and highlighting.").addToggle(
+    new import_obsidian5.Setting(body).setName("Active").setDesc(
+      "Include this language in hover, lookup, browsing, and highlighting."
+    ).addToggle(
       (tg) => tg.setValue(isActive).onChange(async (v) => {
         await this.toggleActive(lang.name, v);
         this.rerender();
       })
     );
     if (isActive && !isPrimary) {
-      new import_obsidian5.Setting(body).setName("Primary language").setDesc("Target for English-to-conlang translation and default save folder for new entries.").addButton(
+      new import_obsidian5.Setting(body).setName("Primary language").setDesc(
+        "Target for English-to-conlang translation and default save folder for new entries."
+      ).addButton(
         (b) => b.setButtonText("Make primary").onClick(async () => {
           this.plugin.settings.primaryLanguage = lang.name;
           await this.plugin.saveSettings();
@@ -1960,7 +2005,9 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
       text: "When a word isn't in the dictionary, these rules try to find its lemma. Strip removes characters from the end (suffix) or start (prefix); add then attaches characters to reconstruct the lemma. Most rules just chop a suffix off \u2014 leave add empty for that. Use add for respellings (strip 'ies', add 'y'). Optional POS filter: comma-separated, e.g. 'noun' or 'noun,proper-noun'. Rules are tried in order; the first whose reconstructed stem exists wins."
     });
     let pendingPresetId = "";
-    new import_obsidian5.Setting(inflBody).setName("Apply preset").setDesc("Load a curated starter set. Replaces existing inflection rules for this language.").addDropdown((dd) => {
+    new import_obsidian5.Setting(inflBody).setName("Apply preset").setDesc(
+      "Load a curated starter set. Replaces existing inflection rules for this language."
+    ).addDropdown((dd) => {
       dd.addOption("", "\u2014 pick a preset \u2014");
       for (const preset of INFLECTION_PRESETS) {
         dd.addOption(preset.id, preset.name);
@@ -2009,11 +2056,11 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
   async removeLanguage(index, name) {
     var _a, _b, _c;
     this.plugin.settings.languages.splice(index, 1);
-    this.plugin.settings.activeLanguages = this.plugin.settings.activeLanguages.filter(
-      (n) => n !== name
-    );
+    this.plugin.settings.activeLanguages = this.plugin.settings.activeLanguages.filter((n) => n !== name);
     if (this.plugin.settings.languages.length > 0 && this.plugin.settings.activeLanguages.length === 0) {
-      this.plugin.settings.activeLanguages = [this.plugin.settings.languages[0].name];
+      this.plugin.settings.activeLanguages = [
+        this.plugin.settings.languages[0].name
+      ];
     }
     if (this.plugin.settings.primaryLanguage === name) {
       this.plugin.settings.primaryLanguage = (_c = (_b = this.plugin.settings.activeLanguages[0]) != null ? _b : (_a = this.plugin.settings.languages[0]) == null ? void 0 : _a.name) != null ? _c : "";
@@ -2080,14 +2127,21 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
     const tableWrap = box.createDiv({ cls: "conlang-rules-wrap" });
     const table = tableWrap.createEl("table", { cls: "conlang-rules-table" });
     const thead = table.createEl("thead").createEl("tr");
-    ["Input", "Output", "Type", "On", ""].forEach((h) => thead.createEl("th", { text: h }));
+    ["Input", "Output", "Type", "On", ""].forEach(
+      (h) => thead.createEl("th", { text: h })
+    );
     const tbody = table.createEl("tbody");
     for (let r = 0; r < sheet.rules.length; r++) {
       this.renderRuleRow(tbody, sheet, r);
     }
     new import_obsidian5.Setting(box).addButton(
       (b) => b.setButtonText("Add rule").onClick(async () => {
-        sheet.rules.push({ input: "", output: "", type: "default", enabled: true });
+        sheet.rules.push({
+          input: "",
+          output: "",
+          type: "default",
+          enabled: true
+        });
         await this.plugin.saveSettings();
         this.rerender();
       })
@@ -2097,13 +2151,19 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
     const rule = sheet.rules[ruleIndex];
     const tr = tbody.createEl("tr");
     const inputTd = tr.createEl("td");
-    const inputEl = inputTd.createEl("input", { type: "text", value: rule.input });
+    const inputEl = inputTd.createEl("input", {
+      type: "text",
+      value: rule.input
+    });
     inputEl.addEventListener("change", () => {
       rule.input = inputEl.value;
       void this.plugin.saveSettings();
     });
     const outputTd = tr.createEl("td");
-    const outputEl = outputTd.createEl("input", { type: "text", value: rule.output });
+    const outputEl = outputTd.createEl("input", {
+      type: "text",
+      value: rule.output
+    });
     outputEl.addEventListener("change", () => {
       rule.output = outputEl.value;
       void this.plugin.saveSettings();
@@ -2140,9 +2200,18 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
       const rules = (_a = lang.inflections) != null ? _a : [];
       const table = tableWrap.createEl("table", { cls: "conlang-rules-table" });
       const thead = table.createEl("thead").createEl("tr");
-      ["", "Label", "Position", "Pattern", "Strip", "Add", "POS filter", "Description", "On", ""].forEach(
-        (h) => thead.createEl("th", { text: h })
-      );
+      [
+        "",
+        "Label",
+        "Position",
+        "Pattern",
+        "Strip",
+        "Add",
+        "POS filter",
+        "Description",
+        "On",
+        ""
+      ].forEach((h) => thead.createEl("th", { text: h }));
       const tbody = table.createEl("tbody");
       for (let i = 0; i < rules.length; i++) {
         this.renderInflectionRow(tbody, lang, i, rebuild);
@@ -2205,7 +2274,10 @@ var ConlangSettingTab = class extends import_obsidian5.PluginSettingTab {
     mkText(rule.strip, (v) => rule.strip = v);
     mkText(rule.add, (v) => rule.add = v);
     mkText((_a = rule.pos) != null ? _a : "", (v) => rule.pos = v.trim() === "" ? void 0 : v);
-    mkText((_b = rule.description) != null ? _b : "", (v) => rule.description = v.trim() === "" ? void 0 : v);
+    mkText(
+      (_b = rule.description) != null ? _b : "",
+      (v) => rule.description = v.trim() === "" ? void 0 : v
+    );
     const enabledTd = tr.createEl("td");
     const enabledEl = enabledTd.createEl("input", { type: "checkbox" });
     enabledEl.checked = rule.enabled;
@@ -2245,7 +2317,10 @@ var PresetConfirmModal = class extends import_obsidian5.Modal {
       this.resolve(false);
       this.close();
     });
-    const ok = btnRow.createEl("button", { text: "Replace rules", cls: "mod-warning" });
+    const ok = btnRow.createEl("button", {
+      text: "Replace rules",
+      cls: "mod-warning"
+    });
     ok.addEventListener("click", () => {
       this.decided = true;
       this.resolve(true);

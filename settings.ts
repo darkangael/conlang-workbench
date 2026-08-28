@@ -9,7 +9,12 @@
 
 import { App, PluginSettingTab, Setting, Notice, Modal } from "obsidian";
 import type ConlangPlugin from "./main";
-import { ConlangSettings, CypherSheet, HashType, LanguageConfig } from "./types";
+import {
+  ConlangSettings,
+  CypherSheet,
+  HashType,
+  LanguageConfig,
+} from "./types";
 import { INFLECTION_PRESETS, findPreset } from "./presets";
 
 export class ConlangSettingTab extends PluginSettingTab {
@@ -61,7 +66,11 @@ export class ConlangSettingTab extends PluginSettingTab {
         "folder, cypher sheets, and inflection rules.",
     });
     for (let i = 0; i < this.plugin.settings.languages.length; i++) {
-      this.renderLanguageCard(containerEl, this.plugin.settings.languages[i], i);
+      this.renderLanguageCard(
+        containerEl,
+        this.plugin.settings.languages[i],
+        i,
+      );
     }
   }
 
@@ -73,7 +82,7 @@ export class ConlangSettingTab extends PluginSettingTab {
       .setName("Active languages")
       .setDesc(
         "Active languages contribute to hover, lookup, dictionary browsing, " +
-          "and highlighting. Tick to activate; click the star to set the primary."
+          "and highlighting. Tick to activate; click the star to set the primary.",
       );
 
     const list = containerEl.createDiv({ cls: "conlang-lang-overview" });
@@ -85,7 +94,9 @@ export class ConlangSettingTab extends PluginSettingTab {
       const cb = row.createEl("input", { type: "checkbox" });
       cb.checked = isActive;
       cb.addEventListener("change", () => {
-        void this.toggleActive(lang.name, cb.checked).then(() => this.rerender());
+        void this.toggleActive(lang.name, cb.checked).then(() =>
+          this.rerender(),
+        );
       });
 
       const star = row.createSpan({
@@ -104,13 +115,22 @@ export class ConlangSettingTab extends PluginSettingTab {
         })();
       });
 
-      const name = row.createSpan({ cls: "conlang-lang-overview-name", text: lang.name });
+      const name = row.createSpan({
+        cls: "conlang-lang-overview-name",
+        text: lang.name,
+      });
       name.addEventListener("click", () => cb.click());
 
       if (isPrimary) {
-        row.createSpan({ cls: "conlang-badge conlang-badge-primary", text: "primary" });
+        row.createSpan({
+          cls: "conlang-badge conlang-badge-primary",
+          text: "primary",
+        });
       } else if (isActive) {
-        row.createSpan({ cls: "conlang-badge conlang-badge-active", text: "active" });
+        row.createSpan({
+          cls: "conlang-badge conlang-badge-active",
+          text: "active",
+        });
       } else {
         row.createSpan({ cls: "conlang-badge", text: "inactive" });
       }
@@ -132,7 +152,7 @@ export class ConlangSettingTab extends PluginSettingTab {
             this.openCards.add(newName);
             await this.plugin.saveSettings();
             this.rerender();
-          })
+          }),
       )
       .addButton((btn) =>
         btn.setButtonText("Reload dictionaries").onClick(async () => {
@@ -140,7 +160,7 @@ export class ConlangSettingTab extends PluginSettingTab {
           this.plugin.refreshPanel();
           this.plugin.refreshHighlights();
           new Notice(`Made Up Words: loaded ${n} dictionary entries`);
-        })
+        }),
       );
   }
 
@@ -181,7 +201,7 @@ export class ConlangSettingTab extends PluginSettingTab {
       .setDesc(
         "Hold this key while hovering to see translation tooltips. " +
           "'None' shows a tooltip on any hover. Hover can also be turned off " +
-          "per language in each card below."
+          "per language in each card below.",
       )
       .addDropdown((dd) => {
         dd.addOption("none", "None (always show)");
@@ -200,13 +220,13 @@ export class ConlangSettingTab extends PluginSettingTab {
       .setName("Show your words' meanings")
       .setDesc(
         "Hovering one of your made-up words shows its dictionary entry. Covers " +
-          "headwords, phrases, declared forms, and inflected forms."
+          "headwords, phrases, declared forms, and inflected forms.",
       )
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.hoverConlang).onChange(async (v) => {
           this.plugin.settings.hoverConlang = v;
           await this.plugin.saveSettings();
-        })
+        }),
       );
 
     new Setting(containerEl)
@@ -216,7 +236,7 @@ export class ConlangSettingTab extends PluginSettingTab {
           "this off if your made-up words are being mistaken for English. It " +
           "also switches off the cypher preview below, which transforms hovered " +
           "text the same way. A word that's already one of your headwords is " +
-          "never treated as English, whichever way this is set."
+          "never treated as English, whichever way this is set.",
       )
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.hoverEnglish).onChange(async (v) => {
@@ -224,7 +244,7 @@ export class ConlangSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           // Redraw so the fallback dropdown below enables/disables with it.
           this.rerender();
-        })
+        }),
       );
 
     new Setting(containerEl)
@@ -233,7 +253,7 @@ export class ConlangSettingTab extends PluginSettingTab {
         "What to show when you hover a word that isn't in the dictionary. " +
           "'Cypher preview' shows a phonological placeholder; 'Nothing' shows no tooltip. " +
           "The cypher preview is an English to conlang transformation, so this " +
-          "only applies while that direction is on."
+          "only applies while that direction is on.",
       )
       .addDropdown((dd) => {
         dd.addOption("cypher", "Cypher preview");
@@ -253,14 +273,16 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Highlight known words in notes")
       .setDesc(
-        "Visually mark recognised words in both the editor and Reading view."
+        "Visually mark recognised words in both the editor and Reading view.",
       )
       .addToggle((tg) =>
-        tg.setValue(this.plugin.settings.highlightKnownWords).onChange(async (v) => {
-          this.plugin.settings.highlightKnownWords = v;
-          await this.plugin.saveSettings();
-          this.rerender();
-        })
+        tg
+          .setValue(this.plugin.settings.highlightKnownWords)
+          .onChange(async (v) => {
+            this.plugin.settings.highlightKnownWords = v;
+            await this.plugin.saveSettings();
+            this.rerender();
+          }),
       );
 
     if (!this.plugin.settings.highlightKnownWords) return;
@@ -268,7 +290,7 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Highlight style")
       .setDesc(
-        "How highlighted words look. Themeable via the .conlang-known-word CSS class."
+        "How highlighted words look. Themeable via the .conlang-known-word CSS class.",
       )
       .addDropdown((dd) => {
         dd.addOption("underline", "Dotted underline + colour");
@@ -285,26 +307,30 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Highlight conlang words")
       .setDesc(
-        "Mark words that exist as dictionary entries (including inflected forms and phrases)."
+        "Mark words that exist as dictionary entries (including inflected forms and phrases).",
       )
       .addToggle((tg) =>
-        tg.setValue(this.plugin.settings.highlightConlang).onChange(async (v) => {
-          this.plugin.settings.highlightConlang = v;
-          await this.plugin.saveSettings();
-        })
+        tg
+          .setValue(this.plugin.settings.highlightConlang)
+          .onChange(async (v) => {
+            this.plugin.settings.highlightConlang = v;
+            await this.plugin.saveSettings();
+          }),
       );
 
     new Setting(containerEl)
       .setName("Highlight translatable English words")
       .setDesc(
         "Mark English words the dictionary can translate. Handy for spotting " +
-          "coverage, but noisier in English-heavy notes."
+          "coverage, but noisier in English-heavy notes.",
       )
       .addToggle((tg) =>
-        tg.setValue(this.plugin.settings.highlightEnglish).onChange(async (v) => {
-          this.plugin.settings.highlightEnglish = v;
-          await this.plugin.saveSettings();
-        })
+        tg
+          .setValue(this.plugin.settings.highlightEnglish)
+          .onChange(async (v) => {
+            this.plugin.settings.highlightEnglish = v;
+            await this.plugin.saveSettings();
+          }),
       );
   }
 
@@ -316,16 +342,18 @@ export class ConlangSettingTab extends PluginSettingTab {
         "Treat capitalized and lowercase conlang words as different entries " +
           "(e.g. a proper noun 'Sol' vs a common noun 'sol'). Affects dictionary " +
           "headwords, aliases, and phrase matching. English-side lookups stay " +
-          "case-insensitive. Changing this reloads the dictionary."
+          "case-insensitive. Changing this reloads the dictionary.",
       )
       .addToggle((tg) =>
-        tg.setValue(this.plugin.settings.caseSensitiveMatching).onChange(async (v) => {
-          this.plugin.settings.caseSensitiveMatching = v;
-          await this.plugin.saveSettings();
-          await this.plugin.reloadActiveLanguage();
-          this.plugin.refreshPanel();
-          this.plugin.refreshHighlights();
-        })
+        tg
+          .setValue(this.plugin.settings.caseSensitiveMatching)
+          .onChange(async (v) => {
+            this.plugin.settings.caseSensitiveMatching = v;
+            await this.plugin.saveSettings();
+            await this.plugin.reloadActiveLanguage();
+            this.plugin.refreshPanel();
+            this.plugin.refreshHighlights();
+          }),
       );
 
     new Setting(containerEl)
@@ -333,13 +361,15 @@ export class ConlangSettingTab extends PluginSettingTab {
       .setDesc(
         "Include an entry's hardcoded `forms:` (its declension or conjugation table) " +
           "in the hover tooltip. The side panel always shows them. Turn this off to " +
-          "keep tooltips compact when your entries carry long form tables."
+          "keep tooltips compact when your entries carry long form tables.",
       )
       .addToggle((tg) =>
-        tg.setValue(this.plugin.settings.showFormsInTooltip).onChange(async (v) => {
-          this.plugin.settings.showFormsInTooltip = v;
-          await this.plugin.saveSettings();
-        })
+        tg
+          .setValue(this.plugin.settings.showFormsInTooltip)
+          .onChange(async (v) => {
+            this.plugin.settings.showFormsInTooltip = v;
+            await this.plugin.saveSettings();
+          }),
       );
   }
 
@@ -348,7 +378,7 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Commit wrapper")
       .setDesc(
-        "How committed translations are stored in the note. HTML tooltip is recommended (uses native <abbr> tags)."
+        "How committed translations are stored in the note. HTML tooltip is recommended (uses native <abbr> tags).",
       )
       .addDropdown((dd) => {
         dd.addOption("html-tooltip", "HTML tooltip (<abbr>)");
@@ -381,7 +411,7 @@ export class ConlangSettingTab extends PluginSettingTab {
 
   private collapsible(
     parent: HTMLElement,
-    opts: { title: string; key: string; store: Set<string>; badge?: string }
+    opts: { title: string; key: string; store: Set<string>; badge?: string },
   ): HTMLElement {
     const details = parent.createEl("details", { cls: "conlang-subcollapse" });
     if (opts.store.has(opts.key)) details.open = true;
@@ -389,7 +419,9 @@ export class ConlangSettingTab extends PluginSettingTab {
       if (details.open) opts.store.add(opts.key);
       else opts.store.delete(opts.key);
     });
-    const summary = details.createEl("summary", { cls: "conlang-subcollapse-summary" });
+    const summary = details.createEl("summary", {
+      cls: "conlang-subcollapse-summary",
+    });
     summary.createSpan({ cls: "conlang-subcollapse-title", text: opts.title });
     if (opts.badge != null) {
       summary.createSpan({ cls: "conlang-badge", text: opts.badge });
@@ -399,7 +431,11 @@ export class ConlangSettingTab extends PluginSettingTab {
 
   // ===== Per-language card =====
 
-  private renderLanguageCard(parent: HTMLElement, lang: LanguageConfig, index: number): void {
+  private renderLanguageCard(
+    parent: HTMLElement,
+    lang: LanguageConfig,
+    index: number,
+  ): void {
     const isActive = this.plugin.settings.activeLanguages.includes(lang.name);
     const isPrimary = this.plugin.settings.primaryLanguage === lang.name;
 
@@ -413,9 +449,15 @@ export class ConlangSettingTab extends PluginSettingTab {
     const summary = card.createEl("summary", { cls: "conlang-card-summary" });
     summary.createSpan({ cls: "conlang-card-title", text: lang.name });
     if (isPrimary) {
-      summary.createSpan({ cls: "conlang-badge conlang-badge-primary", text: "primary" });
+      summary.createSpan({
+        cls: "conlang-badge conlang-badge-primary",
+        text: "primary",
+      });
     } else if (isActive) {
-      summary.createSpan({ cls: "conlang-badge conlang-badge-active", text: "active" });
+      summary.createSpan({
+        cls: "conlang-badge conlang-badge-active",
+        text: "active",
+      });
     } else {
       summary.createSpan({ cls: "conlang-badge", text: "inactive" });
     }
@@ -440,7 +482,7 @@ export class ConlangSettingTab extends PluginSettingTab {
         // settings model. Keep those references valid when a language is renamed.
         this.plugin.settings.activeLanguages =
           this.plugin.settings.activeLanguages.map((n) =>
-            n === oldName ? v : n
+            n === oldName ? v : n,
           );
 
         if (this.plugin.settings.primaryLanguage === oldName) {
@@ -453,29 +495,31 @@ export class ConlangSettingTab extends PluginSettingTab {
         if (this.openInflections.delete(oldName)) this.openInflections.add(v);
 
         await this.plugin.saveSettings();
-      })
+      }),
     );
 
     new Setting(body)
       .setName("Dictionary folder")
-      .setDesc("Folder of one .md file per word, each with frontmatter `definition:` set.")
+      .setDesc(
+        "Folder of one .md file per word, each with frontmatter `definition:` set.",
+      )
       .addText((t) =>
         t.setValue(lang.dictionaryFolder).onChange(async (v) => {
           lang.dictionaryFolder = v;
           await this.plugin.saveSettings();
-        })
+        }),
       );
 
     new Setting(body)
       .setName("Morpheme folder")
       .setDesc(
-        "Optional folder of canonical morpheme notes. Morphemes are loaded separately from dictionary entries and do not automatically become translation candidates."
+        "Optional folder of canonical morpheme notes. Morphemes are loaded separately from dictionary entries and do not automatically become translation candidates.",
       )
       .addText((t) =>
         t.setValue(lang.morphemeFolder ?? "").onChange(async (v) => {
           lang.morphemeFolder = v.trim() || undefined;
           await this.plugin.saveSettings();
-        })
+        }),
       );
 
     // Standalone linguistic examples have their own optional canonical folder.
@@ -485,23 +529,25 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(body)
       .setName("Examples folder")
       .setDesc(
-        "Optional folder of standalone linguistic example notes. Only notes explicitly marked as linguistic examples are loaded."
+        "Optional folder of standalone linguistic example notes. Only notes explicitly marked as linguistic examples are loaded.",
       )
       .addText((t) =>
         t.setValue(lang.exampleFolder ?? "").onChange(async (v) => {
           lang.exampleFolder = v.trim() || undefined;
           await this.plugin.saveSettings();
-        })
+        }),
       );
 
     new Setting(body)
       .setName("Language profile")
-      .setDesc("Optional vault path to this language's canonical language profile note.")
+      .setDesc(
+        "Optional vault path to this language's canonical language profile note.",
+      )
       .addText((t) =>
         t.setValue(lang.profilePath ?? "").onChange(async (v) => {
           lang.profilePath = v.trim() || undefined;
           await this.plugin.saveSettings();
-        })
+        }),
       );
 
     // Use the plugin accessor rather than depending on how profiles are
@@ -515,29 +561,33 @@ export class ConlangSettingTab extends PluginSettingTab {
           ? "No language profile configured."
           : profile
             ? `Loaded: ${profile.name} (${profile.id})`
-            : "Profile not found or invalid."
+            : "Profile not found or invalid.",
       );
 
     new Setting(body)
       .setName("Active")
-      .setDesc("Include this language in hover, lookup, browsing, and highlighting.")
+      .setDesc(
+        "Include this language in hover, lookup, browsing, and highlighting.",
+      )
       .addToggle((tg) =>
         tg.setValue(isActive).onChange(async (v) => {
           await this.toggleActive(lang.name, v);
           this.rerender();
-        })
+        }),
       );
 
     if (isActive && !isPrimary) {
       new Setting(body)
         .setName("Primary language")
-        .setDesc("Target for English-to-conlang translation and default save folder for new entries.")
+        .setDesc(
+          "Target for English-to-conlang translation and default save folder for new entries.",
+        )
         .addButton((b) =>
           b.setButtonText("Make primary").onClick(async () => {
             this.plugin.settings.primaryLanguage = lang.name;
             await this.plugin.saveSettings();
             this.rerender();
-          })
+          }),
         );
     }
 
@@ -548,7 +598,7 @@ export class ConlangSettingTab extends PluginSettingTab {
         tg.setValue(lang.hoverEnabled).onChange(async (v) => {
           lang.hoverEnabled = v;
           await this.plugin.saveSettings();
-        })
+        }),
       );
 
     new Setting(body)
@@ -560,9 +610,9 @@ export class ConlangSettingTab extends PluginSettingTab {
           new Notice(
             isActive
               ? `Reloaded — ${n} dictionary entries across active languages`
-              : `${lang.name} is inactive; activate it to load its language data.`
+              : `${lang.name} is inactive; activate it to load its language data.`,
           );
-        })
+        }),
       )
       .addButton((b) => {
         b.setButtonText("Remove language").onClick(async () => {
@@ -614,7 +664,7 @@ export class ConlangSettingTab extends PluginSettingTab {
           this.openSheets.add(lang.name);
           await this.plugin.saveSettings();
           this.rerender();
-        })
+        }),
     );
 
     // --- Inflection rules (nested collapsible) ---
@@ -639,7 +689,9 @@ export class ConlangSettingTab extends PluginSettingTab {
     let pendingPresetId = "";
     new Setting(inflBody)
       .setName("Apply preset")
-      .setDesc("Load a curated starter set. Replaces existing inflection rules for this language.")
+      .setDesc(
+        "Load a curated starter set. Replaces existing inflection rules for this language.",
+      )
       .addDropdown((dd) => {
         dd.addOption("", "— pick a preset —");
         for (const preset of INFLECTION_PRESETS) {
@@ -668,7 +720,7 @@ export class ConlangSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             this.rerender();
             new Notice(`Made Up Words: applied preset "${preset.name}"`);
-          })
+          }),
       );
 
     this.renderInflectionTable(inflBody, lang);
@@ -686,21 +738,22 @@ export class ConlangSettingTab extends PluginSettingTab {
         this.openInflections.add(lang.name);
         await this.plugin.saveSettings();
         this.rerender();
-      })
+      }),
     );
   }
 
   /** Remove a language and keep active/primary references valid. */
   private async removeLanguage(index: number, name: string): Promise<void> {
     this.plugin.settings.languages.splice(index, 1);
-    this.plugin.settings.activeLanguages = this.plugin.settings.activeLanguages.filter(
-      (n) => n !== name
-    );
+    this.plugin.settings.activeLanguages =
+      this.plugin.settings.activeLanguages.filter((n) => n !== name);
     if (
       this.plugin.settings.languages.length > 0 &&
       this.plugin.settings.activeLanguages.length === 0
     ) {
-      this.plugin.settings.activeLanguages = [this.plugin.settings.languages[0].name];
+      this.plugin.settings.activeLanguages = [
+        this.plugin.settings.languages[0].name,
+      ];
     }
     if (this.plugin.settings.primaryLanguage === name) {
       this.plugin.settings.primaryLanguage =
@@ -724,7 +777,7 @@ export class ConlangSettingTab extends PluginSettingTab {
    */
   private async confirmPreset(
     preset: { name: string; description: string },
-    existingCount: number
+    existingCount: number,
   ): Promise<boolean> {
     if (existingCount === 0) return true;
     return new Promise<boolean>((resolve) => {
@@ -733,7 +786,7 @@ export class ConlangSettingTab extends PluginSettingTab {
         preset.name,
         preset.description,
         existingCount,
-        resolve
+        resolve,
       );
       modal.open();
     });
@@ -743,7 +796,7 @@ export class ConlangSettingTab extends PluginSettingTab {
     parent: HTMLElement,
     lang: LanguageConfig,
     sheetIndex: number,
-    rebuildSheets: () => void
+    rebuildSheets: () => void,
   ): void {
     const sheet = lang.sheets[sheetIndex];
     const box = parent.createDiv({ cls: "conlang-sheet" });
@@ -759,7 +812,7 @@ export class ConlangSettingTab extends PluginSettingTab {
             this.moveItem(lang.sheets, sheetIndex, sheetIndex - 1);
             await this.plugin.saveSettings();
             rebuildSheets();
-          })
+          }),
       )
       .addExtraButton((b) =>
         b
@@ -770,7 +823,7 @@ export class ConlangSettingTab extends PluginSettingTab {
             this.moveItem(lang.sheets, sheetIndex, sheetIndex + 1);
             await this.plugin.saveSettings();
             rebuildSheets();
-          })
+          }),
       )
       .addToggle((t) =>
         t
@@ -779,7 +832,7 @@ export class ConlangSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             sheet.enabled = v;
             await this.plugin.saveSettings();
-          })
+          }),
       )
       .addButton((b) =>
         b
@@ -789,20 +842,22 @@ export class ConlangSettingTab extends PluginSettingTab {
             lang.sheets.splice(sheetIndex, 1);
             await this.plugin.saveSettings();
             this.rerender();
-          })
+          }),
       );
 
     new Setting(box).setName("Sheet name").addText((t) =>
       t.setValue(sheet.name).onChange(async (v) => {
         sheet.name = v;
         await this.plugin.saveSettings();
-      })
+      }),
     );
 
     const tableWrap = box.createDiv({ cls: "conlang-rules-wrap" });
     const table = tableWrap.createEl("table", { cls: "conlang-rules-table" });
     const thead = table.createEl("thead").createEl("tr");
-    ["Input", "Output", "Type", "On", ""].forEach((h) => thead.createEl("th", { text: h }));
+    ["Input", "Output", "Type", "On", ""].forEach((h) =>
+      thead.createEl("th", { text: h }),
+    );
     const tbody = table.createEl("tbody");
     for (let r = 0; r < sheet.rules.length; r++) {
       this.renderRuleRow(tbody, sheet, r);
@@ -810,26 +865,41 @@ export class ConlangSettingTab extends PluginSettingTab {
 
     new Setting(box).addButton((b) =>
       b.setButtonText("Add rule").onClick(async () => {
-        sheet.rules.push({ input: "", output: "", type: "default", enabled: true });
+        sheet.rules.push({
+          input: "",
+          output: "",
+          type: "default",
+          enabled: true,
+        });
         await this.plugin.saveSettings();
         this.rerender();
-      })
+      }),
     );
   }
 
-  private renderRuleRow(tbody: HTMLElement, sheet: CypherSheet, ruleIndex: number): void {
+  private renderRuleRow(
+    tbody: HTMLElement,
+    sheet: CypherSheet,
+    ruleIndex: number,
+  ): void {
     const rule = sheet.rules[ruleIndex];
     const tr = tbody.createEl("tr");
 
     const inputTd = tr.createEl("td");
-    const inputEl = inputTd.createEl("input", { type: "text", value: rule.input });
+    const inputEl = inputTd.createEl("input", {
+      type: "text",
+      value: rule.input,
+    });
     inputEl.addEventListener("change", () => {
       rule.input = inputEl.value;
       void this.plugin.saveSettings();
     });
 
     const outputTd = tr.createEl("td");
-    const outputEl = outputTd.createEl("input", { type: "text", value: rule.output });
+    const outputEl = outputTd.createEl("input", {
+      type: "text",
+      value: rule.output,
+    });
     outputEl.addEventListener("change", () => {
       rule.output = outputEl.value;
       void this.plugin.saveSettings();
@@ -862,7 +932,10 @@ export class ConlangSettingTab extends PluginSettingTab {
     });
   }
 
-  private renderInflectionTable(parent: HTMLElement, lang: LanguageConfig): void {
+  private renderInflectionTable(
+    parent: HTMLElement,
+    lang: LanguageConfig,
+  ): void {
     const tableWrap = parent.createDiv({ cls: "conlang-rules-wrap" });
     // Rebuild only this table (not the whole settings tab) when a rule moves,
     // so reordering doesn't reset scroll position or collapse open sections.
@@ -871,9 +944,18 @@ export class ConlangSettingTab extends PluginSettingTab {
       const rules = lang.inflections ?? [];
       const table = tableWrap.createEl("table", { cls: "conlang-rules-table" });
       const thead = table.createEl("thead").createEl("tr");
-      ["", "Label", "Position", "Pattern", "Strip", "Add", "POS filter", "Description", "On", ""].forEach(
-        (h) => thead.createEl("th", { text: h })
-      );
+      [
+        "",
+        "Label",
+        "Position",
+        "Pattern",
+        "Strip",
+        "Add",
+        "POS filter",
+        "Description",
+        "On",
+        "",
+      ].forEach((h) => thead.createEl("th", { text: h }));
       const tbody = table.createEl("tbody");
       for (let i = 0; i < rules.length; i++) {
         this.renderInflectionRow(tbody, lang, i, rebuild);
@@ -886,7 +968,7 @@ export class ConlangSettingTab extends PluginSettingTab {
     tbody: HTMLElement,
     lang: LanguageConfig,
     ruleIndex: number,
-    rebuild: () => void
+    rebuild: () => void,
   ): void {
     const rules = lang.inflections!;
     const rule = rules[ruleIndex];
@@ -948,7 +1030,10 @@ export class ConlangSettingTab extends PluginSettingTab {
     mkText(rule.strip, (v) => (rule.strip = v));
     mkText(rule.add, (v) => (rule.add = v));
     mkText(rule.pos ?? "", (v) => (rule.pos = v.trim() === "" ? undefined : v));
-    mkText(rule.description ?? "", (v) => (rule.description = v.trim() === "" ? undefined : v));
+    mkText(
+      rule.description ?? "",
+      (v) => (rule.description = v.trim() === "" ? undefined : v),
+    );
 
     const enabledTd = tr.createEl("td");
     const enabledEl = enabledTd.createEl("input", { type: "checkbox" });
@@ -983,7 +1068,7 @@ class PresetConfirmModal extends Modal {
     presetName: string,
     description: string,
     existingCount: number,
-    resolve: (confirmed: boolean) => void
+    resolve: (confirmed: boolean) => void,
   ) {
     super(app);
     this.presetName = presetName;
@@ -1009,7 +1094,10 @@ class PresetConfirmModal extends Modal {
       this.resolve(false);
       this.close();
     });
-    const ok = btnRow.createEl("button", { text: "Replace rules", cls: "mod-warning" });
+    const ok = btnRow.createEl("button", {
+      text: "Replace rules",
+      cls: "mod-warning",
+    });
     ok.addEventListener("click", () => {
       this.decided = true;
       this.resolve(true);

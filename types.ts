@@ -319,8 +319,24 @@ export const DEFAULT_SETTINGS: ConlangSettings = {
       inflections: [
         // Default rules use POS conditioning so they only fire on appropriate words.
         // Edit these in Settings → Made Up Words → Inflection rules, or apply a preset.
-        { label: "plural", pattern: "th", position: "suffix", strip: "th", add: "", enabled: true, pos: "noun" },
-        { label: "genitive", pattern: "en", position: "suffix", strip: "en", add: "", enabled: true, pos: "noun" },
+        {
+          label: "plural",
+          pattern: "th",
+          position: "suffix",
+          strip: "th",
+          add: "",
+          enabled: true,
+          pos: "noun",
+        },
+        {
+          label: "genitive",
+          pattern: "en",
+          position: "suffix",
+          strip: "en",
+          add: "",
+          enabled: true,
+          pos: "noun",
+        },
       ],
       // Sheets run top-to-bottom. Put whole-word substitutions FIRST,
       // before sound changes mangle the input beyond recognition.
