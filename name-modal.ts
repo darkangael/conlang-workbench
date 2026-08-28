@@ -26,13 +26,40 @@ export interface NameCreationResult {
 }
 
 const NAME_CATEGORIES: { label: string; description: string }[] = [
-  { label: "character", description: "A person — protagonist, antagonist, supporting figure. Includes the names of gods and personified forces." },
-  { label: "place", description: "A geographic location — city, region, mountain, river, building. Anything with coordinates in your world." },
-  { label: "faction", description: "An organised group — kingdom, guild, religion, conspiracy, military unit. Things that have agency but aren't individuals." },
-  { label: "artifact", description: "A unique object — a named sword, a specific tome, a relic. Common-noun objects (like 'a sword') aren't names." },
-  { label: "event", description: "A specific historical event — battle, treaty, disaster. 'The Burning Year', not 'a fire'." },
-  { label: "title", description: "A specific role or rank that's treated as a proper noun — 'the High King', 'the Dawnspeaker'. Often capitalised in prose." },
-  { label: "other", description: "Anything else that gets its own proper-noun treatment." },
+  {
+    label: "character",
+    description:
+      "A person — protagonist, antagonist, supporting figure. Includes the names of gods and personified forces.",
+  },
+  {
+    label: "place",
+    description:
+      "A geographic location — city, region, mountain, river, building. Anything with coordinates in your world.",
+  },
+  {
+    label: "faction",
+    description:
+      "An organised group — kingdom, guild, religion, conspiracy, military unit. Things that have agency but aren't individuals.",
+  },
+  {
+    label: "artifact",
+    description:
+      "A unique object — a named sword, a specific tome, a relic. Common-noun objects (like 'a sword') aren't names.",
+  },
+  {
+    label: "event",
+    description:
+      "A specific historical event — battle, treaty, disaster. 'The Burning Year', not 'a fire'.",
+  },
+  {
+    label: "title",
+    description:
+      "A specific role or rank that's treated as a proper noun — 'the High King', 'the Dawnspeaker'. Often capitalised in prose.",
+  },
+  {
+    label: "other",
+    description: "Anything else that gets its own proper-noun treatment.",
+  },
 ];
 
 export class NameCreationModal extends Modal {
@@ -56,7 +83,7 @@ export class NameCreationModal extends Modal {
   constructor(
     app: App,
     cypherFn: (englishText: string) => string,
-    resolve: (result: NameCreationResult | null) => void
+    resolve: (result: NameCreationResult | null) => void,
   ) {
     super(app);
     this.cypherFn = cypherFn;
@@ -74,9 +101,13 @@ export class NameCreationModal extends Modal {
     });
 
     // === Conlang form (the actual name) ===
-    contentEl.createDiv({ cls: "conlang-modal-label", text: "Name (in conlang)" });
+    contentEl.createDiv({
+      cls: "conlang-modal-label",
+      text: "Name (in conlang)",
+    });
     this.conlangInput = contentEl.createEl("input", { type: "text" });
-    this.conlangInput.placeholder = "Type the name directly, or derive one below…";
+    this.conlangInput.placeholder =
+      "Type the name directly, or derive one below…";
     this.conlangInput.addClass("conlang-modal-input");
     this.conlangInput.addEventListener("input", () => {
       this.conlangForm = this.conlangInput.value;
@@ -85,10 +116,14 @@ export class NameCreationModal extends Modal {
 
     // === Derive option ===
     const deriveBlock = contentEl.createDiv({ cls: "conlang-modal-derive" });
-    const deriveLabel = deriveBlock.createDiv({ cls: "conlang-modal-derive-label" });
+    const deriveLabel = deriveBlock.createDiv({
+      cls: "conlang-modal-derive-label",
+    });
     deriveLabel.setText("…or derive from an English word:");
 
-    const deriveRow = deriveBlock.createDiv({ cls: "conlang-modal-derive-row" });
+    const deriveRow = deriveBlock.createDiv({
+      cls: "conlang-modal-derive-row",
+    });
     this.deriveInput = deriveRow.createEl("input", { type: "text" });
     // The sentence-case rule reads the full stop in "e.g." as a sentence
     // boundary and asks for the next word to be capitalised ("E.g. Noun").
@@ -105,8 +140,12 @@ export class NameCreationModal extends Modal {
       }
     });
 
-    const deriveBtn = deriveRow.createEl("button", { text: "Cypher", cls: "conlang-panel-btn" });
-    deriveBtn.title = "Run the English word through your active cypher rules and copy the result into the name field.";
+    const deriveBtn = deriveRow.createEl("button", {
+      text: "Cypher",
+      cls: "conlang-panel-btn",
+    });
+    deriveBtn.title =
+      "Run the English word through your active cypher rules and copy the result into the name field.";
     deriveBtn.addEventListener("click", (e) => {
       e.preventDefault();
       this.applyCypher();
@@ -118,7 +157,8 @@ export class NameCreationModal extends Modal {
     // The sentence-case rule reads the full stop in "e.g." as a sentence
     // boundary and asks for the next word to be capitalised ("E.g. Noun").
     // The copy is correct as written, so that warning is expected here.
-    this.referentInput.placeholder = "e.g. the inland sea, Princess of the Five Kingdoms…";
+    this.referentInput.placeholder =
+      "e.g. the inland sea, Princess of the Five Kingdoms…";
     this.referentInput.addClass("conlang-modal-input");
     this.referentInput.addEventListener("input", () => {
       this.referent = this.referentInput.value;
@@ -130,7 +170,8 @@ export class NameCreationModal extends Modal {
     // The sentence-case rule reads the full stop in "e.g." as a sentence
     // boundary and asks for the next word to be capitalised ("E.g. Noun").
     // The copy is correct as written, so that warning is expected here.
-    categoryInput.placeholder = "e.g. character, place, faction, or your own term";
+    categoryInput.placeholder =
+      "e.g. character, place, faction, or your own term";
     categoryInput.value = this.category;
     categoryInput.addClass("conlang-modal-input");
     categoryInput.addEventListener("input", () => {
@@ -140,7 +181,10 @@ export class NameCreationModal extends Modal {
 
     const chips = contentEl.createDiv({ cls: "conlang-modal-chips" });
     for (const cat of NAME_CATEGORIES) {
-      const chip = chips.createEl("button", { text: cat.label, cls: "conlang-modal-chip" });
+      const chip = chips.createEl("button", {
+        text: cat.label,
+        cls: "conlang-modal-chip",
+      });
       chip.title = cat.description;
       chip.addEventListener("click", (e) => {
         e.preventDefault();
@@ -155,7 +199,10 @@ export class NameCreationModal extends Modal {
     const btnRow = contentEl.createDiv({ cls: "conlang-modal-buttons" });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.cancel());
-    const saveBtn = btnRow.createEl("button", { text: "Create name", cls: "mod-cta" });
+    const saveBtn = btnRow.createEl("button", {
+      text: "Create name",
+      cls: "mod-cta",
+    });
     saveBtn.addEventListener("click", () => this.submit());
   }
 
@@ -184,7 +231,9 @@ export class NameCreationModal extends Modal {
   private submit() {
     const conlang = this.conlangForm.trim();
     if (!conlang) {
-      new Notice("Made Up Words: give the name a conlang form (type it or derive it)");
+      new Notice(
+        "Made Up Words: give the name a conlang form (type it or derive it)",
+      );
       this.conlangInput.focus();
       return;
     }

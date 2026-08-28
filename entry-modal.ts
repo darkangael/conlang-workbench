@@ -16,21 +16,56 @@ export interface EntryCreationOptions {
  * definition shown as a hover tooltip. Users can still type a custom value.
  */
 const COMMON_POS: { label: string; description: string }[] = [
-  { label: "noun", description: "A person, place, thing, or idea. e.g. cat, river, freedom." },
-  { label: "verb", description: "An action or state of being. e.g. run, become, exist." },
-  { label: "adjective", description: "Describes a noun. e.g. red, tall, ancient." },
-  { label: "adverb", description: "Describes a verb, adjective, or other adverb. e.g. quickly, often." },
-  { label: "pronoun", description: "Stands in for a noun. e.g. she, they, it, this." },
-  { label: "proper-noun", description: "A specific name, capitalised in English. e.g. Alice, London." },
-  { label: "preposition", description: "Shows a relationship between words. e.g. in, on, before, with." },
-  { label: "conjunction", description: "Joins words, phrases, or clauses. e.g. and, but, because." },
-  { label: "interjection", description: "An exclamation expressing emotion. e.g. oh!, wow, alas." },
+  {
+    label: "noun",
+    description: "A person, place, thing, or idea. e.g. cat, river, freedom.",
+  },
+  {
+    label: "verb",
+    description: "An action or state of being. e.g. run, become, exist.",
+  },
+  {
+    label: "adjective",
+    description: "Describes a noun. e.g. red, tall, ancient.",
+  },
+  {
+    label: "adverb",
+    description:
+      "Describes a verb, adjective, or other adverb. e.g. quickly, often.",
+  },
+  {
+    label: "pronoun",
+    description: "Stands in for a noun. e.g. she, they, it, this.",
+  },
+  {
+    label: "proper-noun",
+    description: "A specific name, capitalised in English. e.g. Alice, London.",
+  },
+  {
+    label: "preposition",
+    description:
+      "Shows a relationship between words. e.g. in, on, before, with.",
+  },
+  {
+    label: "conjunction",
+    description: "Joins words, phrases, or clauses. e.g. and, but, because.",
+  },
+  {
+    label: "interjection",
+    description: "An exclamation expressing emotion. e.g. oh!, wow, alas.",
+  },
 ];
 
-function buildPosChips(parent: HTMLElement, onPick: (value: string) => void): void {
+function buildPosChips(
+  parent: HTMLElement,
+  onPick: (value: string) => void,
+): void {
   const chips = parent.createDiv({ cls: "conlang-modal-chips" });
   for (const pos of COMMON_POS) {
-    const chip = chips.createEl("button", { text: pos.label, cls: "conlang-modal-chip" });
+    const chip = chips.createEl("button", {
+      text: pos.label,
+      cls: "conlang-modal-chip",
+    });
     chip.title = pos.description;
     chip.addEventListener("click", () => onPick(pos.label));
   }
@@ -49,7 +84,7 @@ export class EntryCreationModal extends Modal {
     app: App,
     englishText: string,
     translatedText: string,
-    resolve: (opts: EntryCreationOptions | null) => void
+    resolve: (opts: EntryCreationOptions | null) => void,
   ) {
     super(app);
     this.englishText = englishText;
@@ -64,7 +99,10 @@ export class EntryCreationModal extends Modal {
     const preview = contentEl.createDiv({ cls: "conlang-modal-preview" });
     preview.createSpan({ text: this.englishText, cls: "conlang-modal-source" });
     preview.createSpan({ text: " → ", cls: "conlang-modal-arrow" });
-    preview.createSpan({ text: this.translatedText, cls: "conlang-modal-target" });
+    preview.createSpan({
+      text: this.translatedText,
+      cls: "conlang-modal-target",
+    });
 
     contentEl.createEl("p", {
       cls: "conlang-help",
@@ -97,7 +135,9 @@ export class EntryCreationModal extends Modal {
     });
 
     const btnRow = contentEl.createDiv({ cls: "conlang-modal-buttons" });
-    btnRow.createEl("button", { text: "Skip" }).addEventListener("click", () => this.submitSkip());
+    btnRow
+      .createEl("button", { text: "Skip" })
+      .addEventListener("click", () => this.submitSkip());
     btnRow
       .createEl("button", { text: "Save", cls: "mod-cta" })
       .addEventListener("click", () => this.submit());
@@ -159,7 +199,7 @@ export class MultiEntryModal extends Modal {
     app: App,
     englishText: string,
     inits: MultiEntryLanguageInit[],
-    resolve: (result: MultiEntryResult | null) => void
+    resolve: (result: MultiEntryResult | null) => void,
   ) {
     super(app);
     this.englishText = englishText;
@@ -206,13 +246,22 @@ export class MultiEntryModal extends Modal {
       checkbox.checked = init.checked;
 
       const labelWrap = row.createDiv({ cls: "conlang-modal-lang-label" });
-      const name = labelWrap.createSpan({ cls: "conlang-modal-lang-name", text: init.languageName });
+      const name = labelWrap.createSpan({
+        cls: "conlang-modal-lang-name",
+        text: init.languageName,
+      });
       name.addEventListener("click", () => {
         checkbox.checked = !checkbox.checked;
       });
-      labelWrap.createSpan({ cls: "conlang-modal-lang-folder", text: init.folder });
+      labelWrap.createSpan({
+        cls: "conlang-modal-lang-folder",
+        text: init.folder,
+      });
 
-      const formInput = row.createEl("input", { type: "text", value: init.form });
+      const formInput = row.createEl("input", {
+        type: "text",
+        value: init.form,
+      });
       formInput.addClass("conlang-modal-lang-form");
       formInput.placeholder = "Conlang form";
       formInput.addEventListener("input", () => {
@@ -234,7 +283,9 @@ export class MultiEntryModal extends Modal {
     });
 
     const btnRow = contentEl.createDiv({ cls: "conlang-modal-buttons" });
-    btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.cancel());
+    btnRow
+      .createEl("button", { text: "Cancel" })
+      .addEventListener("click", () => this.cancel());
     btnRow
       .createEl("button", { text: "Save", cls: "mod-cta" })
       .addEventListener("click", () => this.submit());
@@ -243,9 +294,14 @@ export class MultiEntryModal extends Modal {
   private submit() {
     const targets = this.rows
       .filter((r) => r.checkbox.checked && r.formInput.value.trim())
-      .map((r) => ({ languageName: r.init.languageName, form: r.formInput.value.trim() }));
+      .map((r) => ({
+        languageName: r.init.languageName,
+        form: r.formInput.value.trim(),
+      }));
     if (targets.length === 0) {
-      new Notice("Made Up Words: tick at least one language (with a form) to save.");
+      new Notice(
+        "Made Up Words: tick at least one language (with a form) to save.",
+      );
       return;
     }
     this.decided = true;

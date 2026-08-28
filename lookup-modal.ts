@@ -37,7 +37,10 @@ export class LookupModal extends Modal {
     contentEl.createEl("h3", { text: `Look up: "${this.query}"` });
 
     // If no matches at all, say so explicitly
-    if (this.matches.length === 0 || this.matches.every((m) => m.kind === "none")) {
+    if (
+      this.matches.length === 0 ||
+      this.matches.every((m) => m.kind === "none")
+    ) {
       contentEl.createEl("p", {
         cls: "conlang-help",
         text:
@@ -65,27 +68,37 @@ export class LookupModal extends Modal {
     if (match.kind === "none") return;
 
     if (match.kind === "cypher") {
-      const row = parent.createDiv({ cls: "conlang-lookup-row conlang-lookup-cypher" });
+      const row = parent.createDiv({
+        cls: "conlang-lookup-row conlang-lookup-cypher",
+      });
       const head = row.createDiv({ cls: "conlang-lookup-row-head" });
       head.createSpan({ cls: "conlang-lookup-tag", text: "cypher only" });
       const word = head.createSpan({ cls: "conlang-lookup-word" });
       word.setText(match.cypherOutput ?? "");
       const note = row.createDiv({ cls: "conlang-lookup-note" });
       note.setText(
-        "No dictionary entry. This is a phonological placeholder from your cypher rules — not a translation, just sound."
+        "No dictionary entry. This is a phonological placeholder from your cypher rules — not a translation, just sound.",
       );
       return;
     }
 
     if (match.kind === "inflected" && match.candidates?.[0]) {
       const entry = match.candidates[0];
-      const row = parent.createDiv({ cls: "conlang-lookup-row conlang-lookup-inflected" });
+      const row = parent.createDiv({
+        cls: "conlang-lookup-row conlang-lookup-inflected",
+      });
       const head = row.createDiv({ cls: "conlang-lookup-row-head" });
-      head.createSpan({ cls: "conlang-lookup-tag", text: match.inflectionLabel ?? "inflected" });
+      head.createSpan({
+        cls: "conlang-lookup-tag",
+        text: match.inflectionLabel ?? "inflected",
+      });
       const word = head.createSpan({ cls: "conlang-lookup-word" });
       word.setText(entry.word);
       if (entry.partOfSpeech) {
-        head.createSpan({ cls: "conlang-lookup-pos", text: entry.partOfSpeech });
+        head.createSpan({
+          cls: "conlang-lookup-pos",
+          text: entry.partOfSpeech,
+        });
       }
       const def = row.createDiv({ cls: "conlang-lookup-def" });
       def.setText(entry.definition);
@@ -106,7 +119,10 @@ export class LookupModal extends Modal {
           head.createSpan({ cls: "conlang-lookup-lang", text: entry.language });
         }
         if (entry.partOfSpeech) {
-          head.createSpan({ cls: "conlang-lookup-pos", text: entry.partOfSpeech });
+          head.createSpan({
+            cls: "conlang-lookup-pos",
+            text: entry.partOfSpeech,
+          });
         }
         if (entry.ipa) {
           head.createSpan({ cls: "conlang-lookup-ipa", text: entry.ipa });

@@ -14,14 +14,41 @@ export interface WordCreationResult {
 }
 
 const COMMON_POS: { label: string; description: string }[] = [
-  { label: "noun", description: "A person, place, thing, or idea. e.g. cat, river, freedom." },
-  { label: "verb", description: "An action or state of being. e.g. run, become, exist." },
-  { label: "adjective", description: "Describes a noun. e.g. red, tall, ancient." },
-  { label: "adverb", description: "Describes a verb, adjective, or other adverb. e.g. quickly, often, here." },
-  { label: "pronoun", description: "Stands in for a noun. e.g. she, they, it, this." },
-  { label: "preposition", description: "Shows a relationship between words. e.g. in, on, before, with." },
-  { label: "conjunction", description: "Joins words, phrases, or clauses. e.g. and, but, because." },
-  { label: "interjection", description: "An exclamation expressing emotion or reaction. e.g. oh!, wow, alas." },
+  {
+    label: "noun",
+    description: "A person, place, thing, or idea. e.g. cat, river, freedom.",
+  },
+  {
+    label: "verb",
+    description: "An action or state of being. e.g. run, become, exist.",
+  },
+  {
+    label: "adjective",
+    description: "Describes a noun. e.g. red, tall, ancient.",
+  },
+  {
+    label: "adverb",
+    description:
+      "Describes a verb, adjective, or other adverb. e.g. quickly, often, here.",
+  },
+  {
+    label: "pronoun",
+    description: "Stands in for a noun. e.g. she, they, it, this.",
+  },
+  {
+    label: "preposition",
+    description:
+      "Shows a relationship between words. e.g. in, on, before, with.",
+  },
+  {
+    label: "conjunction",
+    description: "Joins words, phrases, or clauses. e.g. and, but, because.",
+  },
+  {
+    label: "interjection",
+    description:
+      "An exclamation expressing emotion or reaction. e.g. oh!, wow, alas.",
+  },
 ];
 
 export class WordCreationModal extends Modal {
@@ -44,7 +71,7 @@ export class WordCreationModal extends Modal {
   constructor(
     app: App,
     cypherFn: (englishText: string) => string,
-    resolve: (result: WordCreationResult | null) => void
+    resolve: (result: WordCreationResult | null) => void,
   ) {
     super(app);
     this.cypherFn = cypherFn;
@@ -55,7 +82,10 @@ export class WordCreationModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h3", { text: "Add a word" });
 
-    contentEl.createDiv({ cls: "conlang-modal-label", text: "English meaning" });
+    contentEl.createDiv({
+      cls: "conlang-modal-label",
+      text: "English meaning",
+    });
     this.englishInput = contentEl.createEl("input", { type: "text" });
     // The sentence-case rule reads the full stop in "e.g." as a sentence
     // boundary and asks for the next word to be capitalised ("E.g. Noun").
@@ -70,19 +100,27 @@ export class WordCreationModal extends Modal {
     contentEl.createDiv({ cls: "conlang-modal-label", text: "Made-up word" });
     const conlangRow = contentEl.createDiv({ cls: "conlang-modal-derive-row" });
     this.conlangInput = conlangRow.createEl("input", { type: "text" });
-    this.conlangInput.placeholder = "Type your invented word, or derive it from English";
+    this.conlangInput.placeholder =
+      "Type your invented word, or derive it from English";
     this.conlangInput.addClass("conlang-modal-input");
     this.conlangInput.addEventListener("input", () => {
       this.conlangWord = this.conlangInput.value;
     });
-    const deriveBtn = conlangRow.createEl("button", { text: "Cypher", cls: "conlang-panel-btn" });
-    deriveBtn.title = "Run the English meaning through your cypher rules and use the result. You can edit it afterwards.";
+    const deriveBtn = conlangRow.createEl("button", {
+      text: "Cypher",
+      cls: "conlang-panel-btn",
+    });
+    deriveBtn.title =
+      "Run the English meaning through your cypher rules and use the result. You can edit it afterwards.";
     deriveBtn.addEventListener("click", (e) => {
       e.preventDefault();
       this.deriveFromEnglish();
     });
 
-    contentEl.createDiv({ cls: "conlang-modal-label", text: "Part of speech (optional)" });
+    contentEl.createDiv({
+      cls: "conlang-modal-label",
+      text: "Part of speech (optional)",
+    });
     this.posInput = contentEl.createEl("input", { type: "text" });
     // The sentence-case rule reads the full stop in "e.g." as a sentence
     // boundary and asks for the next word to be capitalised ("E.g. Noun").
@@ -104,7 +142,10 @@ export class WordCreationModal extends Modal {
 
     const chips = contentEl.createDiv({ cls: "conlang-modal-chips" });
     for (const pos of COMMON_POS) {
-      const chip = chips.createEl("button", { text: pos.label, cls: "conlang-modal-chip" });
+      const chip = chips.createEl("button", {
+        text: pos.label,
+        cls: "conlang-modal-chip",
+      });
       chip.title = pos.description;
       chip.addEventListener("click", (e) => {
         e.preventDefault();
@@ -116,7 +157,10 @@ export class WordCreationModal extends Modal {
     const btnRow = contentEl.createDiv({ cls: "conlang-modal-buttons" });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.cancel());
-    const saveBtn = btnRow.createEl("button", { text: "Add word", cls: "mod-cta" });
+    const saveBtn = btnRow.createEl("button", {
+      text: "Add word",
+      cls: "mod-cta",
+    });
     saveBtn.addEventListener("click", () => this.submit());
   }
 

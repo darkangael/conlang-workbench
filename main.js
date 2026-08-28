@@ -4748,20 +4748,50 @@ var TranslationPanelView = _TranslationPanelView;
 // entry-modal.ts
 var import_obsidian9 = require("obsidian");
 var COMMON_POS = [
-  { label: "noun", description: "A person, place, thing, or idea. e.g. cat, river, freedom." },
-  { label: "verb", description: "An action or state of being. e.g. run, become, exist." },
-  { label: "adjective", description: "Describes a noun. e.g. red, tall, ancient." },
-  { label: "adverb", description: "Describes a verb, adjective, or other adverb. e.g. quickly, often." },
-  { label: "pronoun", description: "Stands in for a noun. e.g. she, they, it, this." },
-  { label: "proper-noun", description: "A specific name, capitalised in English. e.g. Alice, London." },
-  { label: "preposition", description: "Shows a relationship between words. e.g. in, on, before, with." },
-  { label: "conjunction", description: "Joins words, phrases, or clauses. e.g. and, but, because." },
-  { label: "interjection", description: "An exclamation expressing emotion. e.g. oh!, wow, alas." }
+  {
+    label: "noun",
+    description: "A person, place, thing, or idea. e.g. cat, river, freedom."
+  },
+  {
+    label: "verb",
+    description: "An action or state of being. e.g. run, become, exist."
+  },
+  {
+    label: "adjective",
+    description: "Describes a noun. e.g. red, tall, ancient."
+  },
+  {
+    label: "adverb",
+    description: "Describes a verb, adjective, or other adverb. e.g. quickly, often."
+  },
+  {
+    label: "pronoun",
+    description: "Stands in for a noun. e.g. she, they, it, this."
+  },
+  {
+    label: "proper-noun",
+    description: "A specific name, capitalised in English. e.g. Alice, London."
+  },
+  {
+    label: "preposition",
+    description: "Shows a relationship between words. e.g. in, on, before, with."
+  },
+  {
+    label: "conjunction",
+    description: "Joins words, phrases, or clauses. e.g. and, but, because."
+  },
+  {
+    label: "interjection",
+    description: "An exclamation expressing emotion. e.g. oh!, wow, alas."
+  }
 ];
 function buildPosChips(parent, onPick) {
   const chips = parent.createDiv({ cls: "conlang-modal-chips" });
   for (const pos of COMMON_POS) {
-    const chip = chips.createEl("button", { text: pos.label, cls: "conlang-modal-chip" });
+    const chip = chips.createEl("button", {
+      text: pos.label,
+      cls: "conlang-modal-chip"
+    });
     chip.title = pos.description;
     chip.addEventListener("click", () => onPick(pos.label));
   }
@@ -4780,7 +4810,10 @@ var EntryCreationModal = class extends import_obsidian9.Modal {
     const preview = contentEl.createDiv({ cls: "conlang-modal-preview" });
     preview.createSpan({ text: this.englishText, cls: "conlang-modal-source" });
     preview.createSpan({ text: " \u2192 ", cls: "conlang-modal-arrow" });
-    preview.createSpan({ text: this.translatedText, cls: "conlang-modal-target" });
+    preview.createSpan({
+      text: this.translatedText,
+      cls: "conlang-modal-target"
+    });
     contentEl.createEl("p", {
       cls: "conlang-help",
       text: "Part of speech (optional). This lets inflection rules know which words they apply to \u2014 so a noun-plural rule won't accidentally trigger on a verb. Pick one or type your own."
@@ -4862,12 +4895,21 @@ var MultiEntryModal = class extends import_obsidian9.Modal {
       const checkbox = row.createEl("input", { type: "checkbox" });
       checkbox.checked = init.checked;
       const labelWrap = row.createDiv({ cls: "conlang-modal-lang-label" });
-      const name = labelWrap.createSpan({ cls: "conlang-modal-lang-name", text: init.languageName });
+      const name = labelWrap.createSpan({
+        cls: "conlang-modal-lang-name",
+        text: init.languageName
+      });
       name.addEventListener("click", () => {
         checkbox.checked = !checkbox.checked;
       });
-      labelWrap.createSpan({ cls: "conlang-modal-lang-folder", text: init.folder });
-      const formInput = row.createEl("input", { type: "text", value: init.form });
+      labelWrap.createSpan({
+        cls: "conlang-modal-lang-folder",
+        text: init.folder
+      });
+      const formInput = row.createEl("input", {
+        type: "text",
+        value: init.form
+      });
       formInput.addClass("conlang-modal-lang-form");
       formInput.placeholder = "Conlang form";
       formInput.addEventListener("input", () => {
@@ -4890,9 +4932,14 @@ var MultiEntryModal = class extends import_obsidian9.Modal {
     btnRow.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => this.submit());
   }
   submit() {
-    const targets = this.rows.filter((r) => r.checkbox.checked && r.formInput.value.trim()).map((r) => ({ languageName: r.init.languageName, form: r.formInput.value.trim() }));
+    const targets = this.rows.filter((r) => r.checkbox.checked && r.formInput.value.trim()).map((r) => ({
+      languageName: r.init.languageName,
+      form: r.formInput.value.trim()
+    }));
     if (targets.length === 0) {
-      new import_obsidian9.Notice("Made Up Words: tick at least one language (with a form) to save.");
+      new import_obsidian9.Notice(
+        "Made Up Words: tick at least one language (with a form) to save."
+      );
       return;
     }
     this.decided = true;
@@ -4913,13 +4960,34 @@ var MultiEntryModal = class extends import_obsidian9.Modal {
 // name-modal.ts
 var import_obsidian10 = require("obsidian");
 var NAME_CATEGORIES = [
-  { label: "character", description: "A person \u2014 protagonist, antagonist, supporting figure. Includes the names of gods and personified forces." },
-  { label: "place", description: "A geographic location \u2014 city, region, mountain, river, building. Anything with coordinates in your world." },
-  { label: "faction", description: "An organised group \u2014 kingdom, guild, religion, conspiracy, military unit. Things that have agency but aren't individuals." },
-  { label: "artifact", description: "A unique object \u2014 a named sword, a specific tome, a relic. Common-noun objects (like 'a sword') aren't names." },
-  { label: "event", description: "A specific historical event \u2014 battle, treaty, disaster. 'The Burning Year', not 'a fire'." },
-  { label: "title", description: "A specific role or rank that's treated as a proper noun \u2014 'the High King', 'the Dawnspeaker'. Often capitalised in prose." },
-  { label: "other", description: "Anything else that gets its own proper-noun treatment." }
+  {
+    label: "character",
+    description: "A person \u2014 protagonist, antagonist, supporting figure. Includes the names of gods and personified forces."
+  },
+  {
+    label: "place",
+    description: "A geographic location \u2014 city, region, mountain, river, building. Anything with coordinates in your world."
+  },
+  {
+    label: "faction",
+    description: "An organised group \u2014 kingdom, guild, religion, conspiracy, military unit. Things that have agency but aren't individuals."
+  },
+  {
+    label: "artifact",
+    description: "A unique object \u2014 a named sword, a specific tome, a relic. Common-noun objects (like 'a sword') aren't names."
+  },
+  {
+    label: "event",
+    description: "A specific historical event \u2014 battle, treaty, disaster. 'The Burning Year', not 'a fire'."
+  },
+  {
+    label: "title",
+    description: "A specific role or rank that's treated as a proper noun \u2014 'the High King', 'the Dawnspeaker'. Often capitalised in prose."
+  },
+  {
+    label: "other",
+    description: "Anything else that gets its own proper-noun treatment."
+  }
 ];
 var NameCreationModal = class extends import_obsidian10.Modal {
   constructor(app, cypherFn, resolve) {
@@ -4941,7 +5009,10 @@ var NameCreationModal = class extends import_obsidian10.Modal {
       cls: "conlang-help",
       text: "Names are proper nouns \u2014 character names, places, factions, artifacts. They're locked at creation: even if you change cypher rules later, the name stays the same."
     });
-    contentEl.createDiv({ cls: "conlang-modal-label", text: "Name (in conlang)" });
+    contentEl.createDiv({
+      cls: "conlang-modal-label",
+      text: "Name (in conlang)"
+    });
     this.conlangInput = contentEl.createEl("input", { type: "text" });
     this.conlangInput.placeholder = "Type the name directly, or derive one below\u2026";
     this.conlangInput.addClass("conlang-modal-input");
@@ -4950,9 +5021,13 @@ var NameCreationModal = class extends import_obsidian10.Modal {
     });
     window.setTimeout(() => this.conlangInput.focus(), 0);
     const deriveBlock = contentEl.createDiv({ cls: "conlang-modal-derive" });
-    const deriveLabel = deriveBlock.createDiv({ cls: "conlang-modal-derive-label" });
+    const deriveLabel = deriveBlock.createDiv({
+      cls: "conlang-modal-derive-label"
+    });
     deriveLabel.setText("\u2026or derive from an English word:");
-    const deriveRow = deriveBlock.createDiv({ cls: "conlang-modal-derive-row" });
+    const deriveRow = deriveBlock.createDiv({
+      cls: "conlang-modal-derive-row"
+    });
     this.deriveInput = deriveRow.createEl("input", { type: "text" });
     this.deriveInput.placeholder = "e.g. darkness, river, oath";
     this.deriveInput.addClass("conlang-modal-input");
@@ -4965,7 +5040,10 @@ var NameCreationModal = class extends import_obsidian10.Modal {
         this.applyCypher();
       }
     });
-    const deriveBtn = deriveRow.createEl("button", { text: "Cypher", cls: "conlang-panel-btn" });
+    const deriveBtn = deriveRow.createEl("button", {
+      text: "Cypher",
+      cls: "conlang-panel-btn"
+    });
     deriveBtn.title = "Run the English word through your active cypher rules and copy the result into the name field.";
     deriveBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -4989,7 +5067,10 @@ var NameCreationModal = class extends import_obsidian10.Modal {
     });
     const chips = contentEl.createDiv({ cls: "conlang-modal-chips" });
     for (const cat of NAME_CATEGORIES) {
-      const chip = chips.createEl("button", { text: cat.label, cls: "conlang-modal-chip" });
+      const chip = chips.createEl("button", {
+        text: cat.label,
+        cls: "conlang-modal-chip"
+      });
       chip.title = cat.description;
       chip.addEventListener("click", (e) => {
         e.preventDefault();
@@ -5002,7 +5083,10 @@ var NameCreationModal = class extends import_obsidian10.Modal {
     const btnRow = contentEl.createDiv({ cls: "conlang-modal-buttons" });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.cancel());
-    const saveBtn = btnRow.createEl("button", { text: "Create name", cls: "mod-cta" });
+    const saveBtn = btnRow.createEl("button", {
+      text: "Create name",
+      cls: "mod-cta"
+    });
     saveBtn.addEventListener("click", () => this.submit());
   }
   applyCypher() {
@@ -5028,7 +5112,9 @@ var NameCreationModal = class extends import_obsidian10.Modal {
   submit() {
     const conlang = this.conlangForm.trim();
     if (!conlang) {
-      new import_obsidian10.Notice("Made Up Words: give the name a conlang form (type it or derive it)");
+      new import_obsidian10.Notice(
+        "Made Up Words: give the name a conlang form (type it or derive it)"
+      );
       this.conlangInput.focus();
       return;
     }
@@ -5082,7 +5168,9 @@ var LookupModal = class extends import_obsidian11.Modal {
     var _a, _b, _c;
     if (match.kind === "none") return;
     if (match.kind === "cypher") {
-      const row = parent.createDiv({ cls: "conlang-lookup-row conlang-lookup-cypher" });
+      const row = parent.createDiv({
+        cls: "conlang-lookup-row conlang-lookup-cypher"
+      });
       const head = row.createDiv({ cls: "conlang-lookup-row-head" });
       head.createSpan({ cls: "conlang-lookup-tag", text: "cypher only" });
       const word = head.createSpan({ cls: "conlang-lookup-word" });
@@ -5095,13 +5183,21 @@ var LookupModal = class extends import_obsidian11.Modal {
     }
     if (match.kind === "inflected" && ((_b = match.candidates) == null ? void 0 : _b[0])) {
       const entry = match.candidates[0];
-      const row = parent.createDiv({ cls: "conlang-lookup-row conlang-lookup-inflected" });
+      const row = parent.createDiv({
+        cls: "conlang-lookup-row conlang-lookup-inflected"
+      });
       const head = row.createDiv({ cls: "conlang-lookup-row-head" });
-      head.createSpan({ cls: "conlang-lookup-tag", text: (_c = match.inflectionLabel) != null ? _c : "inflected" });
+      head.createSpan({
+        cls: "conlang-lookup-tag",
+        text: (_c = match.inflectionLabel) != null ? _c : "inflected"
+      });
       const word = head.createSpan({ cls: "conlang-lookup-word" });
       word.setText(entry.word);
       if (entry.partOfSpeech) {
-        head.createSpan({ cls: "conlang-lookup-pos", text: entry.partOfSpeech });
+        head.createSpan({
+          cls: "conlang-lookup-pos",
+          text: entry.partOfSpeech
+        });
       }
       const def = row.createDiv({ cls: "conlang-lookup-def" });
       def.setText(entry.definition);
@@ -5119,7 +5215,10 @@ var LookupModal = class extends import_obsidian11.Modal {
           head.createSpan({ cls: "conlang-lookup-lang", text: entry.language });
         }
         if (entry.partOfSpeech) {
-          head.createSpan({ cls: "conlang-lookup-pos", text: entry.partOfSpeech });
+          head.createSpan({
+            cls: "conlang-lookup-pos",
+            text: entry.partOfSpeech
+          });
         }
         if (entry.ipa) {
           head.createSpan({ cls: "conlang-lookup-ipa", text: entry.ipa });
@@ -5154,14 +5253,38 @@ var LookupModal = class extends import_obsidian11.Modal {
 // word-modal.ts
 var import_obsidian12 = require("obsidian");
 var COMMON_POS2 = [
-  { label: "noun", description: "A person, place, thing, or idea. e.g. cat, river, freedom." },
-  { label: "verb", description: "An action or state of being. e.g. run, become, exist." },
-  { label: "adjective", description: "Describes a noun. e.g. red, tall, ancient." },
-  { label: "adverb", description: "Describes a verb, adjective, or other adverb. e.g. quickly, often, here." },
-  { label: "pronoun", description: "Stands in for a noun. e.g. she, they, it, this." },
-  { label: "preposition", description: "Shows a relationship between words. e.g. in, on, before, with." },
-  { label: "conjunction", description: "Joins words, phrases, or clauses. e.g. and, but, because." },
-  { label: "interjection", description: "An exclamation expressing emotion or reaction. e.g. oh!, wow, alas." }
+  {
+    label: "noun",
+    description: "A person, place, thing, or idea. e.g. cat, river, freedom."
+  },
+  {
+    label: "verb",
+    description: "An action or state of being. e.g. run, become, exist."
+  },
+  {
+    label: "adjective",
+    description: "Describes a noun. e.g. red, tall, ancient."
+  },
+  {
+    label: "adverb",
+    description: "Describes a verb, adjective, or other adverb. e.g. quickly, often, here."
+  },
+  {
+    label: "pronoun",
+    description: "Stands in for a noun. e.g. she, they, it, this."
+  },
+  {
+    label: "preposition",
+    description: "Shows a relationship between words. e.g. in, on, before, with."
+  },
+  {
+    label: "conjunction",
+    description: "Joins words, phrases, or clauses. e.g. and, but, because."
+  },
+  {
+    label: "interjection",
+    description: "An exclamation expressing emotion or reaction. e.g. oh!, wow, alas."
+  }
 ];
 var WordCreationModal = class extends import_obsidian12.Modal {
   constructor(app, cypherFn, resolve) {
@@ -5177,7 +5300,10 @@ var WordCreationModal = class extends import_obsidian12.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.createEl("h3", { text: "Add a word" });
-    contentEl.createDiv({ cls: "conlang-modal-label", text: "English meaning" });
+    contentEl.createDiv({
+      cls: "conlang-modal-label",
+      text: "English meaning"
+    });
     this.englishInput = contentEl.createEl("input", { type: "text" });
     this.englishInput.placeholder = "e.g. water, to walk, red";
     this.englishInput.addClass("conlang-modal-input");
@@ -5193,13 +5319,19 @@ var WordCreationModal = class extends import_obsidian12.Modal {
     this.conlangInput.addEventListener("input", () => {
       this.conlangWord = this.conlangInput.value;
     });
-    const deriveBtn = conlangRow.createEl("button", { text: "Cypher", cls: "conlang-panel-btn" });
+    const deriveBtn = conlangRow.createEl("button", {
+      text: "Cypher",
+      cls: "conlang-panel-btn"
+    });
     deriveBtn.title = "Run the English meaning through your cypher rules and use the result. You can edit it afterwards.";
     deriveBtn.addEventListener("click", (e) => {
       e.preventDefault();
       this.deriveFromEnglish();
     });
-    contentEl.createDiv({ cls: "conlang-modal-label", text: "Part of speech (optional)" });
+    contentEl.createDiv({
+      cls: "conlang-modal-label",
+      text: "Part of speech (optional)"
+    });
     this.posInput = contentEl.createEl("input", { type: "text" });
     this.posInput.placeholder = "e.g. noun, verb, adjective\u2026";
     this.posInput.addClass("conlang-modal-input");
@@ -5217,7 +5349,10 @@ var WordCreationModal = class extends import_obsidian12.Modal {
     });
     const chips = contentEl.createDiv({ cls: "conlang-modal-chips" });
     for (const pos of COMMON_POS2) {
-      const chip = chips.createEl("button", { text: pos.label, cls: "conlang-modal-chip" });
+      const chip = chips.createEl("button", {
+        text: pos.label,
+        cls: "conlang-modal-chip"
+      });
       chip.title = pos.description;
       chip.addEventListener("click", (e) => {
         e.preventDefault();
@@ -5228,7 +5363,10 @@ var WordCreationModal = class extends import_obsidian12.Modal {
     const btnRow = contentEl.createDiv({ cls: "conlang-modal-buttons" });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.cancel());
-    const saveBtn = btnRow.createEl("button", { text: "Add word", cls: "mod-cta" });
+    const saveBtn = btnRow.createEl("button", {
+      text: "Add word",
+      cls: "mod-cta"
+    });
     saveBtn.addEventListener("click", () => this.submit());
   }
   deriveFromEnglish() {
