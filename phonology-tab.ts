@@ -175,6 +175,60 @@ export class PhonologyTab {
       });
     }
 
+    // Realizations belong visually beneath their canonical unit rather than
+    // appearing as peers in the contrastive inventory. This preserves the
+    // distinction between a phonological unit such as /p/ and one of its
+    // documented realized forms such as [pʰ].
+    const realizations = this.plugin.phonology.lookupRealizationsForUnit(
+      unit.id,
+      unit.languageId,
+      unit.language,
+    );
+
+    if (realizations.length > 0) {
+      const realizationSection = row.createDiv({
+        cls: "conlang-phonology-realizations",
+      });
+
+      realizationSection.createDiv({
+        cls: "conlang-phonology-realizations-label",
+        text: "Realizations",
+      });
+
+      const sortedRealizations = realizations
+        .slice()
+        .sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+      for (const realization of sortedRealizations) {
+        const realizationRow = realizationSection.createDiv({
+          cls: "conlang-phonology-realization",
+        });
+
+        const realizationHead = realizationRow.createDiv({
+          cls: "conlang-phonology-realization-head",
+        });
+
+        realizationHead.createSpan({
+          cls: "conlang-phonology-realization-symbol",
+          text: realization.symbol,
+        });
+
+        if (realization.status) {
+          realizationHead.createSpan({
+            cls: "conlang-phonology-realization-status",
+            text: realization.status,
+          });
+        }
+
+        if (realization.environment) {
+          realizationRow.createDiv({
+            cls: "conlang-phonology-realization-environment",
+            text: realization.environment,
+          });
+        }
+      }
+    }
+
     // A path is optional in the base model because a PhonologicalUnit can
     // theoretically exist before being associated with a Markdown source.
     // Loaded inventory units normally have one, so only make those rows
@@ -314,6 +368,29 @@ export class PhonologyTab {
       if (unit.status?.toLowerCase().includes(query)) return true;
       if (unit.notes?.toLowerCase().includes(query)) return true;
       if (unit.language?.toLowerCase().includes(query)) return true;
+
+      // Realizations are displayed as part of their canonical unit's card, so
+      // visible realization data should also be searchable. A match still
+      // returns the canonical unit rather than treating the realization as an
+      // independent inventory result.
+      const realizations = this.plugin.phonology.lookupRealizationsForUnit(
+        unit.id,
+        unit.languageId,
+        unit.language,
+      );
+
+      const realizationMatches = realizations.some((realization) => {
+        if (realization.symbol.toLowerCase().includes(query)) return true;
+        if (realization.id.toLowerCase().includes(query)) return true;
+        if (realization.environment?.toLowerCase().includes(query)) return true;
+        if (realization.status?.toLowerCase().includes(query)) return true;
+        if (realization.notes?.toLowerCase().includes(query)) return true;
+        if (realization.language?.toLowerCase().includes(query)) return true;
+
+        return false;
+      });
+
+      if (realizationMatches) return true;
 
       return false;
     });

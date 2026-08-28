@@ -3488,6 +3488,45 @@ var PhonologyTab = class {
         text: unit.language
       });
     }
+    const realizations = this.plugin.phonology.lookupRealizationsForUnit(
+      unit.id,
+      unit.languageId,
+      unit.language
+    );
+    if (realizations.length > 0) {
+      const realizationSection = row.createDiv({
+        cls: "conlang-phonology-realizations"
+      });
+      realizationSection.createDiv({
+        cls: "conlang-phonology-realizations-label",
+        text: "Realizations"
+      });
+      const sortedRealizations = realizations.slice().sort((a, b) => a.symbol.localeCompare(b.symbol));
+      for (const realization of sortedRealizations) {
+        const realizationRow = realizationSection.createDiv({
+          cls: "conlang-phonology-realization"
+        });
+        const realizationHead = realizationRow.createDiv({
+          cls: "conlang-phonology-realization-head"
+        });
+        realizationHead.createSpan({
+          cls: "conlang-phonology-realization-symbol",
+          text: realization.symbol
+        });
+        if (realization.status) {
+          realizationHead.createSpan({
+            cls: "conlang-phonology-realization-status",
+            text: realization.status
+          });
+        }
+        if (realization.environment) {
+          realizationRow.createDiv({
+            cls: "conlang-phonology-realization-environment",
+            text: realization.environment
+          });
+        }
+      }
+    }
     if (unit.path) {
       row.addClass("conlang-clickable");
       row.title = "Open phonological unit note";
@@ -3594,6 +3633,22 @@ var PhonologyTab = class {
       if ((_c = unit.status) == null ? void 0 : _c.toLowerCase().includes(query)) return true;
       if ((_d = unit.notes) == null ? void 0 : _d.toLowerCase().includes(query)) return true;
       if ((_e = unit.language) == null ? void 0 : _e.toLowerCase().includes(query)) return true;
+      const realizations = this.plugin.phonology.lookupRealizationsForUnit(
+        unit.id,
+        unit.languageId,
+        unit.language
+      );
+      const realizationMatches = realizations.some((realization) => {
+        var _a2, _b2, _c2, _d2;
+        if (realization.symbol.toLowerCase().includes(query)) return true;
+        if (realization.id.toLowerCase().includes(query)) return true;
+        if ((_a2 = realization.environment) == null ? void 0 : _a2.toLowerCase().includes(query)) return true;
+        if ((_b2 = realization.status) == null ? void 0 : _b2.toLowerCase().includes(query)) return true;
+        if ((_c2 = realization.notes) == null ? void 0 : _c2.toLowerCase().includes(query)) return true;
+        if ((_d2 = realization.language) == null ? void 0 : _d2.toLowerCase().includes(query)) return true;
+        return false;
+      });
+      if (realizationMatches) return true;
       return false;
     });
   }

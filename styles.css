@@ -2040,3 +2040,47 @@ body.conlang-hl-background .conlang-known-word.is-phrase {
 .conlang-phonology-row.category-vowel {
   border-left: 3px solid var(--color-purple, var(--interactive-accent));
 }
+
+/* Realizations are subordinate to the canonical phonological unit.
+ * Keep them visually quieter so /p/ remains the primary inventory item while
+ * [pʰ] reads as documented realization evidence beneath it.
+ */
+.conlang-phonology-realizations {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  padding-left: 0.9rem;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.conlang-phonology-realizations-label {
+  margin-bottom: 0.25rem;
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.conlang-phonology-realization {
+  padding: 0.2rem 0;
+}
+
+.conlang-phonology-realization-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.conlang-phonology-realization-symbol {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+
+.conlang-phonology-realization-status {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.conlang-phonology-realization-environment {
+  margin-top: 0.1rem;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
