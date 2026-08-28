@@ -758,33 +758,58 @@ This remains a Hardening observation.
   creating persistent artifacts.
 - **Physical vault escape demonstrated:** No.
 - **Logical destination change demonstrated:** Yes.
-- **Current Workbench exposure:** Entry-creation destinations ultimately derive
-  from configured dictionary-folder paths, and Workbench does not currently
-  provide an independent canonical path-validation layer.
-- **Required remediation:** Validate and constrain mutating paths to their
-  authorized Workbench base folder before calling vault creation APIs.
-- **Data Safety relevance:** Yes. An unintended logical destination can place
-  generated or user-authored material outside the location the user expected.
+- **Remediation:** Implemented `vault-paths.ts` as a Workbench-controlled path
+  authority boundary. Mutating dictionary destinations now reject empty paths,
+  leading or trailing whitespace, backslashes, absolute-looking paths, repeated
+  separators, and `.` / `..` path components rather than normalizing them.
+  Dictionary filename construction now uses `joinVaultPath()`, which also
+  requires generated filenames to remain a single child path component.
+- **Defense in depth:** Interactive entry-creation flows validate configured
+  dictionary folders before mutation and surface a user-facing diagnostic.
+  `ensureFolder()` and `ensureFolderStrict()` independently validate again at
+  the folder-mutation boundary so future callers cannot bypass the protection.
+- **Runtime verification:** A normal Test Language dictionary entry was
+  successfully created in `Languages/Test Language/Lexicon`, confirming valid
+  paths still work. A configured test destination of
+  `CW-Security-Audit-Probe/sub/../escaped` was then rejected by Workbench before
+  mutation. A filesystem check confirmed that neither the probe folder nor the
+  blocked test note was created.
+- **Regression coverage:** `scripts/test-vault-paths.mjs` exercises the real
+  TypeScript implementation through esbuild and verifies rejection of traversal
+  and ambiguous path forms.
+- **Data Safety relevance:** Yes. The remediation prevents a configured or
+  derived write path from being silently redirected to a different logical
+  destination inside the vault.
+- **Disposition:** Remediated and verified.
 
 **SEC-003-H1 — Path-boundary comparison uses string-prefix semantics**
 
 - **Severity:** Hardening
-- **Current impact:** Possible unnecessary reload of Workbench indexes when an
+- **Original impact:** Possible unnecessary reload of Workbench indexes when an
   unrelated sibling path shares the configured folder's string prefix.
 - **Security impact demonstrated:** None.
-- **Recommended future action:** Use a normalized folder-membership/path-boundary
-  helper rather than raw string-prefix matching when this code is next touched.
+- **Remediation:** Replaced raw `startsWith()` folder checks with
+  `isPathWithinFolder()`, which requires exact folder equality or a real `/`
+  descendant boundary.
+- **Regression coverage:** Automated tests verify that
+  `Languages/Mer/Lexicon/varu.md` is inside `Languages/Mer`, while
+  `Languages/Mermaid/Lexicon/song.md` is not.
+- **Disposition:** Remediated and verified.
 
 ### Status
 
-**Finding**
+**Pass — remediated and verified**
 
-The physical-vault escape boundary was not shown to fail, but the controlled
-runtime test demonstrated that mutating traversal-like paths can be normalized
-to a different logical destination while returning `null`.
+The original controlled runtime test showed that Obsidian mutation APIs can
+normalize traversal-like paths to a different logical destination while
+returning `null`, so Workbench cannot rely on those APIs alone to enforce its
+write authority.
 
-Workbench should therefore implement and use its own validated logical-path
-boundary before relying on configured or derived paths for persistent writes.
+Workbench now establishes its own logical path boundary before persistent
+dictionary writes, rejects traversal rather than normalizing it, validates again
+at the folder-mutation boundary, and uses component-aware folder containment.
+Normal-path behavior, adversarial traversal rejection, absence of unintended
+artifacts, and automated regression coverage have all been verified.
 
 ---
 
@@ -1271,7 +1296,8 @@ audit section.
 
 | ID | Section | Status | Severity | Summary | Evidence | Action |
 | --- | --- | --- | --- | --- | --- | --- |
-| — | — | — | — | No findings recorded yet | — | — |
+| SEC-003-M1 | §3 Path Handling and Traversal | Remediated and verified | Medium | Mutating paths containing `..` can be normalized to a different logical destination by Obsidian mutation APIs. | Controlled raw-API test; Workbench adversarial runtime test; `test:vault-paths` regression coverage | Workbench now validates logical write paths before mutation and rejects traversal rather than normalizing it. |
+| SEC-003-H1 | §3 Path Handling and Traversal | Remediated and verified | Hardening | Raw string-prefix folder comparison can match unrelated sibling paths. | Code review; `Mer` / `Mermaid` regression coverage in `test:vault-paths` | Replaced raw prefix comparison with component-aware `isPathWithinFolder()`. |
 
 ---
 

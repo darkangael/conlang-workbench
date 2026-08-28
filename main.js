@@ -1652,6 +1652,51 @@ function loadLanguageProfile(app, config) {
   };
 }
 
+// vault-paths.ts
+function validateVaultRelativePath(path) {
+  if (!path) {
+    throw new Error("Vault path must not be empty.");
+  }
+  if (path !== path.trim()) {
+    throw new Error("Vault path must not begin or end with whitespace.");
+  }
+  if (path.includes("\\")) {
+    throw new Error("Vault path must use forward slashes, not backslashes.");
+  }
+  if (path.startsWith("/") || /^[A-Za-z]:\//.test(path) || path.startsWith("//")) {
+    throw new Error("Vault path must be relative to the current vault.");
+  }
+  const parts = path.split("/");
+  if (parts.some((part) => part.length === 0)) {
+    throw new Error(
+      "Vault path must not contain repeated, leading, or trailing separators."
+    );
+  }
+  if (parts.some((part) => part === "." || part === "..")) {
+    throw new Error('Vault path must not contain "." or ".." components.');
+  }
+  return path;
+}
+function joinVaultPath(folder, child) {
+  const safeFolder = validateVaultRelativePath(folder);
+  if (!child) {
+    throw new Error("Vault child name must not be empty.");
+  }
+  if (child === "." || child === ".." || child.includes("/") || child.includes("\\")) {
+    throw new Error("Vault child name must be a single path component.");
+  }
+  return `${safeFolder}/${child}`;
+}
+function isPathWithinFolder(path, folder) {
+  try {
+    const safePath = validateVaultRelativePath(path);
+    const safeFolder = validateVaultRelativePath(folder);
+    return safePath === safeFolder || safePath.startsWith(`${safeFolder}/`);
+  } catch (e) {
+    return false;
+  }
+}
+
 // inflection.ts
 function findInflection(word, dictionary, rules) {
   if (!rules || rules.length === 0) return null;
@@ -6933,7 +6978,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
    */
   maybeReloadForPath(path) {
     const inDict = this.getActiveLanguages().some(
-      (l) => l.dictionaryFolder && path.startsWith(l.dictionaryFolder)
+      (l) => l.dictionaryFolder && isPathWithinFolder(path, l.dictionaryFolder)
     );
     if (!inDict) return;
     this.scheduleDictionaryReload();
@@ -7226,8 +7271,9 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
     if (!form) return { ok: false, error: "empty conlang form" };
     const folder = p.lang.dictionaryFolder;
     const safeName = form.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path;
     try {
+      path = joinVaultPath(folder, `${safeName}.md`);
       await this.ensureFolderStrict(folder);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -7276,14 +7322,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
   freeHomographPath(folder, safeName, partOfSpeech) {
     const pos = (partOfSpeech != null ? partOfSpeech : "").trim().replace(/[\\/:*?"<>|]/g, "_");
     if (pos) {
-      const p = `${folder}/${safeName} (${pos}).md`;
+      const p = joinVaultPath(folder, `${safeName} (${pos}).md`);
       if (!this.app.vault.getAbstractFileByPath(p)) return p;
     }
     for (let n = 2; n < 100; n++) {
-      const p = `${folder}/${safeName} (${n}).md`;
+      const p = joinVaultPath(folder, `${safeName} (${n}).md`);
       if (!this.app.vault.getAbstractFileByPath(p)) return p;
     }
-    return `${folder}/${safeName} (${Date.now()}).md`;
+    return joinVaultPath(folder, `${safeName} (${Date.now()}).md`);
   }
   /**
    * True when an existing entry file already covers the given English
@@ -7314,7 +7360,8 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
    * callers can surface the error to the user.
    */
   async ensureFolderStrict(path) {
-    const parts = path.split("/").filter((p) => p.length > 0);
+    const safePath = validateVaultRelativePath(path);
+    const parts = safePath.split("/");
     let current = "";
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
@@ -7446,8 +7493,18 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
     }
     const translated = this.translateToConlangWith(englishText, lang);
     const folder = lang.dictionaryFolder;
+    try {
+      validateVaultRelativePath(folder);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new import_obsidian16.Notice(
+        `Conlang Workbench: invalid dictionary folder for ${lang.name} \u2014 ${msg}`,
+        9e3
+      );
+      return;
+    }
     const safeName = translated.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path = joinVaultPath(folder, `${safeName}.md`);
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian16.TFile && this.entryCoversDefinition(existing, englishText)) {
@@ -7512,9 +7569,19 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
     });
     if (!result) return;
     const folder = lang.dictionaryFolder;
+    try {
+      validateVaultRelativePath(folder);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new import_obsidian16.Notice(
+        `Conlang Workbench: invalid dictionary folder for ${lang.name} \u2014 ${msg}`,
+        9e3
+      );
+      return;
+    }
     await this.ensureFolder(folder);
     const safeName = result.conlangWord.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path = joinVaultPath(folder, `${safeName}.md`);
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian16.TFile) {
@@ -7572,9 +7639,19 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
     const result = await this.promptForName();
     if (!result) return;
     const folder = lang.dictionaryFolder;
+    try {
+      validateVaultRelativePath(folder);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new import_obsidian16.Notice(
+        `Conlang Workbench: invalid dictionary folder for ${lang.name} \u2014 ${msg}`,
+        9e3
+      );
+      return;
+    }
     await this.ensureFolder(folder);
     const safeName = result.conlangForm.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path = joinVaultPath(folder, `${safeName}.md`);
     const referent = result.referent || result.conlangForm;
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -7653,7 +7730,8 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian16.Plugin {
     });
   }
   async ensureFolder(path) {
-    const parts = path.split("/").filter((p) => p.length > 0);
+    const safePath = validateVaultRelativePath(path);
+    const parts = safePath.split("/");
     let current = "";
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;

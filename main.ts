@@ -24,6 +24,11 @@ import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
 import { loadLanguageProfile } from "./language-profile";
+import {
+  isPathWithinFolder,
+  joinVaultPath,
+  validateVaultRelativePath,
+} from "./vault-paths";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
 import { WORD_RE, cleanWord, isWordChar, applyCasing } from "./word-tokens";
@@ -548,7 +553,7 @@ export default class ConlangPlugin extends Plugin {
    */
   private maybeReloadForPath(path: string) {
     const inDict = this.getActiveLanguages().some(
-      (l) => l.dictionaryFolder && path.startsWith(l.dictionaryFolder),
+      (l) => l.dictionaryFolder && isPathWithinFolder(path, l.dictionaryFolder),
     );
     if (!inDict) return;
     // Debounced: metadataCache "changed" fires repeatedly while a dictionary
@@ -911,8 +916,13 @@ export default class ConlangPlugin extends Plugin {
     if (!form) return { ok: false, error: "empty conlang form" };
     const folder = p.lang.dictionaryFolder;
     const safeName = form.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+
+    // Validate the configured destination before constructing a filename or
+    // attempting any vault mutation. Invalid settings become an ordinary
+    // creation failure rather than an uncaught exception.
+    let path: string;
     try {
+      path = joinVaultPath(folder, `${safeName}.md`);
       await this.ensureFolderStrict(folder);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -968,15 +978,15 @@ export default class ConlangPlugin extends Plugin {
   ): string {
     const pos = (partOfSpeech ?? "").trim().replace(/[\\/:*?"<>|]/g, "_");
     if (pos) {
-      const p = `${folder}/${safeName} (${pos}).md`;
+      const p = joinVaultPath(folder, `${safeName} (${pos}).md`);
       if (!this.app.vault.getAbstractFileByPath(p)) return p;
     }
     for (let n = 2; n < 100; n++) {
-      const p = `${folder}/${safeName} (${n}).md`;
+      const p = joinVaultPath(folder, `${safeName} (${n}).md`);
       if (!this.app.vault.getAbstractFileByPath(p)) return p;
     }
     // 99+ senses of one spelling — fall back to something guaranteed unique.
-    return `${folder}/${safeName} (${Date.now()}).md`;
+    return joinVaultPath(folder, `${safeName} (${Date.now()}).md`);
   }
 
   /**
@@ -1016,7 +1026,8 @@ export default class ConlangPlugin extends Plugin {
    * callers can surface the error to the user.
    */
   private async ensureFolderStrict(path: string): Promise<void> {
-    const parts = path.split("/").filter((p) => p.length > 0);
+    const safePath = validateVaultRelativePath(path);
+    const parts = safePath.split("/");
     let current = "";
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
@@ -1181,11 +1192,25 @@ export default class ConlangPlugin extends Plugin {
     const translated = this.translateToConlangWith(englishText, lang);
     const folder = lang.dictionaryFolder;
 
+    // Reject an unsafe configured destination before any folder or note can be
+    // created. Interactive creation reports the setting problem to the user
+    // and stops without changing the vault.
+    try {
+      validateVaultRelativePath(folder);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new Notice(
+        `Conlang Workbench: invalid dictionary folder for ${lang.name} — ${msg}`,
+        9000,
+      );
+      return;
+    }
+
     // If an entry with this form already covers this meaning, just open it —
     // don't prompt for POS again. A same-spelling file with a DIFFERENT
     // meaning is a homograph: fall through and create a new sense file.
     const safeName = translated.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path = joinVaultPath(folder, `${safeName}.md`);
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (
@@ -1269,9 +1294,23 @@ export default class ConlangPlugin extends Plugin {
     if (!result) return;
 
     const folder = lang.dictionaryFolder;
+
+    // The dictionary folder is user-configurable, so validate it at the
+    // interactive boundary and fail without mutation if it is unsafe.
+    try {
+      validateVaultRelativePath(folder);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new Notice(
+        `Conlang Workbench: invalid dictionary folder for ${lang.name} — ${msg}`,
+        9000,
+      );
+      return;
+    }
+
     await this.ensureFolder(folder);
     const safeName = result.conlangWord.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path = joinVaultPath(folder, `${safeName}.md`);
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
@@ -1336,9 +1375,23 @@ export default class ConlangPlugin extends Plugin {
     if (!result) return;
 
     const folder = lang.dictionaryFolder;
+
+    // Names use the same canonical dictionary destination as ordinary words.
+    // Validate that authority boundary before creating folders or files.
+    try {
+      validateVaultRelativePath(folder);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new Notice(
+        `Conlang Workbench: invalid dictionary folder for ${lang.name} — ${msg}`,
+        9000,
+      );
+      return;
+    }
+
     await this.ensureFolder(folder);
     const safeName = result.conlangForm.replace(/[\\/:*?"<>|]/g, "_");
-    let path = `${folder}/${safeName}.md`;
+    let path = joinVaultPath(folder, `${safeName}.md`);
     const referent = result.referent || result.conlangForm;
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -1424,7 +1477,8 @@ export default class ConlangPlugin extends Plugin {
   }
 
   private async ensureFolder(path: string) {
-    const parts = path.split("/").filter((p) => p.length > 0);
+    const safePath = validateVaultRelativePath(path);
+    const parts = safePath.split("/");
     let current = "";
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
