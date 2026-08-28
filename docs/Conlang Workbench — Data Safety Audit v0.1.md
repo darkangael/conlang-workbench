@@ -141,6 +141,41 @@ normalization, migration, import, or bulk behavior is added.
 A completed audit section does not permanently certify future implementations.
 Material changes require targeted re-review.
 
+### Generated-Content Staging
+
+AI output, procedural generation, draft lexical material, and other
+machine-produced content should default to a dedicated Workbench staging area
+rather than being written directly into canonical language notes.
+
+The staging area exists so generated material can be:
+
+- inspected
+- edited
+- rejected
+- compared
+- regenerated
+- retained for AI memory or provenance
+- explicitly promoted into canonical language data
+
+Generation should not silently overwrite, normalize, merge into, or otherwise
+alter authoritative language records.
+
+Promotion from staged material should be an explicit user action. Before a
+promotion writes canonical data, Workbench should make the intended destination
+and scope clear.
+
+Generated material may remain incomplete, speculative, contradictory, or
+unresolved while it is staged. Workbench should not require such material to
+pretend to be canonical merely so that an AI or generator can remember it.
+
+Future AI memory or generation state should remain distinguishable from the
+user's authoritative linguistic records even when both are stored within the
+same Obsidian vault.
+
+Any feature that introduces AI generation, automated generation, or promotion
+from staged material into canonical data requires targeted Security and Data
+Safety review.
+
 > **A feature is not complete merely because it works on valid input. It should
 > also fail safely, preserve user work, and stay within its intended authority.**
 
@@ -894,6 +929,8 @@ A new data-safety review should be considered when any of the following occurs:
 - frontmatter-writing behavior changes
 - migrations are introduced
 - import support is added or expanded
+- AI-assisted or procedural generation is introduced
+- generated-content staging or promotion behavior changes
 - export support changes fidelity or scope
 - stable-ID behavior changes
 - cross-document references are introduced or modified

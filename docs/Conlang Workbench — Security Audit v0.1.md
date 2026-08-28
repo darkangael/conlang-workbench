@@ -119,6 +119,37 @@ still accomplishes their purpose.
 A completed audit section does not permanently certify future implementations.
 Material changes require targeted re-review.
 
+### AI and Generated-Content Boundary
+
+AI-assisted and generative features should use a dedicated Workbench-controlled
+staging location rather than writing directly into canonical language data by
+default.
+
+Generated content should be treated as untrusted input even when it originates
+from a Workbench feature.
+
+The intended authority boundary is:
+
+1. AI or procedural generation produces material inside the dedicated
+   Workbench staging area.
+2. Generated drafts, suggestions, intermediate state, and AI memory remain
+   separate from authoritative language records.
+3. The user reviews the generated material.
+4. Promotion into canonical language data occurs only through an explicit user
+   action.
+
+The staging area may retain AI memory or generation state needed for continuity,
+but that state does not become canonical linguistic data merely because
+Workbench generated or remembered it.
+
+Future generation features should therefore receive write authority to their
+dedicated staging area by default, not unrestricted authority across canonical
+language folders.
+
+Any feature that introduces AI generation, automated generation, or promotion
+from staged material into canonical data requires targeted Security and Data
+Safety review.
+
 > **A feature is not complete merely because it works on valid input. It should
 > also fail safely, preserve user work, and stay within its intended authority.**
 
@@ -332,32 +363,186 @@ dedicated reviews.
 
 ### Read Operations
 
-Inventory code that reads vault files, metadata, folders, or cached content.
+Current linguistic-data loading is scoped through configured source locations
+rather than by indiscriminately scanning every Markdown file in the vault.
+
+**Dictionary**
+
+`Dictionary.loadFromFolders()` resolves each configured dictionary folder with
+Obsidian's vault API. If the path does not resolve to a `TFolder`, that source
+is skipped.
+
+The dictionary recursively collects Markdown files beneath each resolved source
+folder. Files outside those folder trees are not included by that loader.
+
+For qualifying lexical entries, Workbench also uses `vault.cachedRead()` to
+read the Markdown body. The body is currently used for:
+
+- proper-noun body previews
+- structured lexical senses
+
+The body-read step occurs only for files that already qualified as dictionary
+entries from the configured source.
+
+**Morpheme inventory**
+
+`MorphemeInventory.loadFromFolders()` resolves each configured morpheme folder
+and recursively examines Markdown files beneath it.
+
+It does not perform a whole-vault Markdown scan.
+
+**Linguistic examples**
+
+`LinguisticExampleInventory.loadFromFolders()` follows the same configured
+folder pattern and recursively examines Markdown beneath those source folders.
+
+**Phonology**
+
+`PhonologyInventory.loadFromFolders()` resolves configured phonology folders and
+recursively examines Markdown beneath them for canonical units and realization
+records.
+
+**Language Profiles**
+
+`loadLanguageProfile()` does not scan a folder. It resolves the single
+configured profile path and accepts it only when it resolves to a Markdown
+`TFile`.
+
+**Metadata access**
+
+The loaders primarily obtain frontmatter through Obsidian's metadata cache.
+Metadata access is therefore limited to files already reached through the
+configured source path or explicit profile path.
 
 ### Write Operations
 
-Inventory code that creates, modifies, renames, or deletes vault content.
+The current reviewed source has a substantially narrower write surface than its
+read surface.
+
+**Dictionary and name creation**
+
+Current entry-creation workflows construct Markdown and persist new notes using
+`app.vault.create()`.
+
+This includes:
+
+- entries created from selected text
+- multi-language entry creation
+- words created from the panel
+- proper-noun/name creation
+
+The destination begins with the configured language dictionary folder.
+
+**Folder creation**
+
+Entry creation may create missing components of the configured dictionary
+folder through `app.vault.createFolder()`.
+
+Both best-effort and strict folder-creation helpers currently exist in
+`main.ts`.
+
+**No reviewed note modification/deletion/rename operation**
+
+No current `app.vault.modify()`, `app.vault.delete()`, or
+`app.vault.rename()` call was identified in the reviewed main plugin source.
+
+Workbench does register listeners for Obsidian vault `delete` and `rename`
+events. Those listeners react to changes made elsewhere so indexes can reload;
+they do not themselves delete or rename user files.
+
+Editor replacement and plugin-settings persistence are separate mutation
+surfaces and are reviewed in their dedicated sections.
 
 ### Scope Enforcement
 
-Determine whether operations remain inside the expected vault and configured
-language folders.
+Current inventory loading establishes a useful first scope boundary:
+
+1. a configured source path is resolved through the Obsidian vault;
+2. the source must resolve to the expected file/folder type;
+3. recursive inventory traversal begins from that resolved folder rather than
+   from the vault root;
+4. feature parsers then decide whether Markdown inside that source belongs to
+   the relevant inventory.
+
+Language-aware inventories additionally reject records explicitly assigned to a
+different configured language when both sides provide language identity.
+
+This reduces accidental cross-language indexing when configured folders
+overlap.
+
+The scope boundary is nevertheless only as trustworthy as the configured path
+that establishes it. Whether unusual, malformed, absolute, or traversal-like
+configured paths can resolve or create unintended locations is deliberately
+deferred to §3, **Path Handling and Traversal**.
 
 ### Authority Minimization
 
-Check whether each feature uses only the vault authority it actually needs.
+The current architecture generally uses the narrower Obsidian APIs required for
+the task:
+
+- configured folders are resolved through the vault
+- inventory traversal begins from those folders
+- Markdown bodies are read with `cachedRead()` where body content is needed
+- frontmatter is obtained from the metadata cache
+- new persistent notes are created with the vault API
+- missing destination folders are created with the vault API
+
+No direct Node filesystem adapter or shell/process access was identified as
+part of the reviewed vault-access paths.
+
+The linguistic inventories are currently read-only. They build in-memory
+representations without rewriting their source notes.
+
+This is especially important for the newer morphology, examples, and phonology
+foundations: loading or searching those inventories does not currently grant
+them write authority.
 
 ### Unexpected Access
 
-Check for behavior that may read or alter unrelated notes.
+No current loader reviewed in this section intentionally enumerates all
+Markdown files in the vault.
+
+The principal remaining access-scope question is path validation rather than
+whole-vault enumeration.
+
+A configured dictionary folder controls both:
+
+- what dictionary tree may be read; and
+- where entry-creation code may create folders and Markdown files.
+
+Consequently, a malformed or unexpectedly interpreted configured path could
+potentially broaden both read and write scope. This is a required §3 review
+item.
+
+The recursive loaders also intentionally include Markdown in subfolders beneath
+their configured source. That is expected behavior, but users should therefore
+understand a configured source folder as a recursive boundary rather than a
+single-directory boundary.
 
 ### Findings
 
-None recorded yet.
+No section-specific vulnerability was identified in the current vault-access
+architecture.
+
+The reviewed linguistic loaders are scoped to configured folders or explicit
+files rather than using an unrestricted whole-vault Markdown scan, and the
+newer linguistic inventories are read-only.
+
+The current persistent vault-write surface is primarily entry creation and
+creation of missing dictionary-folder components.
+
+**Required follow-up:** §3 must verify that configured paths cannot cause
+unintended read or write scope through traversal-like, absolute, malformed, or
+otherwise unexpected path values. Until that review is complete, this section's
+Pass should not be interpreted as certifying path safety.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
+
+Current vault access is appropriately scoped at the API and loader level.
+Path interpretation, destination validation, and traversal resistance remain
+explicit dependencies of §3 rather than assumptions made by this section.
 
 ---
 
@@ -365,45 +550,241 @@ None recorded yet.
 
 ### Path Construction
 
-Review all paths built from:
+Current Workbench source paths primarily originate in per-language
+configuration.
 
-- settings
-- frontmatter
-- filenames
-- language profiles
-- imported data
+Examples include:
 
-### Traversal
+- dictionary folders
+- morpheme folders
+- linguistic-example folders
+- phonology folders
+- language-profile paths
 
-Check handling of:
+Inventory loaders pass configured paths to Obsidian's vault APIs to resolve the
+source file or folder.
 
-- `..`
-- absolute paths
-- repeated separators
-- unusual Unicode
-- platform-specific separators
+Entry-creation workflows also use the configured dictionary folder as the base
+destination for newly created notes.
+
+Current filename sanitization removes or replaces common filename-invalid
+characters from generated entry names. Filename sanitization is useful, but it
+is not equivalent to validating the configured parent path.
+
+Folder-creation helpers in `main.ts` split configured folder paths into
+components and progressively call Obsidian's vault folder APIs.
+
+Workbench does not currently provide an independent canonical path-validation
+layer that rejects `.` or `..` components before configured values reach
+mutating Obsidian vault APIs.
+
+### Read-Side Traversal Test
+
+A non-mutating runtime test was performed in the disposable development/test
+vault against `app.vault.getAbstractFileByPath()`.
+
+The following values were tested:
+
+```text
+../
+../../
+/tmp
+Languages/../
+./
+```
+
+All five direct lookups returned `null`.
+
+For direct lookup, these path strings therefore did not resolve to accessible
+vault objects in the tested environment.
+
+This result must not be generalized to mutating vault APIs. Subsequent testing
+demonstrated materially different behavior during creation.
+
+### Write-Side Traversal Test
+
+A disposable test hierarchy was created:
+
+```text
+CW-Security-Audit-Probe/
+└── sub/
+```
+
+The following folder-creation operation was then attempted:
+
+```text
+CW-Security-Audit-Probe/sub/../folder-traversal-probe
+```
+
+The call returned `null`.
+
+The following file-creation operation was also attempted:
+
+```text
+CW-Security-Audit-Probe/sub/../file-traversal-probe.md
+```
+
+That call also returned `null`.
+
+Despite both calls returning `null`, subsequent direct lookup established that
+the following artifacts existed:
+
+```text
+CW-Security-Audit-Probe/folder-traversal-probe
+CW-Security-Audit-Probe/file-traversal-probe.md
+```
+
+Neither artifact existed beneath `CW-Security-Audit-Probe/sub/`.
+
+The observed behavior is therefore consistent with the `..` component being
+normalized during the mutating operation:
+
+```text
+CW-Security-Audit-Probe/sub/../folder-traversal-probe
+                           ↓
+CW-Security-Audit-Probe/folder-traversal-probe
+```
+
+and equivalently for the Markdown file.
+
+A particularly important observation is that the mutating calls returned
+`null` even though persistent artifacts were created.
+
+Code must therefore not interpret a null-like result from these tested
+operations as proof that no write occurred.
 
 ### Vault Boundary
 
-Verify that path-derived operations cannot unintentionally escape intended
-vault locations.
+The test does **not** establish that Obsidian permits writes outside the physical
+vault.
+
+It does establish that traversal-like path components can change the logical
+destination of a mutating vault operation inside the vault.
+
+Two boundaries must therefore remain distinct:
+
+1. **Physical vault boundary**
+
+   Obsidian is responsible for constraining its vault APIs to the vault's
+   filesystem authority.
+
+2. **Workbench logical authority boundary**
+
+   Workbench is responsible for ensuring that an operation writes only within
+   the location that feature is intended to control.
+
+The second boundary cannot safely be delegated to Obsidian path interpretation.
+
+For example:
+
+- dictionary-entry creation should remain inside its validated dictionary
+  destination;
+- future generated content should remain inside its dedicated staging area
+  until explicitly promoted;
+- future bulk operations should remain inside their explicitly selected scope.
+
+### Required Workbench Path Validation
+
+Before a Workbench mutating operation uses a configured or derived path, the
+plugin should eventually enforce a canonical logical-path policy.
+
+At minimum, the policy should consider:
+
+- rejecting `.` path components
+- rejecting `..` path components
+- rejecting absolute-looking paths
+- normalizing separators in a controlled manner
+- verifying that the final destination is beneath the feature's authorized base
+  folder
+- distinguishing exact folder membership from raw string-prefix matching
+
+Validation should occur **before** any folder or file is created.
+
+This is defense in depth against both unexpected Obsidian path semantics and
+future changes in how Workbench obtains path values.
 
 ### Symlinks
 
-Determine whether symlinks are relevant to supported workflows and whether they
-can alter expected path boundaries.
+Symlink behavior has not yet been tested as part of this audit.
+
+The development workflow's use of symlinks does not establish how user-content
+symlinks interact with Obsidian's vault boundary.
+
+Before Workbench intentionally supports or depends on symlinked user-content
+locations, their interaction with both physical and logical authority boundaries
+requires explicit review.
 
 ### Invalid Paths
 
-Review behavior for malformed, missing, or conflicting paths.
+The runtime tests demonstrate that read and write APIs must not be assumed to
+have identical observable path behavior.
+
+Direct lookup of the tested traversal-like paths returned `null`.
+
+Mutating calls containing an internal `..` also returned `null`, but persistent
+artifacts were nevertheless created at the normalized parent location.
+
+Consequently:
+
+- Workbench must validate mutating paths before use;
+- return value alone must not be treated as proof that a write did not happen;
+- cleanup and recovery logic must account for the actual destination of any
+  attempted write.
+
+### Prefix-Matching Observation
+
+Reload logic currently includes path-prefix checks such as a path beginning with
+a configured dictionary-folder string.
+
+A simple string prefix is not identical to a folder-boundary comparison. For
+example, a configured path ending in a name such as `Mer` could also
+prefix-match a sibling name beginning with the same characters.
+
+The currently reviewed consequence appears to be unnecessary reload behavior
+rather than unauthorized mutation.
+
+This remains a Hardening observation.
 
 ### Findings
 
-None recorded yet.
+**SEC-003-M1 — Mutating paths can be normalized across `..` components**
+
+- **Severity:** Medium
+- **Affected boundary:** Workbench logical write scope
+- **Observed behavior:** `createFolder()` and `create()` calls containing an
+  internal `..` component created persistent artifacts at the normalized parent
+  destination.
+- **Return-value concern:** Both tested mutating calls returned `null` despite
+  creating persistent artifacts.
+- **Physical vault escape demonstrated:** No.
+- **Logical destination change demonstrated:** Yes.
+- **Current Workbench exposure:** Entry-creation destinations ultimately derive
+  from configured dictionary-folder paths, and Workbench does not currently
+  provide an independent canonical path-validation layer.
+- **Required remediation:** Validate and constrain mutating paths to their
+  authorized Workbench base folder before calling vault creation APIs.
+- **Data Safety relevance:** Yes. An unintended logical destination can place
+  generated or user-authored material outside the location the user expected.
+
+**SEC-003-H1 — Path-boundary comparison uses string-prefix semantics**
+
+- **Severity:** Hardening
+- **Current impact:** Possible unnecessary reload of Workbench indexes when an
+  unrelated sibling path shares the configured folder's string prefix.
+- **Security impact demonstrated:** None.
+- **Recommended future action:** Use a normalized folder-membership/path-boundary
+  helper rather than raw string-prefix matching when this code is next touched.
 
 ### Status
 
-**Not Reviewed**
+**Finding**
+
+The physical-vault escape boundary was not shown to fail, but the controlled
+runtime test demonstrated that mutating traversal-like paths can be normalized
+to a different logical destination while returning `null`.
+
+Workbench should therefore implement and use its own validated logical-path
+boundary before relying on configured or derived paths for persistent writes.
 
 ---
 
@@ -914,6 +1295,8 @@ A new security review should be considered when any of the following occurs:
 - network access is introduced
 - an external service or API is integrated
 - import/export support is added or expanded
+- AI-assisted or procedural generation is introduced
+- generated-content staging or promotion behavior changes
 - a new parser accepts substantially different input
 - HTML or rich rendering behavior changes
 - new Node or system-level APIs are introduced
