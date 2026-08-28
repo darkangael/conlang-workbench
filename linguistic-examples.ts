@@ -183,9 +183,7 @@ export class LinguisticExampleInventory {
    * not declare language identity, it may inherit it from the configured
    * source, just as the morpheme inventory does.
    */
-  async loadFromFolders(
-    sources: LinguisticExampleSource[],
-  ): Promise<number> {
+  async loadFromFolders(sources: LinguisticExampleSource[]): Promise<number> {
     this.clear();
 
     let count = 0;
@@ -275,9 +273,6 @@ export class LinguisticExampleInventory {
 
     const frontmatter = cache.frontmatter ?? {};
 
-    return parseLinguisticExampleFrontmatter(
-      frontmatter,
-      file.path,
-    );
+    return parseLinguisticExampleFrontmatter(frontmatter, file.path);
   }
 }

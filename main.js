@@ -1295,10 +1295,7 @@ var LinguisticExampleInventory = class {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return null;
     const frontmatter = (_a = cache.frontmatter) != null ? _a : {};
-    return parseLinguisticExampleFrontmatter(
-      frontmatter,
-      file.path
-    );
+    return parseLinguisticExampleFrontmatter(frontmatter, file.path);
   }
 };
 

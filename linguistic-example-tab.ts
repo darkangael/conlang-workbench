@@ -122,143 +122,143 @@ export class LinguisticExampleTab {
     });
   }
 
-/**
- * Render one example as a compact browsing card.
- *
- * Only tiers actually documented by the author are displayed. Workbench
- * must not manufacture a pronunciation, segmentation, gloss, or translation
- * merely to make every card have the same shape.
- */
-private renderExampleCard(
-  container: HTMLElement,
-  example: LinguisticExample,
-): void {
-  const card = container.createDiv({
-    cls: "conlang-example-card",
-  });
-
-  const header = card.createDiv({
-    cls: "conlang-example-card-header",
-  });
-
-  header.createDiv({
-    cls: "conlang-example-text",
-    text: example.text,
-  });
-
-  if (example.language) {
-    header.createDiv({
-      cls: "conlang-example-language",
-      text: example.language,
-    });
-  }
-
-  if (example.translation) {
-    card.createDiv({
-      cls: "conlang-example-translation",
-      text: `“${example.translation}”`,
-    });
-  }
-
-  /*
-   * Analysis is optional. A simple example containing only original text and
-   * a natural translation should not look incomplete or offer an empty
-   * Show analysis control.
+  /**
+   * Render one example as a compact browsing card.
+   *
+   * Only tiers actually documented by the author are displayed. Workbench
+   * must not manufacture a pronunciation, segmentation, gloss, or translation
+   * merely to make every card have the same shape.
    */
-  const hasAnalysis = Boolean(
-    example.realization ||
+  private renderExampleCard(
+    container: HTMLElement,
+    example: LinguisticExample,
+  ): void {
+    const card = container.createDiv({
+      cls: "conlang-example-card",
+    });
+
+    const header = card.createDiv({
+      cls: "conlang-example-card-header",
+    });
+
+    header.createDiv({
+      cls: "conlang-example-text",
+      text: example.text,
+    });
+
+    if (example.language) {
+      header.createDiv({
+        cls: "conlang-example-language",
+        text: example.language,
+      });
+    }
+
+    if (example.translation) {
+      card.createDiv({
+        cls: "conlang-example-translation",
+        text: `“${example.translation}”`,
+      });
+    }
+
+    /*
+     * Analysis is optional. A simple example containing only original text and
+     * a natural translation should not look incomplete or offer an empty
+     * Show analysis control.
+     */
+    const hasAnalysis = Boolean(
+      example.realization ||
       example.segmentation ||
       example.gloss ||
       example.context ||
       example.source ||
-      example.notes
-  );
+      example.notes,
+    );
 
-  /*
-   * Keep analytical tiers in their own container. This lets us reveal and
-   * hide the analysis without rebuilding the whole example card.
-   */
-  let analysis: HTMLElement | null = null;
+    /*
+     * Keep analytical tiers in their own container. This lets us reveal and
+     * hide the analysis without rebuilding the whole example card.
+     */
+    let analysis: HTMLElement | null = null;
 
-  if (hasAnalysis) {
-    analysis = card.createDiv({
-      cls: "conlang-example-analysis conlang-hidden",
-    });
+    if (hasAnalysis) {
+      analysis = card.createDiv({
+        cls: "conlang-example-analysis conlang-hidden",
+      });
 
-    if (example.realization) {
-      this.renderTier(analysis, "Realization", example.realization);
+      if (example.realization) {
+        this.renderTier(analysis, "Realization", example.realization);
+      }
+
+      if (example.segmentation) {
+        this.renderTier(analysis, "Segmentation", example.segmentation);
+      }
+
+      if (example.gloss) {
+        this.renderTier(analysis, "Gloss", example.gloss);
+      }
+
+      if (example.context) {
+        this.renderTier(analysis, "Context", example.context);
+      }
+
+      if (example.source) {
+        this.renderTier(analysis, "Source", example.source);
+      }
+
+      if (example.notes) {
+        this.renderTier(analysis, "Notes", example.notes);
+      }
     }
 
-    if (example.segmentation) {
-      this.renderTier(analysis, "Segmentation", example.segmentation);
-    }
+    /*
+     * Analysis and source navigation share the same action row.
+     *
+     * CSS places Show analysis on the left and Open note on the right. If the
+     * example has no analysis, Open note remains right-aligned by itself.
+     */
+    if (hasAnalysis || example.path) {
+      const actions = card.createDiv({
+        cls: "conlang-example-actions",
+      });
 
-    if (example.gloss) {
-      this.renderTier(analysis, "Gloss", example.gloss);
-    }
+      if (hasAnalysis && analysis) {
+        const analysisButton = actions.createEl("button", {
+          text: "Show analysis ▾",
+        });
 
-    if (example.context) {
-      this.renderTier(analysis, "Context", example.context);
-    }
+        /*
+         * This state belongs to this individual card.
+         *
+         * false = analysis is hidden
+         * true  = analysis is visible
+         */
+        let expanded = false;
 
-    if (example.source) {
-      this.renderTier(analysis, "Source", example.source);
-    }
+        analysisButton.addEventListener("click", () => {
+          // `!` means "not", so each click reverses the current state.
+          expanded = !expanded;
 
-    if (example.notes) {
-      this.renderTier(analysis, "Notes", example.notes);
+          if (expanded) {
+            analysis.removeClass("conlang-hidden");
+            analysisButton.setText("Hide analysis ▴");
+          } else {
+            analysis.addClass("conlang-hidden");
+            analysisButton.setText("Show analysis ▾");
+          }
+        });
+      }
+
+      if (example.path) {
+        const openButton = actions.createEl("button", {
+          text: "Open note",
+        });
+
+        openButton.addEventListener("click", () => {
+          void this.openSourceNote(example.path!);
+        });
+      }
     }
   }
-
-  /*
-   * Analysis and source navigation share the same action row.
-   *
-   * CSS places Show analysis on the left and Open note on the right. If the
-   * example has no analysis, Open note remains right-aligned by itself.
-   */
-  if (hasAnalysis || example.path) {
-    const actions = card.createDiv({
-      cls: "conlang-example-actions",
-    });
-
-    if (hasAnalysis && analysis) {
-      const analysisButton = actions.createEl("button", {
-        text: "Show analysis ▾",
-      });
-
-      /*
-       * This state belongs to this individual card.
-       *
-       * false = analysis is hidden
-       * true  = analysis is visible
-       */
-      let expanded = false;
-
-      analysisButton.addEventListener("click", () => {
-        // `!` means "not", so each click reverses the current state.
-        expanded = !expanded;
-
-        if (expanded) {
-          analysis.removeClass("conlang-hidden");
-          analysisButton.setText("Hide analysis ▴");
-        } else {
-          analysis.addClass("conlang-hidden");
-          analysisButton.setText("Show analysis ▾");
-        }
-      });
-    }
-
-    if (example.path) {
-      const openButton = actions.createEl("button", {
-        text: "Open note",
-      });
-
-      openButton.addEventListener("click", () => {
-        void this.openSourceNote(example.path!);
-      });
-    }
-  }
-}
 
   /**
    * Give optional analytical tiers a consistent presentation without making
