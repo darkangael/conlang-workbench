@@ -39,7 +39,7 @@ export function parseLexicalSenses(markdown: string): LexicalSense[] {
     const start = (match.index ?? 0) + match[0].length;
     const end =
       i + 1 < matches.length
-        ? matches[i + 1].index ?? sensesSection.length
+        ? (matches[i + 1].index ?? sensesSection.length)
         : sensesSection.length;
 
     const block = sensesSection.slice(start, end);
@@ -118,10 +118,7 @@ function parseSenseBlock(block: string): LexicalSense | null {
  */
 function readField(block: string, label: string): string | undefined {
   const escaped = escapeRegExp(label);
-  const re = new RegExp(
-    `^\\*\\*${escaped}:\\*\\*\\s*(.*)$`,
-    "im"
-  );
+  const re = new RegExp(`^\\*\\*${escaped}:\\*\\*\\s*(.*)$`, "im");
 
   const match = re.exec(block);
   const value = match?.[1]?.trim();

@@ -299,10 +299,7 @@ function parseSenseBlock(block) {
 function readField(block, label) {
   var _a;
   const escaped = escapeRegExp(label);
-  const re = new RegExp(
-    `^\\*\\*${escaped}:\\*\\*\\s*(.*)$`,
-    "im"
-  );
+  const re = new RegExp(`^\\*\\*${escaped}:\\*\\*\\s*(.*)$`, "im");
   const match = re.exec(block);
   const value = (_a = match == null ? void 0 : match[1]) == null ? void 0 : _a.trim();
   return value || void 0;
@@ -585,7 +582,9 @@ var _Dictionary = class _Dictionary {
    */
   lemmaForDeclaredPhrase(entry) {
     if (!entry.viaFormLabel || !entry.viaFormLemma) return void 0;
-    return this.lookupAll(entry.viaFormLemma).find((e) => e.path === entry.path);
+    return this.lookupAll(entry.viaFormLemma).find(
+      (e) => e.path === entry.path
+    );
   }
   /**
    * Get all phrase entries (entries whose word contains a space),
@@ -667,7 +666,9 @@ var _Dictionary = class _Dictionary {
    * callers that only need one language at a time.
    */
   async loadFromFolder(folderPath, languageName) {
-    return this.loadFromFolders([{ folder: folderPath, language: languageName }]);
+    return this.loadFromFolders([
+      { folder: folderPath, language: languageName }
+    ]);
   }
   /**
    * Build the index by scanning multiple folders, one per active language.

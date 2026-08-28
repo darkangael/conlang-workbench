@@ -24,11 +24,7 @@ import { DictionaryEntry, LexicalSense } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
 import { parseLexicalSenses } from "./lexical-senses";
 import { parseStringList, parseInflectedForms } from "./word-tokens";
-import {
-  buildPhraseIndex,
-  EMPTY_PHRASE_INDEX,
-  PhraseIndex,
-} from "./phrases";
+import { buildPhraseIndex, EMPTY_PHRASE_INDEX, PhraseIndex } from "./phrases";
 
 /**
  * A richer English-language dictionary lookup result.
@@ -146,7 +142,9 @@ export class Dictionary {
    */
   lemmaForDeclaredPhrase(entry: DictionaryEntry): DictionaryEntry | undefined {
     if (!entry.viaFormLabel || !entry.viaFormLemma) return undefined;
-    return this.lookupAll(entry.viaFormLemma).find((e) => e.path === entry.path);
+    return this.lookupAll(entry.viaFormLemma).find(
+      (e) => e.path === entry.path,
+    );
   }
 
   /**
@@ -195,12 +193,11 @@ export class Dictionary {
 
       if (entry.senses) {
         for (const sense of entry.senses) {
-          const glossMatches =
-            sense.gloss?.trim().toLowerCase() === normalized;
+          const glossMatches = sense.gloss?.trim().toLowerCase() === normalized;
 
           const lookupTermMatches =
             sense.lookupTerms?.some(
-              (term) => term.trim().toLowerCase() === normalized
+              (term) => term.trim().toLowerCase() === normalized,
             ) ?? false;
 
           if (glossMatches || lookupTermMatches) {
@@ -240,8 +237,13 @@ export class Dictionary {
    * Build the index by scanning a single folder for .md files. Kept for
    * callers that only need one language at a time.
    */
-  async loadFromFolder(folderPath: string, languageName?: string): Promise<number> {
-    return this.loadFromFolders([{ folder: folderPath, language: languageName }]);
+  async loadFromFolder(
+    folderPath: string,
+    languageName?: string,
+  ): Promise<number> {
+    return this.loadFromFolders([
+      { folder: folderPath, language: languageName },
+    ]);
   }
 
   /**
@@ -251,7 +253,7 @@ export class Dictionary {
    * overlap.
    */
   async loadFromFolders(
-    sources: { folder: string; language?: string }[]
+    sources: { folder: string; language?: string }[],
   ): Promise<number> {
     this.clear();
     let count = 0;
@@ -263,7 +265,11 @@ export class Dictionary {
       for (const file of files) {
         const entry = this.readEntry(file);
         if (!entry) continue;
-        if (source.language && entry.language && entry.language !== source.language) {
+        if (
+          source.language &&
+          entry.language &&
+          entry.language !== source.language
+        ) {
           continue;
         }
         // If the frontmatter didn't specify a language, assume it belongs to
@@ -303,7 +309,9 @@ export class Dictionary {
 
   private isProperNoun(entry: DictionaryEntry): boolean {
     const pos = entry.partOfSpeech?.toLowerCase() ?? "";
-    return pos === "proper-noun" || pos === "proper noun" || pos === "propernoun";
+    return (
+      pos === "proper-noun" || pos === "proper noun" || pos === "propernoun"
+    );
   }
 
   /**
@@ -313,7 +321,9 @@ export class Dictionary {
    * share that content. This avoids separate vault reads for previews, senses,
    * and any similar enrichment we may add later.
    */
-  private async loadBodyMetadata(items: { entry: DictionaryEntry; file: TFile }[]) {
+  private async loadBodyMetadata(
+    items: { entry: DictionaryEntry; file: TFile }[],
+  ) {
     await Promise.all(
       items.map(async ({ entry, file }) => {
         try {
@@ -337,10 +347,10 @@ export class Dictionary {
           console.warn(
             "[Conlang] Failed to load body metadata:",
             file.path,
-            error
+            error,
           );
         }
-      })
+      }),
     );
   }
 
@@ -360,7 +370,8 @@ export class Dictionary {
   }
 
   private readEntry(file: TFile): DictionaryEntry | null {
-    const cache: CachedMetadata | null = this.app.metadataCache.getFileCache(file);
+    const cache: CachedMetadata | null =
+      this.app.metadataCache.getFileCache(file);
     if (!cache) return null;
     const fm = cache.frontmatter ?? {};
     // Coerce values that should be string-ish. If a user wrote a number or
@@ -378,7 +389,7 @@ export class Dictionary {
     // lexicons commonly use `gloss`. Accept both so users do not have to rewrite
     // an existing language just to make it readable by the plugin.
     const definition = asString(
-      fm.definition ?? fm.gloss ?? fm.translation ?? fm.meaning
+      fm.definition ?? fm.gloss ?? fm.translation ?? fm.meaning,
     );
     if (!definition || !definition.trim()) return null;
 
@@ -550,7 +561,7 @@ export class Dictionary {
     entry: DictionaryEntry,
     parent: HTMLElement,
     showLanguage = false,
-    showForms = true
+    showForms = true,
   ): void {
     const sep = () => {
       if (parent.childNodes.length > 0) parent.appendText(" ");
@@ -621,7 +632,7 @@ export class Dictionary {
    */
   private static renderFormsLine(
     forms: { label: string; form: string }[],
-    parent: HTMLElement
+    parent: HTMLElement,
   ): void {
     const box = parent.createDiv({ cls: "conlang-tooltip-forms" });
     const shown = forms.slice(0, Dictionary.TOOLTIP_FORM_LIMIT);
