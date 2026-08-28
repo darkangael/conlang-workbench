@@ -5930,9 +5930,13 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
       VIEW_TYPE_PANEL,
       (leaf) => new TranslationPanelView(leaf, this)
     );
-    const ribbon = this.addRibbonIcon("book-open", "Open Made Up Words panel", () => {
-      void this.openPanel();
-    });
+    const ribbon = this.addRibbonIcon(
+      "book-open",
+      "Open Made Up Words panel",
+      () => {
+        void this.openPanel();
+      }
+    );
     ribbon.addClass("conlang-ribbon-icon");
     this.addCommand({
       id: "open-panel",
@@ -6215,7 +6219,9 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
       "conlang-hl-background"
     );
     if (this.settings.highlightKnownWords) {
-      activeDocument.body.addClass(`conlang-hl-${this.settings.highlightStyle}`);
+      activeDocument.body.addClass(
+        `conlang-hl-${this.settings.highlightStyle}`
+      );
     }
   }
   /**
@@ -6373,7 +6379,11 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
   getSelectionOrWord(editor) {
     const text = editor.getSelection();
     if (text && text.length > 0) {
-      return { text, from: editor.getCursor("from"), to: editor.getCursor("to") };
+      return {
+        text,
+        from: editor.getCursor("from"),
+        to: editor.getCursor("to")
+      };
     }
     const cursor = editor.getCursor();
     const line = editor.getLine(cursor.line);
@@ -6487,7 +6497,9 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
         partOfSpeech: result.partOfSpeech
       });
       if (r.ok) {
-        created.push(`${target.form} (${lang.name}${r.created ? "" : ", existing"})`);
+        created.push(
+          `${target.form} (${lang.name}${r.created ? "" : ", existing"})`
+        );
         if (!firstPath) firstPath = r.path;
       } else {
         errors.push(`${lang.name}: ${r.error}`);
@@ -6496,7 +6508,8 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
     await this.afterEntriesChanged();
     if (firstPath) {
       const f = this.app.vault.getAbstractFileByPath(firstPath);
-      if (f instanceof import_obsidian14.TFile) await this.app.workspace.getLeaf(false).openFile(f);
+      if (f instanceof import_obsidian14.TFile)
+        await this.app.workspace.getLeaf(false).openFile(f);
     }
     if (errors.length > 0) {
       new import_obsidian14.Notice(
@@ -6667,7 +6680,10 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
       if (acc) {
         if (!acc.labels.includes(hit.label)) acc.labels.push(hit.label);
       } else {
-        formLabelsByPath.set(hit.lemma.path, { lemma: hit.lemma, labels: [hit.label] });
+        formLabelsByPath.set(hit.lemma.path, {
+          lemma: hit.lemma,
+          labels: [hit.label]
+        });
       }
     }
     for (const { lemma, labels } of formLabelsByPath.values()) {
@@ -6679,12 +6695,18 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
     }
     if (!/\s/.test(cleaned)) {
       for (const lang of activeLangs) {
-        const inflectionMatch = findInflection(cleaned, this.dictionary, lang.inflections);
+        const inflectionMatch = findInflection(
+          cleaned,
+          this.dictionary,
+          lang.inflections
+        );
         if (!inflectionMatch) continue;
         const alreadyShown = out.some(
           (m) => {
             var _a;
-            return ((_a = m.candidates) != null ? _a : []).some((c) => c.path === inflectionMatch.lemma.path);
+            return ((_a = m.candidates) != null ? _a : []).some(
+              (c) => c.path === inflectionMatch.lemma.path
+            );
           }
         );
         if (alreadyShown) continue;
@@ -6822,7 +6844,15 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
     } else {
       fmLines.push("partOfSpeech: ");
     }
-    fmLines.push("ipa: ", "etymology: ", "---", "", `# ${result.conlangWord}`, "", "");
+    fmLines.push(
+      "ipa: ",
+      "etymology: ",
+      "---",
+      "",
+      `# ${result.conlangWord}`,
+      "",
+      ""
+    );
     const content = fmLines.join("\n");
     const file = await this.app.vault.create(path, content);
     await this.app.workspace.getLeaf(false).openFile(file);
@@ -6861,7 +6891,11 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
         new import_obsidian14.Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
         return;
       }
-      path = this.freeHomographPath(folder, safeName, result.category || "name");
+      path = this.freeHomographPath(
+        folder,
+        safeName,
+        result.category || "name"
+      );
       wordOverride = true;
     }
     const content = [
@@ -7181,7 +7215,10 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian14.Plugin {
     while (end < text.length && isWordChar(text[end])) end++;
     if (start === end) return null;
     const word = text.substring(start, end);
-    const forwardContext = text.substring(start, Math.min(text.length, end + 50));
+    const forwardContext = text.substring(
+      start,
+      Math.min(text.length, end + 50)
+    );
     const backwardContext = text.substring(Math.max(0, start - 50), end);
     return { word, forwardContext, backwardContext };
   }

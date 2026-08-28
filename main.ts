@@ -113,18 +113,18 @@ export default class ConlangPlugin extends Plugin {
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
         this.maybeReloadForPath(file.path);
-      })
+      }),
     );
     // Also react to dictionary files being deleted or renamed so removed words
     // stop (and renamed words start) highlighting without a manual reload.
     this.registerEvent(
-      this.app.vault.on("delete", (file) => this.maybeReloadForPath(file.path))
+      this.app.vault.on("delete", (file) => this.maybeReloadForPath(file.path)),
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
         this.maybeReloadForPath(file.path);
         this.maybeReloadForPath(oldPath);
-      })
+      }),
     );
 
     this.addSettingTab(new ConlangSettingTab(this.app, this));
@@ -132,16 +132,20 @@ export default class ConlangPlugin extends Plugin {
     // Register the side-panel view
     this.registerView(
       VIEW_TYPE_PANEL,
-      (leaf: WorkspaceLeaf) => new TranslationPanelView(leaf, this)
+      (leaf: WorkspaceLeaf) => new TranslationPanelView(leaf, this),
     );
 
     // Ribbon icon to open the panel.
     // "book-open" is a Lucide icon bundled with Obsidian. Other safe choices:
     // "book", "globe", "message-square", "type". The "languages" icon exists
     // in newer Lucide but isn't always bundled, so we avoid it.
-    const ribbon = this.addRibbonIcon("book-open", "Open Made Up Words panel", () => {
-      void this.openPanel();
-    });
+    const ribbon = this.addRibbonIcon(
+      "book-open",
+      "Open Made Up Words panel",
+      () => {
+        void this.openPanel();
+      },
+    );
     ribbon.addClass("conlang-ribbon-icon");
 
     this.addCommand({
@@ -212,7 +216,7 @@ export default class ConlangPlugin extends Plugin {
         new Notice(
           `Made Up Words: highlighting ${
             this.settings.highlightKnownWords ? "on" : "off"
-          }`
+          }`,
         );
       },
     });
@@ -228,9 +232,9 @@ export default class ConlangPlugin extends Plugin {
           item
             .setTitle("Add to Made Up Words dictionary…")
             .setIcon("plus")
-            .onClick(() => this.createEntryFromSelection(editor))
+            .onClick(() => this.createEntryFromSelection(editor)),
         );
-      })
+      }),
     );
 
     // Hover tooltip handler (throttled — see onMouseMove)
@@ -252,7 +256,7 @@ export default class ConlangPlugin extends Plugin {
     activeDocument.body.removeClass(
       "conlang-hl-underline",
       "conlang-hl-italic",
-      "conlang-hl-background"
+      "conlang-hl-background",
     );
   }
 
@@ -272,7 +276,8 @@ export default class ConlangPlugin extends Plugin {
 
     // If we have legacy activeLanguage but no activeLanguages, migrate.
     if (
-      (!this.settings.activeLanguages || this.settings.activeLanguages.length === 0) &&
+      (!this.settings.activeLanguages ||
+        this.settings.activeLanguages.length === 0) &&
       this.settings.activeLanguage
     ) {
       this.settings.activeLanguages = [this.settings.activeLanguage];
@@ -280,7 +285,7 @@ export default class ConlangPlugin extends Plugin {
     // Ensure activeLanguages exists and only contains known names
     if (!this.settings.activeLanguages) this.settings.activeLanguages = [];
     this.settings.activeLanguages = this.settings.activeLanguages.filter((n) =>
-      known.has(n)
+      known.has(n),
     );
     // If still empty, pick the first known language (if any)
     if (
@@ -291,9 +296,14 @@ export default class ConlangPlugin extends Plugin {
     }
 
     // Ensure primaryLanguage is one of the active languages
-    if (!this.settings.primaryLanguage || !known.has(this.settings.primaryLanguage)) {
+    if (
+      !this.settings.primaryLanguage ||
+      !known.has(this.settings.primaryLanguage)
+    ) {
       this.settings.primaryLanguage =
-        this.settings.activeLanguages[0] ?? this.settings.languages[0]?.name ?? "";
+        this.settings.activeLanguages[0] ??
+        this.settings.languages[0]?.name ??
+        "";
     }
     if (
       this.settings.activeLanguages.length > 0 &&
@@ -410,7 +420,7 @@ export default class ConlangPlugin extends Plugin {
     }
 
     const count = await this.dictionary.loadFromFolders(
-      active.map((l) => ({ folder: l.dictionaryFolder, language: l.name }))
+      active.map((l) => ({ folder: l.dictionaryFolder, language: l.name })),
     );
 
     // Morphemes are loaded from their own optional canonical folders and remain
@@ -423,7 +433,7 @@ export default class ConlangPlugin extends Plugin {
           folder: l.morphemeFolder!.trim(),
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
-        }))
+        })),
     );
 
     // Standalone linguistic examples are loaded from their own optional canonical
@@ -436,7 +446,7 @@ export default class ConlangPlugin extends Plugin {
           folder: l.exampleFolder!.trim(),
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
-        }))
+        })),
     );
 
     // The dictionary changed, so cached word classifications are stale.
@@ -491,10 +501,12 @@ export default class ConlangPlugin extends Plugin {
     activeDocument.body.removeClass(
       "conlang-hl-underline",
       "conlang-hl-italic",
-      "conlang-hl-background"
+      "conlang-hl-background",
     );
     if (this.settings.highlightKnownWords) {
-      activeDocument.body.addClass(`conlang-hl-${this.settings.highlightStyle}`);
+      activeDocument.body.addClass(
+        `conlang-hl-${this.settings.highlightStyle}`,
+      );
     }
   }
 
@@ -514,7 +526,7 @@ export default class ConlangPlugin extends Plugin {
    */
   private maybeReloadForPath(path: string) {
     const inDict = this.getActiveLanguages().some(
-      (l) => l.dictionaryFolder && path.startsWith(l.dictionaryFolder)
+      (l) => l.dictionaryFolder && path.startsWith(l.dictionaryFolder),
     );
     if (!inDict) return;
     // Debounced: metadataCache "changed" fires repeatedly while a dictionary
@@ -528,7 +540,7 @@ export default class ConlangPlugin extends Plugin {
   private scheduleDictionaryReload = debounce(
     () => void this.performDictionaryReload(),
     500,
-    true
+    true,
   );
   private reloadInFlight = false;
   private reloadQueued = false;
@@ -586,7 +598,9 @@ export default class ConlangPlugin extends Plugin {
       }
       // Re-render Reading-view panes so the markdown post-processor re-runs.
       const preview = (
-        view as MarkdownView & { previewMode?: { rerender?(full: boolean): void } }
+        view as MarkdownView & {
+          previewMode?: { rerender?(full: boolean): void };
+        }
       ).previewMode;
       if (preview && typeof preview.rerender === "function") {
         try {
@@ -698,11 +712,15 @@ export default class ConlangPlugin extends Plugin {
   }
 
   private getSelectionOrWord(
-    editor: Editor
+    editor: Editor,
   ): { text: string; from: EditorPosition; to: EditorPosition } | null {
     const text = editor.getSelection();
     if (text && text.length > 0) {
-      return { text, from: editor.getCursor("from"), to: editor.getCursor("to") };
+      return {
+        text,
+        from: editor.getCursor("from"),
+        to: editor.getCursor("to"),
+      };
     }
     const cursor = editor.getCursor();
     const line = editor.getLine(cursor.line);
@@ -827,7 +845,9 @@ export default class ConlangPlugin extends Plugin {
         partOfSpeech: result.partOfSpeech,
       });
       if (r.ok) {
-        created.push(`${target.form} (${lang.name}${r.created ? "" : ", existing"})`);
+        created.push(
+          `${target.form} (${lang.name}${r.created ? "" : ", existing"})`,
+        );
         if (!firstPath) firstPath = r.path;
       } else {
         errors.push(`${lang.name}: ${r.error}`);
@@ -836,17 +856,18 @@ export default class ConlangPlugin extends Plugin {
     await this.afterEntriesChanged();
     if (firstPath) {
       const f = this.app.vault.getAbstractFileByPath(firstPath);
-      if (f instanceof TFile) await this.app.workspace.getLeaf(false).openFile(f);
+      if (f instanceof TFile)
+        await this.app.workspace.getLeaf(false).openFile(f);
     }
     if (errors.length > 0) {
       new Notice(
         `Made Up Words: ${created.length} saved, ${errors.length} failed — ${errors.join("; ")}`,
-        9000
+        9000,
       );
     } else {
       new Notice(
         `Made Up Words: saved ${created.length} ${created.length === 1 ? "entry" : "entries"}`,
-        5000
+        5000,
       );
     }
   }
@@ -921,7 +942,7 @@ export default class ConlangPlugin extends Plugin {
   private freeHomographPath(
     folder: string,
     safeName: string,
-    partOfSpeech?: string
+    partOfSpeech?: string,
   ): string {
     const pos = (partOfSpeech ?? "").trim().replace(/[\\/:*?"<>|]/g, "_");
     if (pos) {
@@ -984,7 +1005,9 @@ export default class ConlangPlugin extends Plugin {
         await this.app.vault.createFolder(current);
       } catch (e) {
         // Tolerate a race where the folder appeared between check and create.
-        if (!(this.app.vault.getAbstractFileByPath(current) instanceof TFolder)) {
+        if (
+          !(this.app.vault.getAbstractFileByPath(current) instanceof TFolder)
+        ) {
           throw e;
         }
       }
@@ -1040,14 +1063,20 @@ export default class ConlangPlugin extends Plugin {
     // One lemma can declare the same surface form under several labels
     // (syncretism — a genuinely common thing in case systems). Merge those
     // into one card rather than repeating the entry per label.
-    const formLabelsByPath = new Map<string, { lemma: DictionaryEntry; labels: string[] }>();
+    const formLabelsByPath = new Map<
+      string,
+      { lemma: DictionaryEntry; labels: string[] }
+    >();
     for (const hit of this.dictionary.lookupForm(cleaned)) {
       if (directMatches.some((e) => e.path === hit.lemma.path)) continue;
       const acc = formLabelsByPath.get(hit.lemma.path);
       if (acc) {
         if (!acc.labels.includes(hit.label)) acc.labels.push(hit.label);
       } else {
-        formLabelsByPath.set(hit.lemma.path, { lemma: hit.lemma, labels: [hit.label] });
+        formLabelsByPath.set(hit.lemma.path, {
+          lemma: hit.lemma,
+          labels: [hit.label],
+        });
       }
     }
     for (const { lemma, labels } of formLabelsByPath.values()) {
@@ -1061,12 +1090,18 @@ export default class ConlangPlugin extends Plugin {
     // 2b. Inflected form (only meaningful for single words) — try each language's rules
     if (!/\s/.test(cleaned)) {
       for (const lang of activeLangs) {
-        const inflectionMatch = findInflection(cleaned, this.dictionary, lang.inflections);
+        const inflectionMatch = findInflection(
+          cleaned,
+          this.dictionary,
+          lang.inflections,
+        );
         if (!inflectionMatch) continue;
         // Skip if this lemma is already on the list — either as a direct hit
         // or via a hardcoded form, which supersedes the rule derivation.
         const alreadyShown = out.some((m) =>
-          (m.candidates ?? []).some((c) => c.path === inflectionMatch.lemma.path)
+          (m.candidates ?? []).some(
+            (c) => c.path === inflectionMatch.lemma.path,
+          ),
         );
         if (alreadyShown) continue;
         out.push({
@@ -1084,7 +1119,7 @@ export default class ConlangPlugin extends Plugin {
     if (englishHits.length > 0) {
       // Filter out entries already shown as direct/inflected
       const shownPaths = new Set(
-        out.flatMap((m) => (m.candidates ?? []).map((c) => c.path))
+        out.flatMap((m) => (m.candidates ?? []).map((c) => c.path)),
       );
       const fresh = englishHits.filter((e) => !shownPaths.has(e.path));
       if (fresh.length > 0) {
@@ -1114,7 +1149,7 @@ export default class ConlangPlugin extends Plugin {
    */
   async createDictionaryEntryForText(
     englishText: string,
-    targetLang?: LanguageConfig
+    targetLang?: LanguageConfig,
   ) {
     const lang = targetLang ?? this.getActiveLanguage();
     if (!lang) {
@@ -1131,7 +1166,10 @@ export default class ConlangPlugin extends Plugin {
     let path = `${folder}/${safeName}.md`;
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile && this.entryCoversDefinition(existing, englishText)) {
+    if (
+      existing instanceof TFile &&
+      this.entryCoversDefinition(existing, englishText)
+    ) {
       await this.app.workspace.getLeaf(false).openFile(existing);
       new Notice(`Conlang: opened existing entry "${translated}"`);
       return;
@@ -1178,13 +1216,13 @@ export default class ConlangPlugin extends Plugin {
     new Notice(
       isActive
         ? `Made Up Words: created "${translated}" in ${lang.name}${senseNote}`
-        : `Made Up Words: created "${translated}" in ${lang.name}${senseNote} (inactive — activate it to see hover/highlight)`
+        : `Made Up Words: created "${translated}" in ${lang.name}${senseNote} (inactive — activate it to see hover/highlight)`,
     );
   }
 
   private promptForEntryOptions(
     englishText: string,
-    translated: string
+    translated: string,
   ): Promise<EntryCreationOptions | null> {
     return new Promise((resolve) => {
       new EntryCreationModal(this.app, englishText, translated, resolve).open();
@@ -1236,7 +1274,15 @@ export default class ConlangPlugin extends Plugin {
     } else {
       fmLines.push("partOfSpeech: ");
     }
-    fmLines.push("ipa: ", "etymology: ", "---", "", `# ${result.conlangWord}`, "", "");
+    fmLines.push(
+      "ipa: ",
+      "etymology: ",
+      "---",
+      "",
+      `# ${result.conlangWord}`,
+      "",
+      "",
+    );
     const content = fmLines.join("\n");
 
     const file = await this.app.vault.create(path, content);
@@ -1249,7 +1295,7 @@ export default class ConlangPlugin extends Plugin {
     new Notice(
       wordOverride
         ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word`
-        : `Conlang: added "${result.conlangWord}"`
+        : `Conlang: added "${result.conlangWord}"`,
     );
   }
 
@@ -1281,7 +1327,11 @@ export default class ConlangPlugin extends Plugin {
         return;
       }
       // Homograph: same spelling, different referent → new sense file.
-      path = this.freeHomographPath(folder, safeName, result.category || "name");
+      path = this.freeHomographPath(
+        folder,
+        safeName,
+        result.category || "name",
+      );
       wordOverride = true;
     }
 
@@ -1381,7 +1431,8 @@ export default class ConlangPlugin extends Plugin {
     // the cypher preview, which the English direction now gates — so the whole
     // mousemove path can short-circuit before any caret resolution (a layout
     // flush) happens.
-    const anyDirection = this.settings.hoverConlang || this.settings.hoverEnglish;
+    const anyDirection =
+      this.settings.hoverConlang || this.settings.hoverEnglish;
     this.hoverActive =
       anyDirection && this.getActiveLanguages().some((l) => l.hoverEnabled);
     // Hover just went inert. Any tooltip already on screen would otherwise stay
@@ -1517,14 +1568,16 @@ export default class ConlangPlugin extends Plugin {
           inflectionMatch = findInflection(
             cleaned,
             this.dictionary,
-            activeLang.inflections
+            activeLang.inflections,
           );
           if (inflectionMatch) break;
         }
       }
     }
     const conlangMatched =
-      dictEntries.length > 0 || declaredForm !== undefined || inflectionMatch !== null;
+      dictEntries.length > 0 ||
+      declaredForm !== undefined ||
+      inflectionMatch !== null;
 
     const englishHits =
       this.settings.hoverEnglish && !conlangMatched
@@ -1582,7 +1635,7 @@ export default class ConlangPlugin extends Plugin {
       this.showInflectionTooltip(
         evt.clientX,
         evt.clientY,
-        ConlangPlugin.toFormBanner(inflectionMatch)
+        ConlangPlugin.toFormBanner(inflectionMatch),
       );
       return;
     }
@@ -1594,7 +1647,10 @@ export default class ConlangPlugin extends Plugin {
     // hovered text, so it belongs to the English direction. Showing it while
     // that direction is switched off would keep producing exactly the output
     // the user turned off (issue #12).
-    if (!this.settings.hoverEnglish || this.settings.hoverFallback === "nothing") {
+    if (
+      !this.settings.hoverEnglish ||
+      this.settings.hoverFallback === "nothing"
+    ) {
       this.scheduleHideTooltip();
       return;
     }
@@ -1640,12 +1696,13 @@ export default class ConlangPlugin extends Plugin {
    */
   private findPhraseAroundCursor(
     ctx: { word: string; forwardContext: string; backwardContext: string },
-    phrases: PhraseIndex
+    phrases: PhraseIndex,
   ): DictionaryEntry | null {
     // Take all words in the backward+forward context, then for each starting
     // position try the phrase matcher. The matcher's longest-first guarantee
     // means we'll catch the right phrase.
-    const fullContext = ctx.backwardContext + ctx.forwardContext.slice(ctx.word.length);
+    const fullContext =
+      ctx.backwardContext + ctx.forwardContext.slice(ctx.word.length);
     // Where in fullContext does the hovered word START?
     const cursorWordStart = ctx.backwardContext.length - ctx.word.length;
 
@@ -1674,7 +1731,6 @@ export default class ConlangPlugin extends Plugin {
     return null;
   }
 
-
   /**
    * Like getWordAtPoint, but also returns text on either side of the cursor
    * up to nearby word boundaries — enough to run phrase matching against.
@@ -1686,7 +1742,7 @@ export default class ConlangPlugin extends Plugin {
    */
   private getContextAtPoint(
     x: number,
-    y: number
+    y: number,
   ): { word: string; forwardContext: string; backwardContext: string } | null {
     // `caretPositionFromPoint` / `caretRangeFromPoint` are non-standard across
     // browsers, so type just the two methods we probe for rather than using any.
@@ -1697,7 +1753,7 @@ export default class ConlangPlugin extends Plugin {
       caretRangeFromPoint?(x: number, y: number): Range | null;
       caretPositionFromPoint?(
         x: number,
-        y: number
+        y: number,
       ): { offsetNode: Node; offset: number } | null;
     };
     const doc = activeDocument as unknown as CaretProbe;
@@ -1730,7 +1786,10 @@ export default class ConlangPlugin extends Plugin {
     // Grab ~50 chars on either side for phrase context. We can't see across
     // text nodes from a single hover, but phrases are short enough that
     // a single text node usually contains them.
-    const forwardContext = text.substring(start, Math.min(text.length, end + 50));
+    const forwardContext = text.substring(
+      start,
+      Math.min(text.length, end + 50),
+    );
     const backwardContext = text.substring(Math.max(0, start - 50), end);
     return { word, forwardContext, backwardContext };
   }
@@ -1769,7 +1828,7 @@ export default class ConlangPlugin extends Plugin {
       entry,
       el,
       this.getActiveLanguages().length > 1,
-      this.settings.showFormsInTooltip
+      this.settings.showFormsInTooltip,
     );
     el.addClass("conlang-tooltip-visible");
     this.positionTooltip(x, y);
@@ -1783,7 +1842,7 @@ export default class ConlangPlugin extends Plugin {
   private showInflectionTooltip(
     x: number,
     y: number,
-    match: { lemma: DictionaryEntry; label: string; inflectedForm: string }
+    match: { lemma: DictionaryEntry; label: string; inflectedForm: string },
   ) {
     if (this.tooltipHideTimer !== null) {
       window.clearTimeout(this.tooltipHideTimer);
@@ -1797,7 +1856,7 @@ export default class ConlangPlugin extends Plugin {
       match.lemma,
       el,
       this.getActiveLanguages().length > 1,
-      this.settings.showFormsInTooltip
+      this.settings.showFormsInTooltip,
     );
     el.createDiv({
       cls: "conlang-tooltip-inflection",
@@ -1825,7 +1884,7 @@ export default class ConlangPlugin extends Plugin {
     x: number,
     y: number,
     sourceWord: string,
-    entries: DictionaryEntry[]
+    entries: DictionaryEntry[],
   ) {
     if (this.tooltipHideTimer !== null) {
       window.clearTimeout(this.tooltipHideTimer);
@@ -1865,7 +1924,12 @@ export default class ConlangPlugin extends Plugin {
     this.positionTooltip(x, y);
   }
 
-  private showCypherTooltip(x: number, y: number, original: string, translated: string) {
+  private showCypherTooltip(
+    x: number,
+    y: number,
+    original: string,
+    translated: string,
+  ) {
     if (this.tooltipHideTimer !== null) {
       window.clearTimeout(this.tooltipHideTimer);
       this.tooltipHideTimer = null;
