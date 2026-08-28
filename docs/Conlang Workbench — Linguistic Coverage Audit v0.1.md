@@ -1476,7 +1476,7 @@ a replacement representation.
 
 ## 5. Phonetics and Phonology
 
-**Status:** Planned  
+**Status:** Partial  
 **Priority:** Early
 
 ### What needs to be representable
@@ -1536,87 +1536,149 @@ inventories but for:
 
 ### Current support
 
-The inherited dictionary model has an optional `ipa` field on individual
-dictionary entries.
+Conlang Workbench now has a canonical language-level phonological-unit model
+independent of individual dictionary entries.
 
-Tooltips can display this IPA string alongside the headword.
+A phonological unit currently supports:
 
-This is useful lexical metadata, but it is not a language-level phonological
-model.
+- a required stable unit ID
+- a visible symbol
+- an optional creator-defined category
+- analytical status
+- language and language-profile association
+- notes
+- source-note navigation
 
-The current implementation does not represent:
+Analytical status currently distinguishes:
 
-- a language-wide phoneme inventory
-- phones separately from phonemes
-- allophonic rules
-- phonological environments
-- minimal-pair evidence
-- feature systems
-- alternations
-- competing phonological analyses
+- `established`
+- `proposed`
+- `unresolved`
+
+This allows a creator to document contrastive units without requiring every
+part of the phonological analysis to be treated as settled.
+
+The representation is deliberately modality-aware. The core unit model does
+not require a unit to be a spoken-language phoneme, although common spoken
+categories such as consonant and vowel are supported by the current browser.
+
+Canonical phonological-unit notes are loaded recursively from an optional
+per-language phonology folder. Notes must explicitly identify themselves as
+`phonological-unit` documents before they enter the inventory.
+
+The loader maintains a stable-ID index and can associate units with the
+configured language and language profile. Frontmatter readers tolerate
+reasonable naming variants while Workbench's canonical metadata convention
+remains snake_case.
+
+The Phonology Inventory browser currently provides:
+
+- inventory browsing
+- text search
+- category filtering
+- analytical-status filtering
+- result counts
+- empty-result states
+- multi-language identification when multiple languages are active
+- navigation back to the canonical source note
+
+Common categories such as consonant and vowel are conveniences rather than a
+closed taxonomy. Creator-defined and modality-specific categories remain
+valid.
+
+Individual dictionary entries continue to support optional lexical `ipa`
+metadata. This remains useful lexical information, but it is distinct from the
+new language-level phonological inventory.
+
+The first phonology foundation has been runtime verified with a standalone
+phonological-unit note, including inventory loading, stable-ID lookup,
+browser display, filtering, searching, and source-note navigation.
 
 ### Gap
 
-Conlang Workbench currently treats IPA primarily as a string associated with
-a lexeme.
+The current phonological inventory represents contrastive or otherwise
+canonical units, but it does not yet model the relationship between those
+units and their possible realizations.
 
-That is insufficient for linguist-readable phonological documentation.
+Conlang Workbench does not yet represent:
 
-The Workbench needs a way to describe the language's sound system or
-modality-equivalent structural units independently of individual lexical
-entries.
+- phones or realizations as entities distinct from canonical units
+- allophones
+- phonological environments
+- conditioned realization
+- free or variable realization
+- dialect-specific realizations
+- minimal-pair evidence
+- distinctive-feature systems
+- phonological alternations or processes
+- interactions between phonology and morphology
+- richer relationships among competing phonological analyses
+- explicit links between lexical forms and canonical phonological units
 
-The architecture must also distinguish:
+The next useful layer should therefore build outward from the established
+inventory rather than replacing it: canonical units should be able to acquire
+phonetic or modality-equivalent realizations and the conditions under which
+those realizations occur.
 
-- observed realization
-- contrastive unit
-- analytical interpretation
-
-without requiring the creator to collapse all three into a single field.
+The Workbench should continue to distinguish observed realization,
+contrastive unit, and analytical interpretation so that incomplete or
+competing analyses can be documented without forcing premature certainty.
 
 ### Initial requirement
 
-The first phonological implementation does not need to become a full
+The first phonological implementation now provides the basic canonical
+inventory layer.
+
+The next operative layer should add documentation for:
+
+- phonetic or modality-equivalent realizations
+- relationships between realizations and canonical units
+- conditioned realization where known
+- unresolved or alternative realization analyses
+- links between lexical entries and the documented phonological inventory
+
+This should remain a documentation model rather than becoming a full automatic
 phonological-analysis engine.
 
-It should initially support or recognize documentation for:
-
-- a language's contrastive inventory
-- phonetic realizations where relevant
-- allophony or conditioned realization
-- links between lexical entries and the language's documented sound system
-- unresolved or alternative analyses
-
-IPA should be supported as the normal notation for spoken-language phonetic
-documentation, but it should not be mandatory for non-spoken modalities.
+IPA should remain the normal notation for spoken-language phonetic
+documentation, but it must not be mandatory for non-spoken modalities.
 
 ### Later capabilities
 
 Possible later capabilities include:
 
-- inventory tables generated from documented segments
-- segment lookup
+- inventory tables generated from documented units
+- segment or unit lookup
 - automatic detection of undocumented segments in lexical entries
 - minimal-pair discovery
-- allophone/environment validation
+- allophone and environment validation
 - feature-based searching
 - phonological-process documentation
-- alternate analyses
-- dialect-specific inventories
+- richer alternate-analysis support
+- dialect-specific inventories and realizations
 - phonetic audio references
 - interaction with historical sound change
+- interaction with morphology and morphophonology
+
+These capabilities should build on the canonical inventory and realization
+model rather than requiring a replacement representation.
 
 ### Open questions
 
-- Should individual phonemes or structural units be standalone notes?
-- Should inventories be generated from those notes, stored in tables, or both?
-- How should phones and allophones link to their associated phoneme?
+- Should realizations be standalone notes, nested data on phonological-unit
+  notes, or support both representations?
+- How should phones or modality-equivalent realizations link to their associated
+  canonical units?
 - How should competing analyses be represented without duplicating language
   data?
-- What is the appropriate equivalent structure for signed, tactile, or other
-  non-spoken languages?
+- What is the appropriate equivalent structure for signed, tactile, visual, or
+  other non-spoken languages?
 - Should IPA transcription be stored on every lexeme when it can be derived
   reliably from orthographic and phonological rules?
+- How should dialect-specific realization differ structurally from ordinary
+  allophonic variation?
+- At what point should phonological environments become reusable structured
+  objects rather than descriptive text?
 
 ---
 
