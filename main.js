@@ -1122,9 +1122,7 @@ var MorphemeInventory = class {
     const formOverride = (_e = asString(fm.form)) == null ? void 0 : _e.trim();
     const form = formOverride || file.basename;
     if (!form.trim()) return null;
-    const gloss = (_h = asString(
-      (_g = (_f = fm.gloss) != null ? _f : fm.meaning) != null ? _g : fm.function
-    )) == null ? void 0 : _h.trim();
+    const gloss = (_h = asString((_g = (_f = fm.gloss) != null ? _f : fm.meaning) != null ? _g : fm.function)) == null ? void 0 : _h.trim();
     if (!gloss) return null;
     const distributionRaw = (_i = asString(fm.distribution)) == null ? void 0 : _i.trim().toLowerCase();
     const distribution = distributionRaw === "free" || distributionRaw === "bound" || distributionRaw === "both" || distributionRaw === "unknown" ? distributionRaw : void 0;
@@ -1136,13 +1134,9 @@ var MorphemeInventory = class {
         (_k = (_j = fm.morpheme_type) != null ? _j : fm.morphemeType) != null ? _k : fm.category
       )) == null ? void 0 : _l.trim(),
       distribution,
-      realizations: parseStringList(
-        (_m = fm.realizations) != null ? _m : fm.allomorphs
-      ),
+      realizations: parseStringList((_m = fm.realizations) != null ? _m : fm.allomorphs),
       language: (_n = asString(fm.language)) == null ? void 0 : _n.trim(),
-      languageId: (_p = asString(
-        (_o = fm.language_id) != null ? _o : fm.languageId
-      )) == null ? void 0 : _p.trim(),
+      languageId: (_p = asString((_o = fm.language_id) != null ? _o : fm.languageId)) == null ? void 0 : _p.trim(),
       path: file.path,
       notes: (_q = asString(fm.notes)) == null ? void 0 : _q.trim(),
       mtime: file.stat.mtime

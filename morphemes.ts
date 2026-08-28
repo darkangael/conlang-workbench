@@ -52,11 +52,7 @@ export class MorphemeInventory {
    * Optional language identity filters let callers distinguish identical
    * morpheme IDs used independently by different languages.
    */
-  lookupId(
-    id: string,
-    languageId?: string,
-    language?: string
-  ): Morpheme[] {
+  lookupId(id: string, languageId?: string, language?: string): Morpheme[] {
     const normalized = id.trim().toLowerCase();
     if (!normalized) return [];
 
@@ -78,7 +74,7 @@ export class MorphemeInventory {
   async loadFromFolder(
     folderPath: string,
     language?: string,
-    languageId?: string
+    languageId?: string,
   ): Promise<number> {
     return this.loadFromFolders([
       {
@@ -219,15 +215,11 @@ export class MorphemeInventory {
     const form = formOverride || file.basename;
     if (!form.trim()) return null;
 
-    const gloss = asString(
-      fm.gloss ?? fm.meaning ?? fm.function
-    )?.trim();
+    const gloss = asString(fm.gloss ?? fm.meaning ?? fm.function)?.trim();
 
     if (!gloss) return null;
 
-    const distributionRaw = asString(fm.distribution)
-      ?.trim()
-      .toLowerCase();
+    const distributionRaw = asString(fm.distribution)?.trim().toLowerCase();
 
     const distribution =
       distributionRaw === "free" ||
@@ -242,16 +234,12 @@ export class MorphemeInventory {
       form,
       gloss,
       type: asString(
-        fm.morpheme_type ?? fm.morphemeType ?? fm.category
+        fm.morpheme_type ?? fm.morphemeType ?? fm.category,
       )?.trim(),
       distribution,
-      realizations: parseStringList(
-        fm.realizations ?? fm.allomorphs
-      ),
+      realizations: parseStringList(fm.realizations ?? fm.allomorphs),
       language: asString(fm.language)?.trim(),
-      languageId: asString(
-        fm.language_id ?? fm.languageId
-      )?.trim(),
+      languageId: asString(fm.language_id ?? fm.languageId)?.trim(),
       path: file.path,
       notes: asString(fm.notes)?.trim(),
       mtime: file.stat.mtime,
