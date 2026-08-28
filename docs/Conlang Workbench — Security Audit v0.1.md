@@ -817,39 +817,122 @@ artifacts, and automated regression coverage have all been verified.
 
 ### Parsers
 
-Inventory all frontmatter and Markdown parsing code.
+The initial parser inventory identified the following current input surfaces:
+
+- `language-profile.ts` — configured Language Profile frontmatter
+- `word-tokens.ts` — shared parsing for string-list and declared-form
+  frontmatter fields
+- `morphemes.ts` — canonical morpheme-note frontmatter
+- `linguistic-examples.ts` — linguistic-example frontmatter
+- `phonology.ts` — phonological-unit and phonological-realization frontmatter
+- `dictionary.ts` — dictionary-entry frontmatter and Markdown-body metadata
+- `lexical-senses.ts` — structured lexical-sense metadata parsed from note bodies
+- `body-preview.ts` — Markdown-body preview extraction
+- `main.ts` — metadata-cache coordination around dictionary creation/reload
+
+The Language Profile parser and shared `word-tokens.ts` helpers have been
+reviewed in this pass. The remaining parsers still require individual review
+before §4 can be completed.
 
 ### Type Validation
 
-Check whether parser assumptions are validated before values are used.
+`loadLanguageProfile()` is read-only and fails safely when its configured path
+is absent, does not resolve to a Markdown file, has no metadata cache, is not a
+`language-profile`, or lacks required identity fields.
+
+The profile parser deliberately tolerates simple YAML scalar values by
+interpreting numbers and booleans as text where a textual value is required.
+This supports importing or reading valid but non-canonical YAML without
+rewriting the user's source note.
+
+Identity-bearing values such as `language_id` and `language` therefore may be
+interpreted from simple scalar YAML during passive reads. Any future
+normalization, promotion, or canonical-writing workflow must present such an
+interpreted identity to the user and require explicit confirmation before
+rewriting it as canonical textual YAML.
+
+Shared list/form parsing previously had a broader boundary: unsupported
+structured values could reach `String(value)` and become implementation-created
+text such as `[object Object]`. This was not a source-file mutation, but it could
+cause Workbench's in-memory interpretation to differ from what the user
+actually supplied.
+
+The shared parser now distinguishes simple YAML scalars from structured data.
+Strings, numbers, and booleans remain tolerantly interpretable where the parser
+supports scalar values. Unsupported objects and nested arrays are left
+uninterpreted rather than silently stringified.
 
 ### Malformed Input
 
-Test behavior with:
+Regression coverage in `test:frontmatter` now verifies that:
 
-- missing fields
-- wrong field types
-- arrays where strings are expected
-- objects where scalars are expected
-- malformed YAML
-- duplicate or unusual keys
+- canonical YAML lists of text remain supported
+- comma-separated string lists remain supported
+- simple numeric and boolean list members remain tolerantly interpretable
+- supported YAML-map forms remain supported
+- supported list-of-single-key-map forms remain supported
+- unsupported object values are skipped rather than stringified
+- unsupported nested arrays are skipped rather than stringified
+- neighboring usable values are preserved when one item is malformed
+- a field containing only unsupported structures produces no interpreted data
+
+Malformed YAML itself, duplicate/unusual-key behavior, and malformed values in
+the remaining feature parsers still require review.
 
 ### Tolerant Aliases
 
-Review tolerant frontmatter aliases for ambiguity or unsafe interpretation.
+Workbench intentionally supports multiple reasonable frontmatter
+representations where doing so improves interoperability and does not change the
+source note.
+
+Tolerance does not grant permission to invent a textual meaning for structured
+data. Alternate supported representations may be interpreted in memory, but
+unsupported structures remain untouched in the source and are ignored by the
+specific parser.
+
+Canonicalization or normalization remains a separate explicit operation. The
+reader does not rewrite tolerated input into Workbench's preferred YAML form.
 
 ### Unexpected Content
 
-Verify that Markdown content cannot become executable behavior merely by being
-loaded.
+No execution behavior was identified in the Language Profile or shared
+string-list/form parsing reviewed so far. Full Markdown-to-UI and body-content
+handling remains to be reviewed here and in §5 DOM Rendering and Injection.
 
 ### Findings
 
-None recorded yet.
+#### SEC-004-H1 — Unsupported structured frontmatter values could be silently stringified
+
+- **Severity:** Hardening
+- **Primary impact:** Data integrity
+- **Data-safety relevance:** Yes
+- **Status:** Remediated and regression-tested
+
+Shared frontmatter helpers previously used broad `String(value)` conversion in
+places where a YAML list or declared-form structure was expected. Unsupported
+nested structures could therefore become implementation-generated strings such
+as `[object Object]`.
+
+The source Markdown was not modified, but Workbench could silently construct an
+in-memory value the user had never supplied as text. That interpretation could
+later influence display, lookup, export, normalization, or other downstream
+features.
+
+The remediation adds a scalar-only conversion boundary. Supported strings,
+numbers, and booleans remain tolerantly readable. Unsupported objects or nested
+arrays are skipped unless the parser explicitly supports that structure.
+
+No automatic normalization or writeback is performed.
+
+Regression coverage is provided by:
+
+`npm run test:frontmatter`
 
 ### Status
 
-**Not Reviewed**
+**In Progress — Language Profile and shared frontmatter helpers reviewed;
+SEC-004-H1 remediated and regression-tested. Remaining parsers still require
+review.**
 
 ---
 
@@ -1298,6 +1381,7 @@ audit section.
 | --- | --- | --- | --- | --- | --- | --- |
 | SEC-003-M1 | §3 Path Handling and Traversal | Remediated and verified | Medium | Mutating paths containing `..` can be normalized to a different logical destination by Obsidian mutation APIs. | Controlled raw-API test; Workbench adversarial runtime test; `test:vault-paths` regression coverage | Workbench now validates logical write paths before mutation and rejects traversal rather than normalizing it. |
 | SEC-003-H1 | §3 Path Handling and Traversal | Remediated and verified | Hardening | Raw string-prefix folder comparison can match unrelated sibling paths. | Code review; `Mer` / `Mermaid` regression coverage in `test:vault-paths` | Replaced raw prefix comparison with component-aware `isPathWithinFolder()`. |
+| SEC-004-H1 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Unsupported structured frontmatter values could be silently stringified into values the user did not supply as text. | Code review; scalar/structure boundary regression coverage in `test:frontmatter` | Shared parsing now tolerates simple scalars but leaves unsupported structures uninterpreted; no automatic writeback or normalization occurs. |
 
 ---
 

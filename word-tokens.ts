@@ -71,6 +71,32 @@ export function firstSense(definition: string): string {
 export const DEFAULT_FORM_LABEL = "variant";
 
 /**
+ * Convert a YAML scalar into text without inventing a representation for
+ * structured data.
+ *
+ * Frontmatter is deliberately read tolerantly: users may reasonably supply a
+ * number or boolean where Workbench ultimately needs textual data, so those
+ * simple scalar values can be interpreted as text in memory.
+ *
+ * Objects and arrays are different. Stringifying them would manufacture values
+ * such as "[object Object]" that the user never actually supplied as text.
+ * Those structures therefore remain uninterpreted unless a parser explicitly
+ * supports their shape.
+ *
+ * This helper never changes the source note. Canonicalising or rewriting YAML
+ * is a separate, explicit operation that requires user intent.
+ */
+function yamlScalarToString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+/**
  * Parse the `forms:` frontmatter property into label/form pairs.
  *
  * The canonical shape is a YAML list of "label: form" strings, because
@@ -125,9 +151,12 @@ export function parseInflectedForms(
       if (!label) continue;
       const values = Array.isArray(v) ? v : [v];
       for (const item of values) {
-        if (item === null || item === undefined) continue;
+        const scalar = yamlScalarToString(item);
+        if (scalar === undefined) continue;
+
         // The value may itself be comma-separated ("kalim, kalum").
-        for (const f of String(item).split(",")) {
+        // Structured values are deliberately skipped rather than stringified.
+        for (const f of scalar.split(",")) {
           const form = tidy(f);
           if (form) out.push({ label, form });
         }
@@ -140,9 +169,13 @@ export function parseInflectedForms(
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (isRecord(item)) pushFromRecord(item);
-      else if (item !== null && item !== undefined)
-        pushFromString(String(item));
+      if (isRecord(item)) {
+        pushFromRecord(item);
+        continue;
+      }
+
+      const scalar = yamlScalarToString(item);
+      if (scalar !== undefined) pushFromString(scalar);
     }
   } else if (isRecord(value)) {
     pushFromRecord(value);
@@ -163,13 +196,20 @@ export function parseInflectedForms(
  */
 export function parseStringList(value: unknown): string[] | undefined {
   let out: string[];
+
   if (Array.isArray(value)) {
-    out = value.map((v) => String(v).trim());
+    // Accept simple YAML scalars but leave nested structures uninterpreted.
+    // String(object) would manufacture "[object Object]", which is not data
+    // the user actually supplied as an alias, part, modality, etc.
+    out = value
+      .map((item) => yamlScalarToString(item)?.trim())
+      .filter((item): item is string => Boolean(item));
   } else if (typeof value === "string" && value.trim()) {
-    out = value.split(",").map((v) => v.trim());
+    out = value.split(",").map((item) => item.trim());
   } else {
     return undefined;
   }
-  out = out.filter((v) => v.length > 0);
+
+  out = out.filter((item) => item.length > 0);
   return out.length > 0 ? out : undefined;
 }

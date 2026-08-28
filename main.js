@@ -346,6 +346,13 @@ function firstSense(definition) {
   return definition.split(/[,;]/)[0].trim();
 }
 var DEFAULT_FORM_LABEL = "variant";
+function yamlScalarToString(value) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return void 0;
+}
 function parseInflectedForms(value) {
   const out = [];
   const tidy = (s) => s.trim().replace(/\s+/g, " ");
@@ -371,8 +378,9 @@ function parseInflectedForms(value) {
       if (!label) continue;
       const values = Array.isArray(v) ? v : [v];
       for (const item of values) {
-        if (item === null || item === void 0) continue;
-        for (const f of String(item).split(",")) {
+        const scalar = yamlScalarToString(item);
+        if (scalar === void 0) continue;
+        for (const f of scalar.split(",")) {
           const form = tidy(f);
           if (form) out.push({ label, form });
         }
@@ -382,9 +390,12 @@ function parseInflectedForms(value) {
   const isRecord = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (isRecord(item)) pushFromRecord(item);
-      else if (item !== null && item !== void 0)
-        pushFromString(String(item));
+      if (isRecord(item)) {
+        pushFromRecord(item);
+        continue;
+      }
+      const scalar = yamlScalarToString(item);
+      if (scalar !== void 0) pushFromString(scalar);
     }
   } else if (isRecord(value)) {
     pushFromRecord(value);
@@ -398,13 +409,16 @@ function parseInflectedForms(value) {
 function parseStringList(value) {
   let out;
   if (Array.isArray(value)) {
-    out = value.map((v) => String(v).trim());
+    out = value.map((item) => {
+      var _a;
+      return (_a = yamlScalarToString(item)) == null ? void 0 : _a.trim();
+    }).filter((item) => Boolean(item));
   } else if (typeof value === "string" && value.trim()) {
-    out = value.split(",").map((v) => v.trim());
+    out = value.split(",").map((item) => item.trim());
   } else {
     return void 0;
   }
-  out = out.filter((v) => v.length > 0);
+  out = out.filter((item) => item.length > 0);
   return out.length > 0 ? out : void 0;
 }
 

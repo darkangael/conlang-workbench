@@ -7,7 +7,8 @@
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "lint": "eslint \"**/*.ts\"",
-    "test:vault-paths": "node scripts/test-vault-paths.mjs"
+    "test:vault-paths": "node scripts/test-vault-paths.mjs",
+    "test:frontmatter": "node scripts/test-frontmatter-parsing.mjs"
   },
   "keywords": [
     "obsidian",
