@@ -55,7 +55,10 @@ function inlineHighlightStyle(kind: string, style: string): string {
     ? "var(--text-muted, #9aa0a6)"
     : "var(--text-accent, #a882ff)";
   if (style === "italic") {
-    return "font-style: italic !important;" + (isEnglish ? "" : ` color: ${color} !important;`);
+    return (
+      "font-style: italic !important;" +
+      (isEnglish ? "" : ` color: ${color} !important;`)
+    );
   }
   if (style === "background") {
     const bg = isEnglish
@@ -80,9 +83,9 @@ function inlineHighlightStyle(kind: string, style: string): string {
 export function registerEntryLinkHandler(plugin: ConlangPlugin): void {
   plugin.registerDomEvent(activeDocument, "click", (evt: MouseEvent) => {
     const target = evt.target as HTMLElement | null;
-    const el = target?.closest?.(`.${CLICKABLE_CLASS}[${ENTRY_PATH_ATTR}]`) as
-      | HTMLElement
-      | null;
+    const el = target?.closest?.(
+      `.${CLICKABLE_CLASS}[${ENTRY_PATH_ATTR}]`,
+    ) as HTMLElement | null;
     if (!el) return;
     const path = el.getAttribute(ENTRY_PATH_ATTR);
     if (!path) return;
@@ -90,7 +93,9 @@ export function registerEntryLinkHandler(plugin: ConlangPlugin): void {
     if (!(file instanceof TFile)) return;
     evt.preventDefault();
     evt.stopPropagation();
-    void plugin.app.workspace.getLeaf(evt.ctrlKey || evt.metaKey).openFile(file);
+    void plugin.app.workspace
+      .getLeaf(evt.ctrlKey || evt.metaKey)
+      .openFile(file);
   });
 }
 
@@ -138,7 +143,7 @@ export function makeHighlightExtension(plugin: ConlangPlugin) {
 
       update(update: ViewUpdate) {
         const forced = update.transactions.some((tr) =>
-          tr.effects.some((e) => e.is(refreshHighlightEffect))
+          tr.effects.some((e) => e.is(refreshHighlightEffect)),
         );
         if (update.docChanged || update.viewportChanged || forced) {
           this.decorations = this.build(update.view);
@@ -170,7 +175,7 @@ export function makeHighlightExtension(plugin: ConlangPlugin) {
                 builder.add(
                   span.from,
                   span.to,
-                  Decoration.mark({ class: cls, attributes })
+                  Decoration.mark({ class: cls, attributes }),
                 );
               }
             }
@@ -182,7 +187,7 @@ export function makeHighlightExtension(plugin: ConlangPlugin) {
     },
     {
       decorations: (v) => v.decorations,
-    }
+    },
   );
 }
 
@@ -202,7 +207,9 @@ export function highlightElement(plugin: ConlangPlugin, root: HTMLElement) {
       if (!parent) return NodeFilter.FILTER_REJECT;
       if (
         parent.closest(
-          "code, pre, .math, .frontmatter, .cm-editor, ." + BASE_CLASS + ", a.tag"
+          "code, pre, .math, .frontmatter, .cm-editor, ." +
+            BASE_CLASS +
+            ", a.tag",
         )
       ) {
         return NodeFilter.FILTER_REJECT;
@@ -235,11 +242,16 @@ function replaceTextNode(plugin: ConlangPlugin, textNode: Text) {
   let cursor = 0;
   for (const span of spans) {
     if (span.from > cursor) {
-      frag.appendChild(activeDocument.createTextNode(text.slice(cursor, span.from)));
+      frag.appendChild(
+        activeDocument.createTextNode(text.slice(cursor, span.from)),
+      );
     }
     const el = activeDocument.createElement("span");
     el.className = classForKind(span.kind);
-    el.style.cssText = inlineHighlightStyle(span.kind, plugin.settings.highlightStyle);
+    el.style.cssText = inlineHighlightStyle(
+      span.kind,
+      plugin.settings.highlightStyle,
+    );
     el.textContent = text.slice(span.from, span.to);
     if (span.path) {
       // Just tag it; the delegated document click handler opens the note.

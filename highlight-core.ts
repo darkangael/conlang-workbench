@@ -58,7 +58,7 @@ const CLASSIFY_CACHE_MAX = 20000;
  */
 export function classifyWord(
   plugin: ConlangPlugin,
-  cleaned: string
+  cleaned: string,
 ): HighlightKind | null {
   if (!cleaned) return null;
   const cached = plugin.classifyCache.get(cleaned);
@@ -73,7 +73,7 @@ export function classifyWord(
 
 function computeClassifyWord(
   plugin: ConlangPlugin,
-  cleaned: string
+  cleaned: string,
 ): HighlightKind | null {
   const s = plugin.settings;
 
@@ -106,7 +106,7 @@ function computeClassifyWord(
 export function highlightSpans(
   plugin: ConlangPlugin,
   text: string,
-  baseOffset: number
+  baseOffset: number,
 ): HighlightSpan[] {
   const out: HighlightSpan[] = [];
   if (!plugin.settings.highlightKnownWords) return out;
@@ -122,7 +122,12 @@ export function highlightSpans(
   for (const token of tokens) {
     const len = token.text.length;
     if (token.kind === "phrase" && token.entry) {
-      out.push({ from: offset, to: offset + len, kind: "phrase", path: token.entry.path });
+      out.push({
+        from: offset,
+        to: offset + len,
+        kind: "phrase",
+        path: token.entry.path,
+      });
     } else if (token.kind === "word") {
       const cleaned = cleanWord(token.text);
       const kind = classifyWord(plugin, cleaned);
@@ -145,7 +150,7 @@ export function highlightSpans(
 function resolveEntryPath(
   plugin: ConlangPlugin,
   cleaned: string,
-  kind: HighlightKind
+  kind: HighlightKind,
 ): string | undefined {
   if (kind === "english") {
     return plugin.dictionary.lookupEnglish(cleaned)[0]?.path;

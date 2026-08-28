@@ -5470,7 +5470,12 @@ function highlightSpans(plugin, text, baseOffset) {
   for (const token of tokens) {
     const len = token.text.length;
     if (token.kind === "phrase" && token.entry) {
-      out.push({ from: offset, to: offset + len, kind: "phrase", path: token.entry.path });
+      out.push({
+        from: offset,
+        to: offset + len,
+        kind: "phrase",
+        path: token.entry.path
+      });
     } else if (token.kind === "word") {
       const cleaned = cleanWord(token.text);
       const kind = classifyWord(plugin, cleaned);
@@ -5519,7 +5524,10 @@ function registerEntryLinkHandler(plugin) {
   plugin.registerDomEvent(activeDocument, "click", (evt) => {
     var _a;
     const target = evt.target;
-    const el = (_a = target == null ? void 0 : target.closest) == null ? void 0 : _a.call(target, `.${CLICKABLE_CLASS}[${ENTRY_PATH_ATTR}]`);
+    const el = (_a = target == null ? void 0 : target.closest) == null ? void 0 : _a.call(
+      target,
+      `.${CLICKABLE_CLASS}[${ENTRY_PATH_ATTR}]`
+    );
     if (!el) return;
     const path = el.getAttribute(ENTRY_PATH_ATTR);
     if (!path) return;
@@ -5624,11 +5632,16 @@ function replaceTextNode(plugin, textNode) {
   let cursor = 0;
   for (const span of spans) {
     if (span.from > cursor) {
-      frag.appendChild(activeDocument.createTextNode(text.slice(cursor, span.from)));
+      frag.appendChild(
+        activeDocument.createTextNode(text.slice(cursor, span.from))
+      );
     }
     const el = activeDocument.createElement("span");
     el.className = classForKind(span.kind);
-    el.style.cssText = inlineHighlightStyle(span.kind, plugin.settings.highlightStyle);
+    el.style.cssText = inlineHighlightStyle(
+      span.kind,
+      plugin.settings.highlightStyle
+    );
     el.textContent = text.slice(span.from, span.to);
     if (span.path) {
       el.classList.add(CLICKABLE_CLASS);
