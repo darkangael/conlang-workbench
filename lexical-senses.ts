@@ -1,3 +1,4 @@
+import { maskMarkdownFencedCodeBlocks } from "./markdown-fences";
 import { LexicalSense } from "./types";
 
 /**
@@ -25,7 +26,12 @@ import { LexicalSense } from "./types";
  * enough to create a sense.
  */
 export function parseLexicalSenses(markdown: string): LexicalSense[] {
-  const sensesSection = extractSensesSection(markdown);
+  // Fenced code is literal/example content, not active lexical metadata.
+  // Mask it before looking for `## Senses`, sense headings, or semantic fields
+  // so documentation examples cannot accidentally acquire dictionary authority.
+  const activeMarkdown = maskMarkdownFencedCodeBlocks(markdown);
+
+  const sensesSection = extractSensesSection(activeMarkdown);
   if (!sensesSection) return [];
 
   const senses: LexicalSense[] = [];

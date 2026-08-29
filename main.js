@@ -270,10 +270,44 @@ function extractBodyPreview(content) {
   return text;
 }
 
+// markdown-fences.ts
+function maskMarkdownFencedCodeBlocks(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  let fenceCharacter = null;
+  let fenceLength = 0;
+  const maskedLines = lines.map((line) => {
+    if (fenceCharacter === null) {
+      const opening = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (!opening) {
+        return line;
+      }
+      const marker = opening[1];
+      const infoString = opening[2];
+      if (marker[0] === "`" && infoString.includes("`")) {
+        return line;
+      }
+      fenceCharacter = marker[0];
+      fenceLength = marker.length;
+      return "";
+    }
+    const escapedCharacter = fenceCharacter === "`" ? "`" : "~";
+    const closing = new RegExp(
+      `^ {0,3}${escapedCharacter}{${fenceLength},}[\\t ]*$`
+    );
+    if (closing.test(line)) {
+      fenceCharacter = null;
+      fenceLength = 0;
+    }
+    return "";
+  });
+  return maskedLines.join("\n");
+}
+
 // lexical-senses.ts
 function parseLexicalSenses(markdown) {
   var _a, _b;
-  const sensesSection = extractSensesSection(markdown);
+  const activeMarkdown = maskMarkdownFencedCodeBlocks(markdown);
+  const sensesSection = extractSensesSection(activeMarkdown);
   if (!sensesSection) return [];
   const senses = [];
   const senseHeadingRe = /^###\s+Sense\b.*$/gim;

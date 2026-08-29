@@ -9,7 +9,8 @@
     "lint": "eslint \"**/*.ts\"",
     "test:vault-paths": "node scripts/test-vault-paths.mjs",
     "test:frontmatter": "node scripts/test-frontmatter-parsing.mjs",
-    "test:body-preview": "node scripts/test-body-preview.mjs"
+    "test:body-preview": "node scripts/test-body-preview.mjs",
+    "test:lexical-senses": "node scripts/test-lexical-senses.mjs"
   },
   "keywords": [
     "obsidian",
