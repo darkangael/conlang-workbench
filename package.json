@@ -16,7 +16,8 @@
     "test:lexical-normalization": "node scripts/test-lexical-normalization.mjs",
     "test:lookup-query": "node scripts/test-lookup-query.mjs",
     "test:word-scan": "node scripts/test-word-scan.mjs",
-    "test:settings-validation": "node scripts/test-settings-validation.mjs"
+    "test:settings-validation": "node scripts/test-settings-validation.mjs",
+    "test:dictionary-entry-writer": "node scripts/test-dictionary-entry-writer.mjs"
   },
   "keywords": [
     "obsidian",

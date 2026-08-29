@@ -7,7 +7,6 @@ import {
   Notice,
   Plugin,
   TFile,
-  TFolder,
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
@@ -21,14 +20,15 @@ import {
 import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
 import {
-  classifyDictionarySourceAuthority, compareDictionaryDefinition } from "./dictionary-source";
+  inspectDictionaryEntry,
+  writeDictionaryEntry,
+} from "./dictionary-entry-writer";
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
 import { loadLanguageProfile } from "./language-profile";
 import {
   isPathWithinFolder,
-  joinVaultPath,
   validateVaultRelativePath,
 } from "./vault-paths";
 import { findInflection, InflectionMatch } from "./inflection";
@@ -992,9 +992,13 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
-   * Create one dictionary entry file. Robustly ensures the target folder
-   * exists and reports failures instead of throwing. Returns created=false
-   * when an entry with that form already exists.
+   * Create one dictionary entry requested by the multi-language creation flow.
+   *
+   * The reusable writer owns the persistent safety boundary: destination
+   * validation, strict folder creation, collision/source-authority checks,
+   * homograph allocation, and the final vault write. This method remains
+   * responsible for the entry-specific Markdown template and for adapting the
+   * writer's structured result to the older multi-entry caller contract.
    */
   private async createOneEntry(p: {
     englishText: string;
@@ -1006,180 +1010,45 @@ export default class ConlangPlugin extends Plugin {
   > {
     const form = p.conlangForm.trim();
     if (!form) return { ok: false, error: "empty conlang form" };
-    const folder = p.lang.dictionaryFolder;
-    const safeName = form.replace(/[\\/:*?"<>|]/g, "_");
 
-    // Validate the configured destination before constructing a filename or
-    // attempting any vault mutation. Invalid settings become an ordinary
-    // creation failure rather than an uncaught exception.
-    let path: string;
-    try {
-      path = joinVaultPath(folder, `${safeName}.md`);
-      await this.ensureFolderStrict(folder);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { ok: false, error: `couldn't create folder "${folder}": ${msg}` };
+    const result = await writeDictionaryEntry({
+      app: this.app,
+      form,
+      definition: p.englishText,
+      partOfSpeech: p.partOfSpeech,
+      dictionaryFolder: p.lang.dictionaryFolder,
+
+      // The writer decides whether a same-spelling lexical source requires a
+      // homograph. It then tells this callback whether the real spelling needs
+      // an explicit `word:` override in the generated Markdown.
+      buildContent: ({ wordOverride }) =>
+        [
+          "---",
+          ...(wordOverride ? [`word: ${form}`] : []),
+          `definition: ${p.englishText}`,
+          `language: ${p.lang.name}`,
+          `partOfSpeech: ${p.partOfSpeech}`,
+          "ipa: ",
+          "etymology: ",
+          "---",
+          "",
+          `# ${form}`,
+          "",
+          `Translates *${p.englishText}*.`,
+          "",
+        ].join("\n"),
+    });
+
+    if (result.status === "created") {
+      await this.waitForFrontmatter(result.file);
+      return { ok: true, created: true, path: result.path };
     }
-    let wordOverride = false;
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile) {
-      // Source authority comes before semantic comparison. Only a source that
-      // Dictionary recognizes as lexical may have its gloss/definition used
-      // to decide whether this is the same word or a homograph.
-      const authority = this.classifyExistingDictionarySource(existing);
 
-      if (authority === "unknown") {
-        return {
-          ok: false,
-          error: this.existingDefinitionUnknownMessage(existing),
-        };
-      }
-
-      if (authority !== "lexical") {
-        return {
-          ok: false,
-          error: this.existingNonLexicalSourceMessage(existing),
-        };
-      }
-
-      const comparison = this.compareExistingEntryDefinition(
-        existing,
-        p.englishText,
-      );
-
-      if (comparison === "same") {
-        return { ok: true, created: false, path };
-      }
-
-      if (comparison === "unknown") {
-        return {
-          ok: false,
-          error: this.existingDefinitionUnknownMessage(existing),
-        };
-      }
-
-      // Only a confirmed different meaning authorizes creation of another
-      // persistent source for the same spelling.
-      path = this.freeHomographPath(folder, safeName, p.partOfSpeech);
-      wordOverride = true;
+    if (result.status === "existing") {
+      return { ok: true, created: false, path: result.path };
     }
-    const content = [
-      "---",
-      ...(wordOverride ? [`word: ${form}`] : []),
-      `definition: ${p.englishText}`,
-      `language: ${p.lang.name}`,
-      `partOfSpeech: ${p.partOfSpeech}`,
-      "ipa: ",
-      "etymology: ",
-      "---",
-      "",
-      `# ${form}`,
-      "",
-      `Translates *${p.englishText}*.`,
-      "",
-    ].join("\n");
-    try {
-      const file = await this.app.vault.create(path, content);
-      await this.waitForFrontmatter(file);
-      return { ok: true, created: true, path };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { ok: false, error: `couldn't create "${path}": ${msg}` };
-    }
-  }
 
-  /**
-   * Find a free file path for a new entry whose surface form collides with
-   * an existing file (a homograph). Two files can't share a name, so the new
-   * sense lives in a file with a disambiguating suffix and declares the real
-   * spelling via the `word:` frontmatter override. Prefers a part-of-speech
-   * suffix ("kala (noun).md"), falling back to numbers ("kala (2).md").
-   */
-  private freeHomographPath(
-    folder: string,
-    safeName: string,
-    partOfSpeech?: string,
-  ): string {
-    const pos = (partOfSpeech ?? "").trim().replace(/[\\/:*?"<>|]/g, "_");
-    if (pos) {
-      const p = joinVaultPath(folder, `${safeName} (${pos}).md`);
-      if (!this.app.vault.getAbstractFileByPath(p)) return p;
-    }
-    for (let n = 2; n < 100; n++) {
-      const p = joinVaultPath(folder, `${safeName} (${n}).md`);
-      if (!this.app.vault.getAbstractFileByPath(p)) return p;
-    }
-    // 99+ senses of one spelling — fall back to something guaranteed unique.
-    return joinVaultPath(folder, `${safeName} (${Date.now()}).md`);
-  }
-
-  /**
-   * Ask the shared dictionary parser whether an existing entry has the same
-   * meaning, a different meaning, or cannot safely be interpreted.
-   *
-   * `cache?.frontmatter` uses TypeScript's optional chaining operator (`?.`).
-   * If Obsidian has no metadata cache for this file, the expression becomes
-   * `undefined` instead of throwing an error. The comparison helper then
-   * returns "unknown".
-   *
-   * Callers must treat "unknown" as a stop condition. Only "different" is
-   * permission to create a homograph.
-   */
-  /**
-   * Ask the shared dictionary source classifier whether an existing file may
-   * be interpreted as a lexical source.
-   *
-   * This check happens before definition comparison. A morpheme, phonological
-   * source, or supporting note may legitimately share fields such as `gloss`,
-   * but those fields do not give Dictionary permission to treat that source
-   * as an existing word.
-   *
-   * Untyped legacy lexical notes remain "lexical" when they contain strong
-   * lexical signals such as `gloss`, `definition`, or `lemma`.
-   */
-  private classifyExistingDictionarySource(
-    file: TFile,
-  ): "lexical" | "other-source" | "unclaimed" | "unknown" {
-    const cache = this.app.metadataCache.getFileCache(file);
-    return classifyDictionarySourceAuthority(cache?.frontmatter);
-  }
-
-  private compareExistingEntryDefinition(
-    file: TFile,
-    definition: string,
-  ): "same" | "different" | "unknown" {
-    const cache = this.app.metadataCache.getFileCache(file);
-    return compareDictionaryDefinition(cache?.frontmatter, definition);
-  }
-
-  /**
-   * Build the message shown when Workbench refuses an unsafe creation attempt.
-   *
-   * We deliberately stop instead of guessing. If the existing file cannot be
-   * interpreted safely, Workbench leaves creator-authored data unchanged and
-   * does not create a second file that might represent a false homograph.
-   */
-  private existingDefinitionUnknownMessage(file: TFile): string {
-    return (
-      `couldn't safely determine whether existing entry "${file.path}" ` +
-      "already contains this meaning because its frontmatter is unavailable " +
-      "or unusable"
-    );
-  }
-
-  /**
-   * Explain why a same-filename source was preserved instead of being treated
-   * as a dictionary entry.
-   *
-   * The user's explicit request to create a word does not authorize Workbench
-   * to reinterpret an existing source that belongs to another feature or has
-   * not established lexical authority.
-   */
-  private existingNonLexicalSourceMessage(file: TFile): string {
-    return (
-      `existing file "${file.path}" is not established as a lexical entry. ` +
-      "It was preserved unchanged and no new entry was created"
-    );
+    return { ok: false, error: result.error };
   }
 
   /** Reload the dictionary + refresh UI after entries were added/changed. */
@@ -1188,33 +1057,6 @@ export default class ConlangPlugin extends Plugin {
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
-  }
-
-  /**
-   * Ensure a (possibly nested) folder exists, creating each missing level.
-   * Throws on a real failure (unlike ensureFolder, which is best-effort) so
-   * callers can surface the error to the user.
-   */
-  private async ensureFolderStrict(path: string): Promise<void> {
-    const safePath = validateVaultRelativePath(path);
-    const parts = safePath.split("/");
-    let current = "";
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      const existing = this.app.vault.getAbstractFileByPath(current);
-      if (existing instanceof TFolder) continue;
-      if (existing) throw new Error(`"${current}" exists but is not a folder`);
-      try {
-        await this.app.vault.createFolder(current);
-      } catch (e) {
-        // Tolerate a race where the folder appeared between check and create.
-        if (
-          !(this.app.vault.getAbstractFileByPath(current) instanceof TFolder)
-        ) {
-          throw e;
-        }
-      }
-    }
   }
 
   /**
@@ -1400,93 +1242,96 @@ export default class ConlangPlugin extends Plugin {
       return;
     }
 
-    // First determine what the existing same-spelling file means.
-    //
-    // "same"    -> open the existing entry.
-    // "unknown" -> stop without changing the vault.
-    // "different" continues below and may create a homograph after the user
-    //              supplies the remaining entry information.
-    const safeName = translated.replace(/[\\/:*?"<>|]/g, "_");
-    let path = joinVaultPath(folder, `${safeName}.md`);
-    await this.ensureFolder(folder);
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile) {
-      const authority = this.classifyExistingDictionarySource(existing);
+    // Inspect first without mutating the vault. This preserves the existing
+    // quick-entry behavior: an already-known word opens immediately, while a
+    // genuinely new word or homograph proceeds to the part-of-speech prompt.
+    const inspection = inspectDictionaryEntry(
+      this.app,
+      folder,
+      translated,
+      englishText,
+    );
 
-      if (authority === "unknown") {
-        new Notice(
-          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
-          9000,
-        );
-        return;
-      }
-
-      if (authority !== "lexical") {
-        new Notice(
-          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
-          9000,
-        );
-        return;
-      }
-
-      const comparison = this.compareExistingEntryDefinition(
-        existing,
-        englishText,
+    if (inspection.status === "blocked") {
+      new Notice(
+        `Conlang Workbench: ${inspection.error}. No new entry was created.`,
+        9000,
       );
-
-      if (comparison === "same") {
-        await this.app.workspace.getLeaf(false).openFile(existing);
-        new Notice(`Conlang: opened existing entry "${translated}"`);
-        return;
-      }
-
-      if (comparison === "unknown") {
-        new Notice(
-          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
-          9000,
-        );
-        return;
-      }
+      return;
     }
 
-    // Prompt for part of speech. The user can skip or cancel.
+    if (inspection.status === "existing") {
+      await this.app.workspace.getLeaf(false).openFile(inspection.file);
+      new Notice(`Conlang: opened existing entry "${translated}"`);
+      return;
+    }
+
+    // Prompt only after the read-only inspection establishes that creation may
+    // actually be needed. Cancelling here therefore performs no vault mutation.
     const opts = await this.promptForEntryOptions(englishText, translated);
     if (opts === null) return; // user cancelled
 
-    let wordOverride = false;
-    if (existing instanceof TFile) {
-      path = this.freeHomographPath(folder, safeName, opts.partOfSpeech);
-      wordOverride = true;
+    const result = await writeDictionaryEntry({
+      app: this.app,
+      form: translated,
+      definition: englishText,
+      partOfSpeech: opts.partOfSpeech,
+      dictionaryFolder: folder,
+
+      // Keep this command's established Markdown template here. The writer owns
+      // persistence safety, not the linguistic/document presentation.
+      buildContent: ({ wordOverride }) =>
+        [
+          "---",
+          ...(wordOverride ? [`word: ${translated}`] : []),
+          `definition: ${englishText}`,
+          `language: ${lang.name}`,
+          `partOfSpeech: ${opts.partOfSpeech}`,
+          "ipa: ",
+          "etymology: ",
+          "---",
+          "",
+          `# ${translated}`,
+          "",
+          `Translates *${englishText}*.`,
+          "",
+        ].join("\n"),
+    });
+
+    if (result.status === "blocked" || result.status === "failed") {
+      new Notice(
+        `Conlang Workbench: ${result.error}. No new entry was created.`,
+        9000,
+      );
+      return;
     }
-    const content = [
-      "---",
-      ...(wordOverride ? [`word: ${translated}`] : []),
-      `definition: ${englishText}`,
-      `language: ${lang.name}`,
-      `partOfSpeech: ${opts.partOfSpeech}`,
-      "ipa: ",
-      "etymology: ",
-      "---",
-      "",
-      `# ${translated}`,
-      "",
-      `Translates *${englishText}*.`,
-      "",
-    ].join("\n");
-    const file = await this.app.vault.create(path, content);
+
+    if (result.status === "existing") {
+      // The vault may have changed while the modal was open. Re-running the
+      // writer's safety checks after confirmation means a newly appeared
+      // same-meaning entry is opened rather than duplicated.
+      await this.app.workspace.getLeaf(false).openFile(result.file);
+      new Notice(`Conlang: opened existing entry "${translated}"`);
+      return;
+    }
+
+    const file = result.file;
     await this.app.workspace.getLeaf(false).openFile(file);
 
-    // The metadata cache parses frontmatter asynchronously. If we reload
-    // the dictionary right now, the new file's frontmatter won't be cached
-    // yet and the entry will be silently skipped. Wait until the cache has
-    // populated for this specific file before reloading.
+    // Obsidian populates frontmatter metadata asynchronously after file
+    // creation. Wait for this specific file before rebuilding Dictionary so
+    // the new lexical source is not temporarily omitted from the index.
     await this.waitForFrontmatter(file);
     await this.reloadActiveLanguage();
     this.refreshPanel();
     this.refreshHighlights();
-    this.lastHoverWord = null; // force the next hover to re-resolve against the new index
+    this.lastHoverWord = null;
+
     const isActive = this.settings.activeLanguages.includes(lang.name);
-    const senseNote = wordOverride ? " as a new sense of an existing word" : "";
+    const senseNote = result.wordOverride
+      ? " as a new sense of an existing word"
+      : "";
+
     new Notice(
       isActive
         ? `Made Up Words: created "${translated}" in ${lang.name}${senseNote}`
@@ -1535,85 +1380,69 @@ export default class ConlangPlugin extends Plugin {
       return;
     }
 
-    await this.ensureFolder(folder);
-    const safeName = result.conlangWord.replace(/[\\/:*?"<>|]/g, "_");
-    let path = joinVaultPath(folder, `${safeName}.md`);
-    let wordOverride = false;
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile) {
-      const authority = this.classifyExistingDictionarySource(existing);
+    const writeResult = await writeDictionaryEntry({
+      app: this.app,
+      form: result.conlangWord,
+      definition: result.englishDefinition,
+      partOfSpeech: result.partOfSpeech,
+      dictionaryFolder: folder,
 
-      if (authority === "unknown") {
-        new Notice(
-          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
-          9000,
+      // WordCreationModal has already collected all of the linguistic fields
+      // needed by this command. The writer owns collision handling and the
+      // persistent vault boundary; this callback retains the Word command's
+      // established Markdown layout.
+      buildContent: ({ wordOverride }) => {
+        const fmLines = [
+          "---",
+          ...(wordOverride ? [`word: ${result.conlangWord}`] : []),
+          `definition: ${result.englishDefinition}`,
+          `language: ${lang.name}`,
+        ];
+
+        if (result.partOfSpeech) {
+          fmLines.push(`partOfSpeech: ${result.partOfSpeech}`);
+        } else {
+          fmLines.push("partOfSpeech: ");
+        }
+
+        fmLines.push(
+          "ipa: ",
+          "etymology: ",
+          "---",
+          "",
+          `# ${result.conlangWord}`,
+          "",
+          "",
         );
-        return;
-      }
 
-      if (authority !== "lexical") {
-        new Notice(
-          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
-          9000,
-        );
-        return;
-      }
+        return fmLines.join("\n");
+      },
+    });
 
-      const comparison = this.compareExistingEntryDefinition(
-        existing,
-        result.englishDefinition,
+    if (writeResult.status === "blocked" || writeResult.status === "failed") {
+      new Notice(
+        `Conlang Workbench: ${writeResult.error}. No new entry was created.`,
+        9000,
       );
-
-      if (comparison === "same") {
-        await this.app.workspace.getLeaf(false).openFile(existing);
-        new Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
-        return;
-      }
-
-      if (comparison === "unknown") {
-        new Notice(
-          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
-          9000,
-        );
-        return;
-      }
-
-      // Only a confirmed different meaning authorizes a new homograph source.
-      path = this.freeHomographPath(folder, safeName, result.partOfSpeech);
-      wordOverride = true;
+      return;
     }
 
-    const fmLines = [
-      "---",
-      ...(wordOverride ? [`word: ${result.conlangWord}`] : []),
-      `definition: ${result.englishDefinition}`,
-      `language: ${lang.name}`,
-    ];
-    if (result.partOfSpeech) {
-      fmLines.push(`partOfSpeech: ${result.partOfSpeech}`);
-    } else {
-      fmLines.push("partOfSpeech: ");
+    if (writeResult.status === "existing") {
+      await this.app.workspace.getLeaf(false).openFile(writeResult.file);
+      new Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
+      return;
     }
-    fmLines.push(
-      "ipa: ",
-      "etymology: ",
-      "---",
-      "",
-      `# ${result.conlangWord}`,
-      "",
-      "",
-    );
-    const content = fmLines.join("\n");
 
-    const file = await this.app.vault.create(path, content);
+    const file = writeResult.file;
     await this.app.workspace.getLeaf(false).openFile(file);
     await this.waitForFrontmatter(file);
     await this.reloadActiveLanguage();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
+
     new Notice(
-      wordOverride
+      writeResult.wordOverride
         ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word`
         : `Conlang: added "${result.conlangWord}"`,
     );
@@ -1648,78 +1477,61 @@ export default class ConlangPlugin extends Plugin {
       return;
     }
 
-    await this.ensureFolder(folder);
-    const safeName = result.conlangForm.replace(/[\\/:*?"<>|]/g, "_");
-    let path = joinVaultPath(folder, `${safeName}.md`);
+    // A name's referent is its lexical definition for collision purposes.
+    // When no separate referent was supplied, preserve the existing fallback
+    // to the name itself.
     const referent = result.referent || result.conlangForm;
-    let wordOverride = false;
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile) {
-      const authority = this.classifyExistingDictionarySource(existing);
 
-      if (authority === "unknown") {
-        new Notice(
-          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
-          9000,
-        );
-        return;
-      }
+    const writeResult = await writeDictionaryEntry({
+      app: this.app,
+      form: result.conlangForm,
+      definition: referent,
 
-      if (authority !== "lexical") {
-        new Notice(
-          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
-          9000,
-        );
-        return;
-      }
+      // Names always use proper-noun in their stored lexical metadata, but the
+      // user-facing category is a better filename disambiguator for homographs.
+      // Passing it here preserves the existing "Name (place).md"-style policy.
+      partOfSpeech: result.category || "name",
+      dictionaryFolder: folder,
 
-      const comparison = this.compareExistingEntryDefinition(
-        existing,
-        referent,
+      // Keep Name-specific metadata and body layout in the Name command. The
+      // shared writer owns only persistence safety and tells us whether the
+      // generated note needs an explicit spelling override.
+      buildContent: ({ wordOverride }) =>
+        [
+          "---",
+          ...(wordOverride ? [`word: ${result.conlangForm}`] : []),
+          `definition: ${referent}`,
+          `language: ${lang.name}`,
+          "partOfSpeech: proper-noun",
+          `nameCategory: ${result.category}`,
+          "ipa: ",
+          "etymology: ",
+          "---",
+          "",
+          `# ${result.conlangForm}`,
+          "",
+          // Empty placeholder paragraph — the user fills this in to describe
+          // who/what this name refers to in their world. Dictionary uses it as
+          // the body preview on hover.
+          "",
+        ].join("\n"),
+    });
+
+    if (writeResult.status === "blocked" || writeResult.status === "failed") {
+      new Notice(
+        `Conlang Workbench: ${writeResult.error}. No new entry was created.`,
+        9000,
       );
-
-      if (comparison === "same") {
-        await this.app.workspace.getLeaf(false).openFile(existing);
-        new Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
-        return;
-      }
-
-      if (comparison === "unknown") {
-        new Notice(
-          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
-          9000,
-        );
-        return;
-      }
-
-      // Only a confirmed different referent authorizes a new homograph source.
-      path = this.freeHomographPath(
-        folder,
-        safeName,
-        result.category || "name",
-      );
-      wordOverride = true;
+      return;
     }
 
-    const content = [
-      "---",
-      ...(wordOverride ? [`word: ${result.conlangForm}`] : []),
-      `definition: ${referent}`,
-      `language: ${lang.name}`,
-      "partOfSpeech: proper-noun",
-      `nameCategory: ${result.category}`,
-      "ipa: ",
-      "etymology: ",
-      "---",
-      "",
-      `# ${result.conlangForm}`,
-      "",
-      // Empty placeholder paragraph — the user fills this in to describe
-      // who/what this name refers to in their world. Picked up as the
-      // bodyPreview on hover.
-      "",
-    ].join("\n");
-    const file = await this.app.vault.create(path, content);
+    if (writeResult.status === "existing") {
+      await this.app.workspace.getLeaf(false).openFile(writeResult.file);
+      new Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
+      return;
+    }
+
+    const file = writeResult.file;
     await this.app.workspace.getLeaf(false).openFile(file);
 
     await this.waitForFrontmatter(file);
@@ -1765,23 +1577,6 @@ export default class ConlangPlugin extends Plugin {
       // Safety net: don't block forever if the cache never fires
       const timer = window.setTimeout(finish, 2000);
     });
-  }
-
-  private async ensureFolder(path: string) {
-    const safePath = validateVaultRelativePath(path);
-    const parts = safePath.split("/");
-    let current = "";
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      const exists = this.app.vault.getAbstractFileByPath(current);
-      if (!exists) {
-        try {
-          await this.app.vault.createFolder(current);
-        } catch {
-          // ignore concurrent creation
-        }
-      }
-    }
   }
 
   // === Hover tooltips ===
