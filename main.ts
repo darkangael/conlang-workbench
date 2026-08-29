@@ -31,7 +31,8 @@ import {
 } from "./vault-paths";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
-import { WORD_RE, cleanWord, isWordChar, applyCasing } from "./word-tokens";
+import { WORD_RE, cleanWord, applyCasing } from "./word-tokens";
+import { findWordRangeAt } from "./word-scan";
 import { classifySelectionLookup } from "./selection-lookup";
 import { classifyLookupQuery } from "./lookup-query";
 import { confirmPhraseTranslation } from "./phrase-confirm-modal";
@@ -758,15 +759,17 @@ export default class ConlangPlugin extends Plugin {
     }
     const cursor = editor.getCursor();
     const line = editor.getLine(cursor.line);
-    let start = cursor.ch;
-    let end = cursor.ch;
-    while (start > 0 && isWordChar(line[start - 1])) start--;
-    while (end < line.length && isWordChar(line[end])) end++;
-    if (start === end) return null;
+
+    // Delegate lexical boundary handling to the shared scanner. It preserves
+    // Obsidian's UTF-16 cursor coordinates while scanning complete Unicode
+    // code points, including supplementary-plane letters.
+    const range = findWordRangeAt(line, cursor.ch);
+    if (!range) return null;
+
     return {
-      text: line.substring(start, end),
-      from: { line: cursor.line, ch: start },
-      to: { line: cursor.line, ch: end },
+      text: line.substring(range.start, range.end),
+      from: { line: cursor.line, ch: range.start },
+      to: { line: cursor.line, ch: range.end },
     };
   }
 
@@ -886,9 +889,10 @@ export default class ConlangPlugin extends Plugin {
       return;
     }
 
-    // The no-selection path is already constrained by getSelectionOrWord():
-    // it scans only characters accepted by isWordChar(). Keep its established
-    // behavior intact rather than broadening this security fix unnecessarily.
+    // The no-selection path is already constrained by getSelectionOrWord(),
+    // which returns only a lexical word identified by the shared word scanner.
+    // Keep its established behavior intact rather than broadening this
+    // security fix unnecessarily.
     const entry = this.dictionary.lookup(cleanWord(sel.text));
     if (entry) {
       new Notice(`${entry.word}  →  ${entry.definition}`, 6000);
@@ -1955,20 +1959,26 @@ export default class ConlangPlugin extends Plugin {
     if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return null;
     const text = textNode.textContent ?? "";
     if (!text) return null;
-    let start = offset;
-    let end = offset;
-    while (start > 0 && isWordChar(text[start - 1])) start--;
-    while (end < text.length && isWordChar(text[end])) end++;
-    if (start === end) return null;
-    const word = text.substring(start, end);
+    // DOM text offsets are also UTF-16 coordinates, so the same scanner used
+    // by editor cursor lookup can safely identify the complete lexical word
+    // here without splitting supplementary-plane Unicode characters.
+    const range = findWordRangeAt(text, offset);
+    if (!range) return null;
+
+    const word = text.substring(range.start, range.end);
+
     // Grab ~50 chars on either side for phrase context. We can't see across
     // text nodes from a single hover, but phrases are short enough that
     // a single text node usually contains them.
     const forwardContext = text.substring(
-      start,
-      Math.min(text.length, end + 50),
+      range.start,
+      Math.min(text.length, range.end + 50),
     );
-    const backwardContext = text.substring(Math.max(0, start - 50), end);
+    const backwardContext = text.substring(
+      Math.max(0, range.start - 50),
+      range.end,
+    );
+
     return { word, forwardContext, backwardContext };
   }
 

@@ -1505,15 +1505,71 @@ The Test Language vault intentionally retains dedicated H9 lookup-authority,
 phrase, and Unicode fixtures as permanent regression/example material rather
 than treating successful runtime data as disposable.
 
+#### SEC-004-H10 — Cursor and hover word scanning could split valid supplementary-plane Unicode letters
+
+- **Severity:** Hardening
+- **Primary impact:** Semantic integrity, lookup correctness, and lexical-range integrity
+- **Data-safety relevance:** Yes
+- **Source mutation:** Indirect relevance — the scanner does not itself mutate source text, but cursor-derived ranges can be consumed by mutation-capable commands
+- **Status:** Remediated, regression-tested, build-verified, and runtime-verified
+
+Cursor-derived word lookup and DOM hover scanning previously walked strings by
+direct UTF-16 code-unit indexing. JavaScript strings expose supplementary-plane
+Unicode characters as surrogate pairs through indexed access, so a valid
+supplementary-plane letter could be presented to the lexical classifier as two
+invalid surrogate halves rather than one complete Unicode code point.
+
+Controlled reproduction with U+10400 DESERET CAPITAL LETTER LONG I confirmed
+the boundary defect. The complete character is a Unicode letter and occupies
+two UTF-16 code units, while each separately indexed surrogate half fails the
+letter classifier. Under the previous scanners, a lexical form such as
+`var𐐀u` could therefore fail or split around the supplementary-plane letter.
+
+The remediation introduces `word-scan.ts` as the shared cursor/hover lexical
+range scanner. It iterates complete Unicode code points while deliberately
+returning UTF-16 start/end offsets, preserving compatibility with Obsidian
+editor positions, DOM text offsets, and JavaScript substring operations.
+
+The shared scanner now handles both editor cursor-derived words and DOM hover
+words. It preserves the established lexical grammar and boundary behavior
+rather than using this Unicode correction to redesign punctuation,
+apostrophe/hyphen, casing, or language-specific orthographic policy. Those
+broader design questions remain covered by the existing deferred work.
+
+Regression coverage in `npm run test:word-scan` verifies:
+
+- ordinary BMP lexical words
+- precomposed Unicode letters
+- decomposed base-plus-combining-mark lexical forms
+- supplementary-plane letters at initial, medial, and final positions
+- cursor offsets at both UTF-16 positions inside a supplementary-plane
+  character
+- UTF-16 range coordinates returned for complete supplementary-plane words
+- preservation of established whitespace boundary behavior
+
+Neighboring `test:lexical-normalization`, `test:lookup-query`, and
+`test:selection-lookup` coverage also passes. The broader §4 regression suite
+and production build pass at the H10 checkpoint.
+
+Obsidian runtime testing additionally verified that the permanent Test Language
+entry `var𐐀u` resolves as one complete lexical form through cursor lookup and
+through Reading View hover. Neither runtime path split the entry around the
+supplementary-plane letter.
+
+The Test Language vault intentionally retains
+`H10 Supplementary Unicode Runtime Test.md` and the `var𐐀u` dictionary entry as
+permanent regression/example fixtures.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
 parsing, phonology source parsing, dictionary source parsing, standalone
 linguistic-example source parsing, Markdown body-preview extraction, structured
 lexical-sense Markdown parsing, explicit-selection lookup semantics, Unicode
-lexical normalization, and general Lookup-command query authority reviewed;
-SEC-004-H1 through SEC-004-H9 are remediated and regression-tested. The
-remaining frontmatter and Markdown input surfaces still require review.**
+lexical normalization, general Lookup-command query authority, and
+Unicode-safe cursor/hover word scanning reviewed; SEC-004-H1 through SEC-004-H10
+are remediated and regression-tested. The remaining frontmatter and Markdown
+input surfaces still require review.**
 
 ---
 
@@ -1999,6 +2055,7 @@ audit section.
 | SEC-004-H7 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Whole-selection cleanup could delete separators and manufacture a different dictionary lookup token from the text the user explicitly selected. | Code review; `test:selection-lookup`; `test:gloss-rendering`; Obsidian runtime verification of single-word lookup, phrase confirmation, cancellation, confirmed phrase translation, and punctuation-separated rejection | Preview-to-English now classifies explicit selection intent before lookup. Safe single words may shed only harmless outer punctuation/whitespace; whitespace-separated multi-word selections require phrase confirmation; unsafe internal separators are rejected rather than deleted. Source text is not modified. |
 | SEC-004-H8 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Unicode combining marks could be dropped or treated as token boundaries, changing creator-authored lexical forms and causing incorrect or failed lookup. | Controlled Unicode tests; `test:lexical-normalization`; production cypher regression coverage; production build; Obsidian runtime verification of canonically equivalent single-word and phrase lookup | Combining marks are preserved as lexical continuation content; NFC is applied only to derived comparison/index keys; dictionary, phrase, panel, and cypher behavior share Unicode-safe lexical semantics; creator-authored source/display spelling is not normalized or rewritten. |
 | SEC-004-H9 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query from the user's explicit selection. | Controlled destructive-cleanup tests; `test:lookup-query`; neighboring H7/H8 regression coverage; production build; Obsidian runtime verification of unsafe-selection rejection, phrase lookup, and decomposed-to-precomposed Unicode lookup | The general Lookup command now classifies explicit query authority before lookup; unsafe internal material is rejected rather than deleted; `collectLookupMatches()` no longer manufactures cleaned queries; permanent Test Language fixtures retain the phrase and Unicode runtime cases. |
+| SEC-004-H10 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Cursor and hover word scanning could split valid supplementary-plane Unicode letters by indexing UTF-16 code units rather than complete Unicode code points. | Controlled supplementary-plane reproduction; `test:word-scan`; neighboring H8/H9 regression coverage; production build; Obsidian runtime verification of complete `var𐐀u` cursor lookup and Reading View hover | Shared `word-scan.ts` now scans complete Unicode code points while returning UTF-16-compatible ranges. Existing lexical-boundary semantics are preserved; permanent Test Language H10 fixtures retain the runtime case. |
 
 ---
 

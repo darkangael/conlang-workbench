@@ -2505,6 +2505,69 @@ function applyRuleForward(lemma, rule) {
   return null;
 }
 
+// word-scan.ts
+function collectCodePointSpans(text) {
+  const spans = [];
+  let offset = 0;
+  for (const codePoint of text) {
+    const start = offset;
+    offset += codePoint.length;
+    spans.push({
+      start,
+      end: offset,
+      text: codePoint,
+      isWord: isWordChar(codePoint)
+    });
+  }
+  return spans;
+}
+function findWordRangeAt(text, offset) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > text.length) {
+    return null;
+  }
+  if (text.length === 0) return null;
+  const spans = collectCodePointSpans(text);
+  if (spans.length === 0) return null;
+  let anchor = -1;
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i];
+    if (span.start < offset && offset < span.end) {
+      if (!span.isWord) return null;
+      anchor = i;
+      break;
+    }
+  }
+  if (anchor === -1) {
+    for (let i = 0; i < spans.length; i++) {
+      if (spans[i].end === offset && spans[i].isWord) {
+        anchor = i;
+        break;
+      }
+    }
+  }
+  if (anchor === -1) {
+    for (let i = 0; i < spans.length; i++) {
+      if (spans[i].start === offset && spans[i].isWord) {
+        anchor = i;
+        break;
+      }
+    }
+  }
+  if (anchor === -1) return null;
+  let first = anchor;
+  let last = anchor;
+  while (first > 0 && spans[first - 1].isWord) {
+    first--;
+  }
+  while (last + 1 < spans.length && spans[last + 1].isWord) {
+    last++;
+  }
+  return {
+    start: spans[first].start,
+    end: spans[last].end
+  };
+}
+
 // selection-lookup.ts
 function classifySelectionLookup(sourceText) {
   const wordRe = new RegExp(WORD_RE.source, "gu");
@@ -7989,15 +8052,12 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     }
     const cursor = editor.getCursor();
     const line = editor.getLine(cursor.line);
-    let start = cursor.ch;
-    let end = cursor.ch;
-    while (start > 0 && isWordChar(line[start - 1])) start--;
-    while (end < line.length && isWordChar(line[end])) end++;
-    if (start === end) return null;
+    const range = findWordRangeAt(line, cursor.ch);
+    if (!range) return null;
     return {
-      text: line.substring(start, end),
-      from: { line: cursor.line, ch: start },
-      to: { line: cursor.line, ch: end }
+      text: line.substring(range.start, range.end),
+      from: { line: cursor.line, ch: range.start },
+      to: { line: cursor.line, ch: range.end }
     };
   }
   async previewToConlang(editor) {
@@ -8892,25 +8952,25 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
       textNode = pos.offsetNode;
       offset = pos.offset;
     } else if (typeof doc.caretRangeFromPoint === "function") {
-      const range = doc.caretRangeFromPoint(x, y);
-      if (!range) return null;
-      textNode = range.startContainer;
-      offset = range.startOffset;
+      const range2 = doc.caretRangeFromPoint(x, y);
+      if (!range2) return null;
+      textNode = range2.startContainer;
+      offset = range2.startOffset;
     }
     if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return null;
     const text = (_a = textNode.textContent) != null ? _a : "";
     if (!text) return null;
-    let start = offset;
-    let end = offset;
-    while (start > 0 && isWordChar(text[start - 1])) start--;
-    while (end < text.length && isWordChar(text[end])) end++;
-    if (start === end) return null;
-    const word = text.substring(start, end);
+    const range = findWordRangeAt(text, offset);
+    if (!range) return null;
+    const word = text.substring(range.start, range.end);
     const forwardContext = text.substring(
-      start,
-      Math.min(text.length, end + 50)
+      range.start,
+      Math.min(text.length, range.end + 50)
     );
-    const backwardContext = text.substring(Math.max(0, start - 50), end);
+    const backwardContext = text.substring(
+      Math.max(0, range.start - 50),
+      range.end
+    );
     return { word, forwardContext, backwardContext };
   }
   ensureTooltipEl() {
