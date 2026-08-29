@@ -25,6 +25,7 @@ const { parseInflectedForms, parseStringList } =
 const {
   firstParsedFrontmatterValue,
   parseNonBlankYamlScalarText,
+  parseNonBlankYamlString,
   parseYamlScalarText,
   parseYamlString,
 } = await importBundled("frontmatter-values.ts");
@@ -34,6 +35,9 @@ const { createObsidianWorkbenchIdentity } =
 
 const { parseMorphemeSource } =
   await importBundled("morpheme-source.ts");
+
+const { parsePhonologySource } =
+  await importBundled("phonology-source.ts");
 
 // ---------------------------------------------------------------------------
 // Shared frontmatter value boundary
@@ -52,6 +56,17 @@ assert.equal(parseYamlScalarText(["nested"]), undefined);
 assert.equal(parseYamlString("alpha"), "alpha");
 assert.equal(parseYamlString(42), undefined);
 assert.equal(parseYamlString(true), undefined);
+
+// Strict alias readers may also require the string to contain actual content.
+// Unlike scalar-tolerant parsing, numbers and booleans remain rejected.
+assert.equal(parseNonBlankYamlString("  alpha  "), "alpha");
+assert.equal(parseNonBlankYamlString("   "), undefined);
+assert.equal(parseNonBlankYamlString(42), undefined);
+assert.equal(parseNonBlankYamlString(true), undefined);
+assert.equal(
+  parseNonBlankYamlString({ unexpected: "shape" }),
+  undefined,
+);
 
 // Nonblank scalar parsing is specifically suitable for alias recovery.
 assert.equal(parseNonBlankYamlScalarText("  alpha  "), "alpha");
@@ -358,6 +373,279 @@ assert.equal(
       type: "phonological-unit",
       morpheme_id: "not-ours",
       gloss: "not a morpheme",
+    }),
+  ),
+  null,
+);
+
+// ---------------------------------------------------------------------------
+// Phonology source adapter
+// ---------------------------------------------------------------------------
+function makePhonologySource(frontmatter, overrides = {}) {
+  return {
+    path: "Languages/Test Language/Phonology/test.md",
+    frontmatter,
+    ...overrides,
+  };
+}
+
+// Canonical unit notes produce a discriminated source record and clean unit.
+const validUnitSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: "p",
+    symbol: "/p/",
+    language_id: "test-language",
+  }),
+);
+assert.ok(validUnitSource);
+assert.equal(validUnitSource.kind, "unit");
+assert.equal(validUnitSource.record.value?.id, "p");
+assert.equal(validUnitSource.record.value?.symbol, "/p/");
+assert.equal(
+  validUnitSource.record.identity.linguisticID,
+  "p",
+);
+assert.equal(validUnitSource.record.diagnostics.length, 0);
+
+// Canonical realization notes are classified separately from unit notes.
+const validRealizationSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-realization",
+    realization_id: "p-aspirated",
+    unit_id: "p",
+    symbol: "[pʰ]",
+    environment: "word-initial before a stressed vowel",
+  }),
+);
+assert.ok(validRealizationSource);
+assert.equal(validRealizationSource.kind, "realization");
+assert.equal(
+  validRealizationSource.record.value?.id,
+  "p-aspirated",
+);
+assert.equal(validRealizationSource.record.value?.unitId, "p");
+assert.equal(validRealizationSource.record.value?.symbol, "[pʰ]");
+
+// Malformed preferred aliases must not suppress a valid supported fallback.
+const recoveredUnitIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: { malformed: "structure" },
+    unitId: "p",
+    symbol: "/p/",
+  }),
+);
+assert.ok(recoveredUnitIdSource);
+assert.equal(recoveredUnitIdSource.kind, "unit");
+assert.equal(recoveredUnitIdSource.record.value?.id, "p");
+assert.ok(
+  recoveredUnitIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "unit_id" &&
+      diagnostic.severity === "warning",
+  ),
+);
+
+// Blank preferred aliases are equally unusable and must not hide fallbacks.
+const recoveredBlankUnitIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: "   ",
+    "unit-id": "p",
+    symbol: "/p/",
+  }),
+);
+assert.ok(recoveredBlankUnitIdSource);
+assert.equal(recoveredBlankUnitIdSource.kind, "unit");
+assert.equal(recoveredBlankUnitIdSource.record.value?.id, "p");
+assert.ok(
+  recoveredBlankUnitIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "unit_id",
+  ),
+);
+
+// Strict-string semantics remain intact. Numeric IDs are not coerced.
+const recoveredNumericPreferredUnitIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: 42,
+    unitId: "p",
+    symbol: "/p/",
+  }),
+);
+assert.ok(recoveredNumericPreferredUnitIdSource);
+assert.equal(
+  recoveredNumericPreferredUnitIdSource.record.value?.id,
+  "p",
+);
+assert.ok(
+  recoveredNumericPreferredUnitIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "unit_id",
+  ),
+);
+
+// Recognized malformed units remain retained under Workbench/source identity.
+const malformedUnitIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: { malformed: "structure" },
+    unitId: 42,
+    "unit-id": ["also", "malformed"],
+    symbol: "/p/",
+  }),
+);
+assert.ok(malformedUnitIdSource);
+assert.equal(malformedUnitIdSource.kind, "unit");
+assert.equal(malformedUnitIdSource.record.value, null);
+assert.ok(malformedUnitIdSource.record.identity.workbenchID);
+assert.ok(malformedUnitIdSource.record.identity.sourceID);
+assert.equal(
+  malformedUnitIdSource.record.identity.linguisticID,
+  undefined,
+);
+assert.ok(
+  malformedUnitIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "phonology.unit.missing-id" &&
+      diagnostic.severity === "error",
+  ),
+);
+
+// Required symbols must also be usable strict strings.
+const missingUnitSymbolSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: "p",
+    symbol: { malformed: "structure" },
+  }),
+);
+assert.ok(missingUnitSymbolSource);
+assert.equal(missingUnitSymbolSource.kind, "unit");
+assert.equal(missingUnitSymbolSource.record.value, null);
+assert.ok(
+  missingUnitSymbolSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "phonology.unit.missing-symbol" &&
+      diagnostic.field === "symbol" &&
+      diagnostic.severity === "error",
+  ),
+);
+
+// Realization identity aliases receive the same first-usable treatment.
+const recoveredRealizationIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-realization",
+    realization_id: { malformed: "structure" },
+    realizationId: "p-aspirated",
+    unit_id: "p",
+    symbol: "[pʰ]",
+  }),
+);
+assert.ok(recoveredRealizationIdSource);
+assert.equal(recoveredRealizationIdSource.kind, "realization");
+assert.equal(
+  recoveredRealizationIdSource.record.value?.id,
+  "p-aspirated",
+);
+assert.ok(
+  recoveredRealizationIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "realization_id",
+  ),
+);
+
+// Realization → unit relationship aliases recover independently.
+const recoveredRealizationUnitIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-realization",
+    realization_id: "p-aspirated",
+    unit_id: { malformed: "structure" },
+    "unit-id": "p",
+    symbol: "[pʰ]",
+  }),
+);
+assert.ok(recoveredRealizationUnitIdSource);
+assert.equal(recoveredRealizationUnitIdSource.kind, "realization");
+assert.equal(
+  recoveredRealizationUnitIdSource.record.value?.unitId,
+  "p",
+);
+assert.ok(
+  recoveredRealizationUnitIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "unit_id",
+  ),
+);
+
+// Missing realization relationships are retained as malformed source records.
+const missingRealizationUnitIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-realization",
+    realization_id: "p-aspirated",
+    unit_id: { malformed: "structure" },
+    symbol: "[pʰ]",
+  }),
+);
+assert.ok(missingRealizationUnitIdSource);
+assert.equal(missingRealizationUnitIdSource.kind, "realization");
+assert.equal(missingRealizationUnitIdSource.record.value, null);
+assert.ok(
+  missingRealizationUnitIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "phonology.realization.missing-unit-id" &&
+      diagnostic.severity === "error",
+  ),
+);
+
+// Optional language-ID aliases recover safely without broadening type rules.
+const recoveredLanguageIdSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: "p",
+    symbol: "/p/",
+    language_id: { malformed: "structure" },
+    "language-id": "test-language",
+  }),
+);
+assert.ok(recoveredLanguageIdSource);
+assert.equal(recoveredLanguageIdSource.kind, "unit");
+assert.equal(
+  recoveredLanguageIdSource.record.value?.languageId,
+  "test-language",
+);
+assert.ok(
+  recoveredLanguageIdSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "language_id",
+  ),
+);
+
+// Supporting Markdown remains outside the adapter's authority.
+assert.equal(
+  parsePhonologySource(
+    makePhonologySource({
+      title: "Phonology notes",
+    }),
+  ),
+  null,
+);
+
+// Other explicit document types are likewise ignored.
+assert.equal(
+  parsePhonologySource(
+    makePhonologySource({
+      type: "morpheme",
+      unit_id: "not-ours",
+      symbol: "/x/",
     }),
   ),
   null,

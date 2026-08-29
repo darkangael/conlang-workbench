@@ -1,4 +1,10 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
+import { parsePhonologySource } from "./phonology-source";
+import type {
+  PhonologySourceInput,
+  PhonologySourceRecord,
+} from "./phonology-source";
+import type { WorkbenchSourceRecord } from "./workbench-source";
 
 export type PhonologicalUnitStatus = "established" | "proposed" | "unresolved";
 
@@ -93,179 +99,6 @@ export interface PhonologicalRealization {
 }
 
 /**
- * Convert a Markdown note's frontmatter into one canonical phonological
- * realization.
- *
- * This parser mirrors the intentionally small scope of parsePhonologicalUnit:
- * it recognizes only fields that belong to the first realization layer.
- * Environments remain descriptive text for now rather than executable rules.
- */
-export function parsePhonologicalRealization(
-  frontmatter: Record<string, unknown>,
-  path?: string,
-): PhonologicalRealization | null {
-  const type =
-    typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
-
-  // Realizations are separate canonical documents from phonological units.
-  // Keeping the document types distinct prevents a unit note from being
-  // accidentally interpreted as one of its realizations.
-  if (type !== "phonological-realization") {
-    return null;
-  }
-
-  const rawId =
-    frontmatter.realization_id ??
-    frontmatter.realizationId ??
-    frontmatter["realization-id"];
-
-  const id = typeof rawId === "string" ? rawId.trim() : "";
-
-  const rawUnitId =
-    frontmatter.unit_id ?? frontmatter.unitId ?? frontmatter["unit-id"];
-
-  const unitId = typeof rawUnitId === "string" ? rawUnitId.trim() : "";
-
-  const symbol =
-    typeof frontmatter.symbol === "string" ? frontmatter.symbol.trim() : "";
-
-  // A realization is only useful when it has its own stable identity, a
-  // canonical unit relationship, and a representation of the realized form.
-  if (!id || !unitId || !symbol) {
-    return null;
-  }
-
-  const environment =
-    typeof frontmatter.environment === "string"
-      ? frontmatter.environment.trim()
-      : undefined;
-
-  const language =
-    typeof frontmatter.language === "string"
-      ? frontmatter.language.trim()
-      : undefined;
-
-  const rawLanguageId =
-    frontmatter.language_id ??
-    frontmatter.languageId ??
-    frontmatter["language-id"];
-
-  const languageId =
-    typeof rawLanguageId === "string" ? rawLanguageId.trim() : undefined;
-
-  const notes =
-    typeof frontmatter.notes === "string"
-      ? frontmatter.notes.trim()
-      : undefined;
-
-  const rawStatus =
-    typeof frontmatter.status === "string"
-      ? frontmatter.status.trim()
-      : undefined;
-
-  const status: PhonologicalRealizationStatus | undefined =
-    rawStatus === "established" ||
-    rawStatus === "proposed" ||
-    rawStatus === "unresolved"
-      ? rawStatus
-      : undefined;
-
-  return {
-    id,
-    unitId,
-    symbol,
-    environment: environment || undefined,
-    status,
-    language: language || undefined,
-    languageId: languageId || undefined,
-    notes: notes || undefined,
-    path,
-  };
-}
-
-/**
- * Convert a Markdown note's frontmatter into one canonical phonological unit.
- *
- * This parser is intentionally small for the first milestone. It only accepts
- * the fields we have actually decided are part of the stable base model.
- * Later phonology features can add their own structures without forcing this
- * object to become a catch-all for every possible analysis.
- */
-export function parsePhonologicalUnit(
-  frontmatter: Record<string, unknown>,
-  path?: string,
-): PhonologicalUnit | null {
-  const type =
-    typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
-
-  // Only notes explicitly marked as phonological units belong in this
-  // inventory. Other notes may live in the same folder later.
-  if (type !== "phonological-unit") {
-    return null;
-  }
-
-  const rawId =
-    frontmatter.unit_id ?? frontmatter.unitId ?? frontmatter["unit-id"];
-
-  const id = typeof rawId === "string" ? rawId.trim() : "";
-
-  const symbol =
-    typeof frontmatter.symbol === "string" ? frontmatter.symbol.trim() : "";
-
-  // Identity and representation are the minimum information required for a
-  // useful canonical unit. If either is missing, the note is not loadable.
-  if (!id || !symbol) {
-    return null;
-  }
-
-  const category =
-    typeof frontmatter.category === "string"
-      ? frontmatter.category.trim()
-      : undefined;
-
-  const language =
-    typeof frontmatter.language === "string"
-      ? frontmatter.language.trim()
-      : undefined;
-
-  const rawLanguageId =
-    frontmatter.language_id ??
-    frontmatter.languageId ??
-    frontmatter["language-id"];
-
-  const languageId =
-    typeof rawLanguageId === "string" ? rawLanguageId.trim() : undefined;
-
-  const notes =
-    typeof frontmatter.notes === "string"
-      ? frontmatter.notes.trim()
-      : undefined;
-
-  const rawStatus =
-    typeof frontmatter.status === "string"
-      ? frontmatter.status.trim()
-      : undefined;
-
-  const status: PhonologicalUnitStatus | undefined =
-    rawStatus === "established" ||
-    rawStatus === "proposed" ||
-    rawStatus === "unresolved"
-      ? rawStatus
-      : undefined;
-
-  return {
-    id,
-    symbol,
-    category: category || undefined,
-    status,
-    language: language || undefined,
-    languageId: languageId || undefined,
-    notes: notes || undefined,
-    path,
-  };
-}
-
-/**
  * A configured source of canonical phonological-unit notes.
  *
  * The folder determines where units are discovered. Language information can
@@ -302,6 +135,22 @@ export class PhonologyInventory {
   private realizationsById = new Map<string, PhonologicalRealization[]>();
   private realizationsByUnitId = new Map<string, PhonologicalRealization[]>();
 
+  // Source records preserve recognized documents independently of whether
+  // their linguistic data is complete enough to enter the clean inventory.
+  // Keeping units and realizations separate gives callers strongly typed
+  // diagnostic collections rather than a mixed union they must reinterpret.
+  private unitSourceRecords: WorkbenchSourceRecord<PhonologicalUnit>[] = [];
+  private realizationSourceRecords:
+    WorkbenchSourceRecord<PhonologicalRealization>[] = [];
+
+  // Workbench identity addresses the source record itself. This index is
+  // deliberately separate from linguistic ID indexes: one must never silently
+  // substitute for the other.
+  private sourceByWorkbenchID = new Map<
+    string,
+    PhonologySourceRecord
+  >();
+
   constructor(private app: App) {}
 
   /**
@@ -317,6 +166,10 @@ export class PhonologyInventory {
     this.realizations = [];
     this.realizationsById.clear();
     this.realizationsByUnitId.clear();
+
+    this.unitSourceRecords = [];
+    this.realizationSourceRecords = [];
+    this.sourceByWorkbenchID.clear();
   }
 
   /**
@@ -332,6 +185,36 @@ export class PhonologyInventory {
    */
   allRealizations(): PhonologicalRealization[] {
     return this.realizations.slice();
+  }
+
+  /**
+   * Return every recognized phonological-unit source record.
+   *
+   * This includes records whose value is null because the source was
+   * recognized but could not safely become a complete canonical unit.
+   */
+  allUnitSourceRecords(): WorkbenchSourceRecord<PhonologicalUnit>[] {
+    return this.unitSourceRecords.slice();
+  }
+
+  /**
+   * Return every recognized phonological-realization source record.
+   */
+  allRealizationSourceRecords():
+    WorkbenchSourceRecord<PhonologicalRealization>[] {
+    return this.realizationSourceRecords.slice();
+  }
+
+  /**
+   * Look up one recognized phonology source by Workbench-owned identity.
+   *
+   * Workbench identity is a source handle only. Callers must not treat it as a
+   * replacement for the creator-authored unit or realization ID.
+   */
+  lookupWorkbenchID(
+    workbenchID: string,
+  ): PhonologySourceRecord | undefined {
+    return this.sourceByWorkbenchID.get(workbenchID);
   }
 
   /**
@@ -444,15 +327,26 @@ export class PhonologyInventory {
       const files = this.collectMarkdownFiles(folder);
 
       for (const file of files) {
-        // A phonology folder may contain both canonical units and realization
-        // notes. Try the canonical-unit parser first; its explicit type marker
-        // prevents a realization note from being mistaken for a unit.
-        const unit = this.readUnit(file);
+        // Classify the source exactly once. A recognized-but-malformed unit or
+        // realization remains a source record rather than falling through and
+        // being mistaken for some other document type.
+        const parsedSource = this.readSource(file);
+        if (!parsedSource) continue;
 
-        if (unit) {
-          // If both the source and the note explicitly name a language, they
-          // must agree. This prevents a misplaced note from silently entering
-          // the wrong active language's inventory.
+        if (parsedSource.kind === "unit") {
+          const record = parsedSource.record;
+          const unit = record.value;
+
+          // If the source is recognized but malformed, retain it for
+          // diagnostics without pretending it is a complete linguistic unit.
+          if (!unit) {
+            this.addUnitSourceRecord(record);
+            continue;
+          }
+
+          // If both the configured source and the note explicitly name a
+          // language, they must agree. This preserves the existing protection
+          // against misplaced valid notes entering another active language.
           if (
             source.language &&
             unit.language &&
@@ -469,8 +363,8 @@ export class PhonologyInventory {
             continue;
           }
 
-          // A configured language provides context for simpler notes that do
-          // not need to repeat the same language metadata individually.
+          // Source-level language context is inherited only when the valid note
+          // omits it. The adapter itself remains independent of configuration.
           if (!unit.language && source.language) {
             unit.language = source.language;
           }
@@ -479,15 +373,21 @@ export class PhonologyInventory {
             unit.languageId = source.languageId;
           }
 
+          this.addUnitSourceRecord(record);
           this.addUnit(unit);
           count++;
           continue;
         }
 
-        // If the file was not a canonical unit, give the realization parser a
-        // chance to recognize it. Other Markdown files remain ignored.
-        const realization = this.readRealization(file);
-        if (!realization) continue;
+        const record = parsedSource.record;
+        const realization = record.value;
+
+        // Malformed recognized realizations remain available to diagnostics
+        // but do not enter clean relationship indexes.
+        if (!realization) {
+          this.addRealizationSourceRecord(record);
+          continue;
+        }
 
         // Realizations use the same language-boundary protection as units.
         if (
@@ -513,6 +413,8 @@ export class PhonologyInventory {
         if (!realization.languageId && source.languageId) {
           realization.languageId = source.languageId;
         }
+
+        this.addRealizationSourceRecord(record);
 
         // We deliberately load a realization even if its unit_id does not
         // currently resolve. Loading preserves the creator's documented data;
@@ -549,34 +451,50 @@ export class PhonologyInventory {
   }
 
   /**
-   * Parse one Markdown file using Obsidian's cached frontmatter.
+   * Read one Markdown file through the phonology source adapter.
+   *
+   * This method knows how to obtain Obsidian metadata, but it deliberately does
+   * not interpret YAML fields itself. That boundary lets future source forms
+   * change without teaching the inventory about their representation details.
    */
-  private readUnit(file: TFile): PhonologicalUnit | null {
+  private readSource(file: TFile): PhonologySourceRecord | null {
     const cache: CachedMetadata | null =
       this.app.metadataCache.getFileCache(file);
 
     if (!cache) return null;
 
-    const frontmatter = cache.frontmatter ?? {};
+    const input: PhonologySourceInput = {
+      path: file.path,
+      frontmatter: cache.frontmatter ?? {},
+    };
 
-    return parsePhonologicalUnit(frontmatter, file.path);
+    return parsePhonologySource(input);
   }
 
   /**
-   * Parse one Markdown file as a phonological realization.
-   *
-   * Reading remains separate from indexing so parsing can later support other
-   * storage representations without changing how the inventory is queried.
+   * Retain one recognized unit source and index its Workbench identity.
    */
-  private readRealization(file: TFile): PhonologicalRealization | null {
-    const cache: CachedMetadata | null =
-      this.app.metadataCache.getFileCache(file);
+  private addUnitSourceRecord(
+    record: WorkbenchSourceRecord<PhonologicalUnit>,
+  ): void {
+    this.unitSourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, {
+      kind: "unit",
+      record,
+    });
+  }
 
-    if (!cache) return null;
-
-    const frontmatter = cache.frontmatter ?? {};
-
-    return parsePhonologicalRealization(frontmatter, file.path);
+  /**
+   * Retain one recognized realization source and index its Workbench identity.
+   */
+  private addRealizationSourceRecord(
+    record: WorkbenchSourceRecord<PhonologicalRealization>,
+  ): void {
+    this.realizationSourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, {
+      kind: "realization",
+      record,
+    });
   }
 
   /**

@@ -962,7 +962,7 @@ Regression coverage is provided by:
 - **Severity:** Hardening
 - **Primary impact:** Data integrity
 - **Data-safety relevance:** Yes
-- **Status:** Partially remediated — morpheme parsing regression-tested
+- **Status:** Partially remediated — morpheme and phonology parsing regression-tested
 
 Several frontmatter readers selected compatibility aliases with nullish
 coalescing before validating whether the preferred field could actually be
@@ -1005,15 +1005,38 @@ aliases, missing required ID/gloss values, safe filename fallback, unsupported
 distribution values, retained Workbench identity, and non-morpheme Markdown
 classification boundaries.
 
-The same alias-selection pattern remains to be reviewed and, where applicable,
-remediated in dictionary and phonology parsing before §4 is complete.
+Phonology parsing now uses the same first-usable alias principle while
+preserving its deliberately stricter string-only interpretation policy.
+`phonology-source.ts` classifies each recognized phonology document exactly
+once, so a malformed `phonological-unit` cannot fall through and be interpreted
+as a realization or unrelated document type.
+
+Recognized malformed phonological units and realizations are retained as source
+records with `value: null`, independent Workbench/source identity, and
+diagnostics. They do not enter the clean unit or realization indexes.
+Creator-authored unit IDs, realization IDs, and realization-to-unit
+relationships remain separate from Workbench identity.
+
+`PhonologyInventory` now consumes the source adapter rather than interpreting
+raw frontmatter itself. Existing language filtering and source-level language
+inheritance remain inventory coordination behavior, and unresolved realization
+relationships continue to load without destructive normalization.
+
+Regression coverage verifies strict-string alias recovery, blank and malformed
+preferred aliases, required unit/realization fields, retained malformed source
+records, Workbench identity, document classification boundaries, and safe
+language-ID alias recovery.
+
+Dictionary alias families remain to be reviewed and, where applicable,
+remediated before SEC-004-H2 is complete.
 
 ### Status
 
-**In Progress — Language Profile, shared frontmatter helpers, and morpheme
-source parsing reviewed; SEC-004-H1 remediated and regression-tested;
-SEC-004-H2 partially remediated with morpheme parsing regression-tested.
-Dictionary, phonology, and the remaining input surfaces still require review.**
+**In Progress — Language Profile, shared frontmatter helpers, morpheme source
+parsing, and phonology source parsing reviewed; SEC-004-H1 remediated and
+regression-tested; SEC-004-H2 partially remediated with morpheme and phonology
+parsing regression-tested. Dictionary and the remaining input surfaces still
+require review.**
 
 ---
 
@@ -1463,7 +1486,7 @@ audit section.
 | SEC-003-M1 | §3 Path Handling and Traversal | Remediated and verified | Medium | Mutating paths containing `..` can be normalized to a different logical destination by Obsidian mutation APIs. | Controlled raw-API test; Workbench adversarial runtime test; `test:vault-paths` regression coverage | Workbench now validates logical write paths before mutation and rejects traversal rather than normalizing it. |
 | SEC-003-H1 | §3 Path Handling and Traversal | Remediated and verified | Hardening | Raw string-prefix folder comparison can match unrelated sibling paths. | Code review; `Mer` / `Mermaid` regression coverage in `test:vault-paths` | Replaced raw prefix comparison with component-aware `isPathWithinFolder()`. |
 | SEC-004-H1 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Unsupported structured frontmatter values could be silently stringified into values the user did not supply as text. | Code review; scalar/structure boundary regression coverage in `test:frontmatter` | Shared parsing now tolerates simple scalars but leaves unsupported structures uninterpreted; no automatic writeback or normalization occurs. |
-| SEC-004-H2 | §4 Frontmatter and Markdown Input | Partially remediated — morpheme parsing regression-tested | Hardening | Malformed or blank preferred frontmatter aliases could suppress valid supported fallback values and cause recoverable morpheme sources to disappear from the loaded inventory. | Code review; first-usable alias tests; morpheme source-record regression coverage in `test:frontmatter` | Morpheme parsing now selects the first interpretable alias, retains recognized malformed sources under independent Workbench/source identity, reports diagnostics, and never substitutes internal identity for missing linguistic identity. Dictionary and phonology alias families remain to be reviewed. |
+| SEC-004-H2 | §4 Frontmatter and Markdown Input | Partially remediated — morpheme and phonology parsing regression-tested | Hardening | Malformed or blank preferred frontmatter aliases could suppress valid supported fallback values and cause recoverable sources to disappear from feature-facing inventories. | Code review; first-usable alias tests; morpheme and phonology source-record regression coverage in `test:frontmatter` | Morpheme and phonology parsing now select the first interpretable supported alias, retain recognized malformed sources under independent Workbench/source identity, report diagnostics, and never substitute internal identity for missing linguistic identity. Phonology preserves its strict-string policy and single-classification boundary. Dictionary alias families remain to be reviewed. |
 
 ---
 

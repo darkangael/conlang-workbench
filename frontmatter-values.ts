@@ -77,6 +77,21 @@ export function parseYamlString(value: unknown): string | undefined {
 }
 
 /**
+ * Interpret only an actual, nonblank YAML string.
+ *
+ * This is the strict-string counterpart to parseNonBlankYamlScalarText().
+ * It is useful for readers such as phonology that intentionally do not coerce
+ * numbers or booleans into text, while still allowing alias recovery when a
+ * preferred field is blank.
+ */
+export function parseNonBlankYamlString(
+  value: unknown,
+): string | undefined {
+  const parsed = parseYamlString(value)?.trim();
+  return parsed ? parsed : undefined;
+}
+
+/**
  * Return the first PRESENT candidate that the supplied parser can USE.
  *
  * This intentionally differs from:

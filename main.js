@@ -337,6 +337,14 @@ function parseNonBlankYamlScalarText(value) {
   const parsed = (_a = parseYamlScalarText(value)) == null ? void 0 : _a.trim();
   return parsed ? parsed : void 0;
 }
+function parseYamlString(value) {
+  return typeof value === "string" ? value : void 0;
+}
+function parseNonBlankYamlString(value) {
+  var _a;
+  const parsed = (_a = parseYamlString(value)) == null ? void 0 : _a.trim();
+  return parsed ? parsed : void 0;
+}
 function firstParsedFrontmatterValue(candidates, parser) {
   const rejectedKeys = [];
   for (const candidate of candidates) {
@@ -1379,23 +1387,23 @@ function parseLinguisticExampleFrontmatter(frontmatter, path) {
   if (!text) {
     return null;
   }
-  const optionalString = (value) => {
+  const optionalString2 = (value) => {
     if (typeof value !== "string") return void 0;
     const trimmed = value.trim();
     return trimmed || void 0;
   };
   return {
-    id: optionalString(frontmatter.example_id),
+    id: optionalString2(frontmatter.example_id),
     text,
-    realization: optionalString(frontmatter.realization),
-    segmentation: optionalString(frontmatter.segmentation),
-    gloss: optionalString(frontmatter.gloss),
-    translation: optionalString(frontmatter.translation),
-    language: optionalString(frontmatter.language),
-    languageId: optionalString(frontmatter.language_id),
-    source: optionalString(frontmatter.source),
-    context: optionalString(frontmatter.context),
-    notes: optionalString(frontmatter.notes),
+    realization: optionalString2(frontmatter.realization),
+    segmentation: optionalString2(frontmatter.segmentation),
+    gloss: optionalString2(frontmatter.gloss),
+    translation: optionalString2(frontmatter.translation),
+    language: optionalString2(frontmatter.language),
+    languageId: optionalString2(frontmatter.language_id),
+    source: optionalString2(frontmatter.source),
+    context: optionalString2(frontmatter.context),
+    notes: optionalString2(frontmatter.notes),
     path
   };
 }
@@ -1509,69 +1517,199 @@ var LinguisticExampleInventory = class {
 
 // phonology.ts
 var import_obsidian4 = require("obsidian");
-function parsePhonologicalRealization(frontmatter, path) {
-  var _a, _b, _c, _d, _e, _f;
-  const type = typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
-  if (type !== "phonological-realization") {
-    return null;
+
+// phonology-source.ts
+function addRejectedAliasDiagnostics2(diagnostics, result) {
+  for (const field of result.rejectedKeys) {
+    diagnostics.push({
+      code: "frontmatter.unusable-alias",
+      severity: "warning",
+      field,
+      message: `Frontmatter field "${field}" could not be interpreted; Workbench continued checking supported fallback fields.`
+    });
   }
-  const rawId = (_b = (_a = frontmatter.realization_id) != null ? _a : frontmatter.realizationId) != null ? _b : frontmatter["realization-id"];
-  const id = typeof rawId === "string" ? rawId.trim() : "";
-  const rawUnitId = (_d = (_c = frontmatter.unit_id) != null ? _c : frontmatter.unitId) != null ? _d : frontmatter["unit-id"];
-  const unitId = typeof rawUnitId === "string" ? rawUnitId.trim() : "";
-  const symbol = typeof frontmatter.symbol === "string" ? frontmatter.symbol.trim() : "";
-  if (!id || !unitId || !symbol) {
-    return null;
+}
+function optionalString(value) {
+  var _a;
+  const parsed = (_a = parseYamlString(value)) == null ? void 0 : _a.trim();
+  return parsed || void 0;
+}
+function parseUnitStatus(value) {
+  const parsed = optionalString(value);
+  return parsed === "established" || parsed === "proposed" || parsed === "unresolved" ? parsed : void 0;
+}
+function parseRealizationStatus(value) {
+  const parsed = optionalString(value);
+  return parsed === "established" || parsed === "proposed" || parsed === "unresolved" ? parsed : void 0;
+}
+function parseUnitSource(input) {
+  const fm = input.frontmatter;
+  const diagnostics = [];
+  const idResult = firstParsedFrontmatterValue(
+    [
+      { key: "unit_id", value: fm.unit_id },
+      { key: "unitId", value: fm.unitId },
+      { key: "unit-id", value: fm["unit-id"] }
+    ],
+    parseNonBlankYamlString
+  );
+  addRejectedAliasDiagnostics2(diagnostics, idResult);
+  const languageIdResult = firstParsedFrontmatterValue(
+    [
+      { key: "language_id", value: fm.language_id },
+      { key: "languageId", value: fm.languageId },
+      { key: "language-id", value: fm["language-id"] }
+    ],
+    parseNonBlankYamlString
+  );
+  addRejectedAliasDiagnostics2(diagnostics, languageIdResult);
+  const id = idResult.value;
+  const symbol = parseNonBlankYamlString(fm.symbol);
+  const identity = createObsidianWorkbenchIdentity(input.path, id);
+  if (!id) {
+    diagnostics.push({
+      code: "phonology.unit.missing-id",
+      severity: "error",
+      field: "unit_id",
+      message: "This source is identified as a phonological unit, but no usable strict-string unit ID could be interpreted."
+    });
   }
-  const environment = typeof frontmatter.environment === "string" ? frontmatter.environment.trim() : void 0;
-  const language = typeof frontmatter.language === "string" ? frontmatter.language.trim() : void 0;
-  const rawLanguageId = (_f = (_e = frontmatter.language_id) != null ? _e : frontmatter.languageId) != null ? _f : frontmatter["language-id"];
-  const languageId = typeof rawLanguageId === "string" ? rawLanguageId.trim() : void 0;
-  const notes = typeof frontmatter.notes === "string" ? frontmatter.notes.trim() : void 0;
-  const rawStatus = typeof frontmatter.status === "string" ? frontmatter.status.trim() : void 0;
-  const status = rawStatus === "established" || rawStatus === "proposed" || rawStatus === "unresolved" ? rawStatus : void 0;
+  if (!symbol) {
+    diagnostics.push({
+      code: "phonology.unit.missing-symbol",
+      severity: "error",
+      field: "symbol",
+      message: "This source is identified as a phonological unit, but no usable strict-string symbol could be interpreted."
+    });
+  }
+  if (!id || !symbol) {
+    return {
+      identity,
+      path: input.path,
+      value: null,
+      diagnostics
+    };
+  }
+  const unit = {
+    id,
+    symbol,
+    category: optionalString(fm.category),
+    status: parseUnitStatus(fm.status),
+    language: optionalString(fm.language),
+    languageId: languageIdResult.value,
+    notes: optionalString(fm.notes),
+    path: input.path
+  };
   return {
+    identity,
+    path: input.path,
+    value: unit,
+    diagnostics
+  };
+}
+function parseRealizationSource(input) {
+  const fm = input.frontmatter;
+  const diagnostics = [];
+  const idResult = firstParsedFrontmatterValue(
+    [
+      { key: "realization_id", value: fm.realization_id },
+      { key: "realizationId", value: fm.realizationId },
+      { key: "realization-id", value: fm["realization-id"] }
+    ],
+    parseNonBlankYamlString
+  );
+  addRejectedAliasDiagnostics2(diagnostics, idResult);
+  const unitIdResult = firstParsedFrontmatterValue(
+    [
+      { key: "unit_id", value: fm.unit_id },
+      { key: "unitId", value: fm.unitId },
+      { key: "unit-id", value: fm["unit-id"] }
+    ],
+    parseNonBlankYamlString
+  );
+  addRejectedAliasDiagnostics2(diagnostics, unitIdResult);
+  const languageIdResult = firstParsedFrontmatterValue(
+    [
+      { key: "language_id", value: fm.language_id },
+      { key: "languageId", value: fm.languageId },
+      { key: "language-id", value: fm["language-id"] }
+    ],
+    parseNonBlankYamlString
+  );
+  addRejectedAliasDiagnostics2(diagnostics, languageIdResult);
+  const id = idResult.value;
+  const unitId = unitIdResult.value;
+  const symbol = parseNonBlankYamlString(fm.symbol);
+  const identity = createObsidianWorkbenchIdentity(input.path, id);
+  if (!id) {
+    diagnostics.push({
+      code: "phonology.realization.missing-id",
+      severity: "error",
+      field: "realization_id",
+      message: "This source is identified as a phonological realization, but no usable strict-string realization ID could be interpreted."
+    });
+  }
+  if (!unitId) {
+    diagnostics.push({
+      code: "phonology.realization.missing-unit-id",
+      severity: "error",
+      field: "unit_id",
+      message: "This source is identified as a phonological realization, but no usable strict-string canonical unit ID could be interpreted."
+    });
+  }
+  if (!symbol) {
+    diagnostics.push({
+      code: "phonology.realization.missing-symbol",
+      severity: "error",
+      field: "symbol",
+      message: "This source is identified as a phonological realization, but no usable strict-string symbol could be interpreted."
+    });
+  }
+  if (!id || !unitId || !symbol) {
+    return {
+      identity,
+      path: input.path,
+      value: null,
+      diagnostics
+    };
+  }
+  const realization = {
     id,
     unitId,
     symbol,
-    environment: environment || void 0,
-    status,
-    language: language || void 0,
-    languageId: languageId || void 0,
-    notes: notes || void 0,
-    path
+    environment: optionalString(fm.environment),
+    status: parseRealizationStatus(fm.status),
+    language: optionalString(fm.language),
+    languageId: languageIdResult.value,
+    notes: optionalString(fm.notes),
+    path: input.path
   };
-}
-function parsePhonologicalUnit(frontmatter, path) {
-  var _a, _b, _c, _d;
-  const type = typeof frontmatter.type === "string" ? frontmatter.type.trim() : "";
-  if (type !== "phonological-unit") {
-    return null;
-  }
-  const rawId = (_b = (_a = frontmatter.unit_id) != null ? _a : frontmatter.unitId) != null ? _b : frontmatter["unit-id"];
-  const id = typeof rawId === "string" ? rawId.trim() : "";
-  const symbol = typeof frontmatter.symbol === "string" ? frontmatter.symbol.trim() : "";
-  if (!id || !symbol) {
-    return null;
-  }
-  const category = typeof frontmatter.category === "string" ? frontmatter.category.trim() : void 0;
-  const language = typeof frontmatter.language === "string" ? frontmatter.language.trim() : void 0;
-  const rawLanguageId = (_d = (_c = frontmatter.language_id) != null ? _c : frontmatter.languageId) != null ? _d : frontmatter["language-id"];
-  const languageId = typeof rawLanguageId === "string" ? rawLanguageId.trim() : void 0;
-  const notes = typeof frontmatter.notes === "string" ? frontmatter.notes.trim() : void 0;
-  const rawStatus = typeof frontmatter.status === "string" ? frontmatter.status.trim() : void 0;
-  const status = rawStatus === "established" || rawStatus === "proposed" || rawStatus === "unresolved" ? rawStatus : void 0;
   return {
-    id,
-    symbol,
-    category: category || void 0,
-    status,
-    language: language || void 0,
-    languageId: languageId || void 0,
-    notes: notes || void 0,
-    path
+    identity,
+    path: input.path,
+    value: realization,
+    diagnostics
   };
 }
+function parsePhonologySource(input) {
+  var _a;
+  const documentType = (_a = parseYamlString(input.frontmatter.type)) == null ? void 0 : _a.trim();
+  if (documentType === "phonological-unit") {
+    return {
+      kind: "unit",
+      record: parseUnitSource(input)
+    };
+  }
+  if (documentType === "phonological-realization") {
+    return {
+      kind: "realization",
+      record: parseRealizationSource(input)
+    };
+  }
+  return null;
+}
+
+// phonology.ts
 var PhonologyInventory = class {
   constructor(app) {
     this.app = app;
@@ -1584,6 +1722,16 @@ var PhonologyInventory = class {
     // callers ask which realizations belong to a particular canonical unit.
     this.realizationsById = /* @__PURE__ */ new Map();
     this.realizationsByUnitId = /* @__PURE__ */ new Map();
+    // Source records preserve recognized documents independently of whether
+    // their linguistic data is complete enough to enter the clean inventory.
+    // Keeping units and realizations separate gives callers strongly typed
+    // diagnostic collections rather than a mixed union they must reinterpret.
+    this.unitSourceRecords = [];
+    this.realizationSourceRecords = [];
+    // Workbench identity addresses the source record itself. This index is
+    // deliberately separate from linguistic ID indexes: one must never silently
+    // substitute for the other.
+    this.sourceByWorkbenchID = /* @__PURE__ */ new Map();
   }
   /**
    * Remove every currently loaded unit.
@@ -1597,6 +1745,9 @@ var PhonologyInventory = class {
     this.realizations = [];
     this.realizationsById.clear();
     this.realizationsByUnitId.clear();
+    this.unitSourceRecords = [];
+    this.realizationSourceRecords = [];
+    this.sourceByWorkbenchID.clear();
   }
   /**
    * Return a copy of the loaded inventory rather than exposing the mutable
@@ -1610,6 +1761,30 @@ var PhonologyInventory = class {
    */
   allRealizations() {
     return this.realizations.slice();
+  }
+  /**
+   * Return every recognized phonological-unit source record.
+   *
+   * This includes records whose value is null because the source was
+   * recognized but could not safely become a complete canonical unit.
+   */
+  allUnitSourceRecords() {
+    return this.unitSourceRecords.slice();
+  }
+  /**
+   * Return every recognized phonological-realization source record.
+   */
+  allRealizationSourceRecords() {
+    return this.realizationSourceRecords.slice();
+  }
+  /**
+   * Look up one recognized phonology source by Workbench-owned identity.
+   *
+   * Workbench identity is a source handle only. Callers must not treat it as a
+   * replacement for the creator-authored unit or realization ID.
+   */
+  lookupWorkbenchID(workbenchID) {
+    return this.sourceByWorkbenchID.get(workbenchID);
   }
   /**
    * Find realizations by their own stable ID.
@@ -1693,8 +1868,15 @@ var PhonologyInventory = class {
       if (!(folder instanceof import_obsidian4.TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
-        const unit = this.readUnit(file);
-        if (unit) {
+        const parsedSource = this.readSource(file);
+        if (!parsedSource) continue;
+        if (parsedSource.kind === "unit") {
+          const record2 = parsedSource.record;
+          const unit = record2.value;
+          if (!unit) {
+            this.addUnitSourceRecord(record2);
+            continue;
+          }
           if (source.language && unit.language && unit.language !== source.language) {
             continue;
           }
@@ -1707,12 +1889,17 @@ var PhonologyInventory = class {
           if (!unit.languageId && source.languageId) {
             unit.languageId = source.languageId;
           }
+          this.addUnitSourceRecord(record2);
           this.addUnit(unit);
           count++;
           continue;
         }
-        const realization = this.readRealization(file);
-        if (!realization) continue;
+        const record = parsedSource.record;
+        const realization = record.value;
+        if (!realization) {
+          this.addRealizationSourceRecord(record);
+          continue;
+        }
         if (source.language && realization.language && realization.language !== source.language) {
           continue;
         }
@@ -1725,6 +1912,7 @@ var PhonologyInventory = class {
         if (!realization.languageId && source.languageId) {
           realization.languageId = source.languageId;
         }
+        this.addRealizationSourceRecord(record);
         this.addRealization(realization);
         count++;
       }
@@ -1752,27 +1940,41 @@ var PhonologyInventory = class {
     return out;
   }
   /**
-   * Parse one Markdown file using Obsidian's cached frontmatter.
+   * Read one Markdown file through the phonology source adapter.
+   *
+   * This method knows how to obtain Obsidian metadata, but it deliberately does
+   * not interpret YAML fields itself. That boundary lets future source forms
+   * change without teaching the inventory about their representation details.
    */
-  readUnit(file) {
+  readSource(file) {
     var _a;
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return null;
-    const frontmatter = (_a = cache.frontmatter) != null ? _a : {};
-    return parsePhonologicalUnit(frontmatter, file.path);
+    const input = {
+      path: file.path,
+      frontmatter: (_a = cache.frontmatter) != null ? _a : {}
+    };
+    return parsePhonologySource(input);
   }
   /**
-   * Parse one Markdown file as a phonological realization.
-   *
-   * Reading remains separate from indexing so parsing can later support other
-   * storage representations without changing how the inventory is queried.
+   * Retain one recognized unit source and index its Workbench identity.
    */
-  readRealization(file) {
-    var _a;
-    const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache) return null;
-    const frontmatter = (_a = cache.frontmatter) != null ? _a : {};
-    return parsePhonologicalRealization(frontmatter, file.path);
+  addUnitSourceRecord(record) {
+    this.unitSourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, {
+      kind: "unit",
+      record
+    });
+  }
+  /**
+   * Retain one recognized realization source and index its Workbench identity.
+   */
+  addRealizationSourceRecord(record) {
+    this.realizationSourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, {
+      kind: "realization",
+      record
+    });
   }
   /**
    * Add one validated unit to both the complete inventory and the stable-ID
