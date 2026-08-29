@@ -29,7 +29,14 @@ import {
 } from "./inflection";
 import { explainInflection } from "./explanations";
 import { tokeniseWithPhrases, matchPhraseAtStart } from "./phrases";
-import { WORD_RE, cleanWord, applyCasing, firstSense } from "./word-tokens";
+import {
+  WORD_RE,
+  WORD_ANCHORED_RE,
+  cleanWord,
+  applyCasing,
+  firstSense,
+} from "./word-tokens";
+import { normalizeLexicalKey } from "./lexical-normalization";
 import {
   glossEnglishToConlang,
   glossConlangToEnglish,
@@ -519,8 +526,9 @@ export class TranslationPanelView extends ItemView {
     const trimmed = text.trim();
 
     // Phrase case: selection is multiple words. Try a phrase match.
-    // Allow letters (any script), apostrophes, hyphens, and whitespace.
-    if (/^[\p{L}'\s-]+$/u.test(trimmed) && /\s/.test(trimmed)) {
+    // Combining marks are lexical continuation content just as they are in
+    // the shared single-word token grammar.
+    if (/^[\p{L}\p{M}'\s-]+$/u.test(trimmed) && /\s/.test(trimmed)) {
       const phrases = this.plugin.dictionary.phraseIndex();
       const phraseMatch = matchPhraseAtStart(trimmed, phrases);
       // For phrase matches, only enter word-details mode if the ENTIRE selection
@@ -528,7 +536,14 @@ export class TranslationPanelView extends ItemView {
       // translation view.
       if (
         phraseMatch &&
-        phraseMatch.matchedText.toLowerCase() === trimmed.toLowerCase()
+        normalizeLexicalKey(
+          phraseMatch.matchedText,
+          this.plugin.settings.caseSensitiveMatching,
+        ) ===
+          normalizeLexicalKey(
+            trimmed,
+            this.plugin.settings.caseSensitiveMatching,
+          )
       ) {
         // A multi-word declared form is indexed as a synthetic phrase entry.
         // Show the real lemma with a "this is the X form of Y" note rather
@@ -550,8 +565,8 @@ export class TranslationPanelView extends ItemView {
       return null;
     }
 
-    // Single-word case: letters (any script), apostrophes, hyphens
-    if (!/^[\p{L}'-]+$/u.test(trimmed)) return null;
+    // Single-word case uses the shared lexical-token grammar.
+    if (!WORD_ANCHORED_RE.test(trimmed)) return null;
 
     const cleaned = cleanWord(trimmed);
     if (!cleaned) return null;

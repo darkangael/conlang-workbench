@@ -12,7 +12,8 @@
     "test:body-preview": "node scripts/test-body-preview.mjs",
     "test:lexical-senses": "node scripts/test-lexical-senses.mjs",
     "test:selection-lookup": "node scripts/test-selection-lookup.mjs",
-    "test:gloss-rendering": "node scripts/test-gloss-rendering.mjs"
+    "test:gloss-rendering": "node scripts/test-gloss-rendering.mjs",
+    "test:lexical-normalization": "node scripts/test-lexical-normalization.mjs"
   },
   "keywords": [
     "obsidian",

@@ -13,6 +13,7 @@
 
 import { DictionaryEntry } from "./types";
 import { WORD_RE } from "./word-tokens";
+import { normalizeLexicalKey } from "./lexical-normalization";
 
 export interface MatchedToken {
   kind: "phrase" | "word" | "separator";
@@ -47,9 +48,12 @@ export const EMPTY_PHRASE_INDEX: PhraseIndex = {
   caseSensitive: false,
 };
 
-/** Normalise a phrase word for indexing/comparison, respecting case mode. */
+/**
+ * Build the same derived comparison key used by ordinary dictionary lookup.
+ * Source phrase spelling remains unchanged for display and reconstruction.
+ */
 function normWord(s: string, caseSensitive: boolean): string {
-  return caseSensitive ? s : s.toLowerCase();
+  return normalizeLexicalKey(s, caseSensitive);
 }
 
 /**

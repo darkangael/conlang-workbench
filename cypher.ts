@@ -10,14 +10,17 @@
 // Sheets run sequentially: output of sheet N is input to sheet N+1.
 
 import { CypherSheet, CypherRule, HashType } from "./types";
+import { isLexicalBaseOrMark } from "./lexical-normalization";
 
-// "Letter" means any Unicode letter (Latin, Cyrillic, CJK, accented Latin,
-// etc.). Pre-Unicode behaviour used /[A-Za-z]/ which silently broke for
-// any conlang that wasn't pure ASCII.
-const LETTER = /\p{L}/u;
-
+/**
+ * Test whether a character continues lexical material for cypher boundaries.
+ *
+ * Combining marks count here because a decomposed grapheme such as
+ * "s" + COMBINING CARON is still one lexical unit. Treating the mark as a
+ * boundary could incorrectly activate word/prefix/suffix rules inside it.
+ */
 function isLetter(ch: string | undefined): boolean {
-  return !!ch && LETTER.test(ch);
+  return !!ch && isLexicalBaseOrMark(ch);
 }
 
 function contextMatches(

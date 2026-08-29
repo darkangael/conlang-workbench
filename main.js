@@ -106,10 +106,18 @@ var DEFAULT_SETTINGS = {
   showFormsInTooltip: true
 };
 
+// lexical-normalization.ts
+function isLexicalBaseOrMark(ch) {
+  return /^[\p{L}\p{M}]$/u.test(ch);
+}
+function normalizeLexicalKey(text, caseSensitive) {
+  const cased = caseSensitive ? text : text.toLowerCase();
+  return cased.normalize("NFC");
+}
+
 // cypher.ts
-var LETTER = /\p{L}/u;
 function isLetter(ch) {
-  return !!ch && LETTER.test(ch);
+  return !!ch && isLexicalBaseOrMark(ch);
 }
 function contextMatches(type, before, after) {
   const beforeIsLetter = isLetter(before);
@@ -412,12 +420,13 @@ function createObsidianWorkbenchIdentity(path, linguisticID) {
 }
 
 // word-tokens.ts
-var WORD_RE = /\p{L}[\p{L}'-]*/gu;
+var WORD_RE = /\p{L}[\p{L}\p{M}'-]*/gu;
+var WORD_ANCHORED_RE = /^\p{L}[\p{L}\p{M}'-]*$/u;
 function cleanWord(s) {
-  return s.replace(/[^\p{L}'-]/gu, "");
+  return s.replace(/[^\p{L}\p{M}'-]/gu, "");
 }
 function isWordChar(ch) {
-  return /[\p{L}'-]/u.test(ch);
+  return /[\p{L}\p{M}'-]/u.test(ch);
 }
 function applyCasing(source, target) {
   if (source.length === 0 || target.length === 0) return target;
@@ -653,7 +662,7 @@ var EMPTY_PHRASE_INDEX = {
   caseSensitive: false
 };
 function normWord(s, caseSensitive) {
-  return caseSensitive ? s : s.toLowerCase();
+  return normalizeLexicalKey(s, caseSensitive);
 }
 function buildPhraseIndex(phrases, caseSensitive = false) {
   var _a;
@@ -794,9 +803,14 @@ var _Dictionary = class _Dictionary {
   setCaseSensitive(v) {
     this.caseSensitive = v;
   }
-  /** Normalise a conlang word for indexing/lookup, respecting case mode. */
+  /**
+   * Build a derived conlang lookup key.
+   *
+   * The source spelling remains untouched. NFC only makes canonically
+   * equivalent Unicode spellings share the same internal index key.
+   */
   norm(s) {
-    return this.caseSensitive ? s : s.toLowerCase();
+    return normalizeLexicalKey(s, this.caseSensitive);
   }
   clear() {
     this.byWord.clear();
@@ -5168,10 +5182,16 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
    */
   detectSingleWord(text) {
     const trimmed = text.trim();
-    if (/^[\p{L}'\s-]+$/u.test(trimmed) && /\s/.test(trimmed)) {
+    if (/^[\p{L}\p{M}'\s-]+$/u.test(trimmed) && /\s/.test(trimmed)) {
       const phrases = this.plugin.dictionary.phraseIndex();
       const phraseMatch = matchPhraseAtStart(trimmed, phrases);
-      if (phraseMatch && phraseMatch.matchedText.toLowerCase() === trimmed.toLowerCase()) {
+      if (phraseMatch && normalizeLexicalKey(
+        phraseMatch.matchedText,
+        this.plugin.settings.caseSensitiveMatching
+      ) === normalizeLexicalKey(
+        trimmed,
+        this.plugin.settings.caseSensitiveMatching
+      )) {
         const declaredLemma = this.plugin.dictionary.lemmaForDeclaredPhrase(
           phraseMatch.entry
         );
@@ -5188,7 +5208,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
       }
       return null;
     }
-    if (!/^[\p{L}'-]+$/u.test(trimmed)) return null;
+    if (!WORD_ANCHORED_RE.test(trimmed)) return null;
     const cleaned = cleanWord(trimmed);
     if (!cleaned) return null;
     const direct = this.plugin.dictionary.lookup(cleaned);

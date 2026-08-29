@@ -27,6 +27,7 @@ import { parseDictionarySource } from "./dictionary-source";
 import type { DictionarySourceInput } from "./dictionary-source";
 import type { WorkbenchSourceRecord } from "./workbench-source";
 import { buildPhraseIndex, EMPTY_PHRASE_INDEX, PhraseIndex } from "./phrases";
+import { normalizeLexicalKey } from "./lexical-normalization";
 
 /**
  * A richer English-language dictionary lookup result.
@@ -101,9 +102,14 @@ export class Dictionary {
     this.caseSensitive = v;
   }
 
-  /** Normalise a conlang word for indexing/lookup, respecting case mode. */
+  /**
+   * Build a derived conlang lookup key.
+   *
+   * The source spelling remains untouched. NFC only makes canonically
+   * equivalent Unicode spellings share the same internal index key.
+   */
   private norm(s: string): string {
-    return this.caseSensitive ? s : s.toLowerCase();
+    return normalizeLexicalKey(s, this.caseSensitive);
   }
 
   clear() {

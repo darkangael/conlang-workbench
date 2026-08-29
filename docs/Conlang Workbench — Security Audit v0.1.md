@@ -1355,14 +1355,91 @@ Obsidian runtime testing additionally verified that:
 `npm run test:body-preview`, `npm run test:vault-paths`, the production build,
 and `git diff --check` passed for the runtime-remediation checkpoint.
 
+#### SEC-004-H8 — Unicode combining marks could be dropped or treated as token boundaries
+
+- **Severity:** Hardening
+- **Primary impact:** Semantic integrity and lookup correctness
+- **Data-safety relevance:** Yes
+- **Source mutation:** No — derived interpretation and indexing only
+- **Status:** Remediated, regression-tested, build-verified, and runtime-verified
+
+Workbench word-token recognition previously allowed Unicode letters (`\p{L}`) but
+not Unicode combining marks (`\p{M}`). A creator-authored decomposed grapheme
+could therefore be split or altered during derived lexical interpretation even
+though the visually equivalent precomposed spelling remained intact.
+
+Controlled testing confirmed that decomposed spellings could lose their combining
+marks or be split into multiple tokens. For example, precomposed `šaru` remained
+one valid word while the canonically equivalent decomposed spelling
+`s` + COMBINING CARON + `aru` could be interpreted as separate material or
+cleaned to `saru`. That manufactured a different lexical form from the text the
+creator actually supplied.
+
+Code review also confirmed that dictionary and phrase comparison keys performed
+case handling without Unicode canonical normalization. Even after preserving
+combining marks as lexical content, canonically equivalent precomposed and
+decomposed spellings would therefore have remained distinct lookup keys.
+
+The remediation introduces `lexical-normalization.ts` as the shared authority
+for derived lexical comparison keys and Unicode lexical character primitives.
+`normalizeLexicalKey()` applies NFC canonical normalization after the current
+case policy. NFC is deliberately used rather than compatibility normalization
+(NFKC), so canonically equivalent spellings compare consistently without
+collapsing compatibility characters that may be linguistically distinct.
+
+Creator-authored spelling remains authoritative. Unicode normalization is used
+only for derived comparison and index keys; it does not rewrite dictionary
+notes, frontmatter, selections, or displayed lexical forms.
+
+Word-token recognition now permits Unicode combining marks as continuation
+characters while still requiring a Unicode letter to begin a word. A
+free-floating combining mark therefore does not gain standalone lexical
+authority. The existing apostrophe and hyphen policy is deliberately unchanged
+pending a separate orthographic-punctuation review.
+
+Dictionary indexing/lookup and phrase indexing/comparison now use the same
+derived lexical-normalization helper. Selection-panel phrase comparison also
+uses the shared derived key, while single-word recognition uses the shared
+anchored token grammar.
+
+Cypher boundary recognition now treats a combining mark following a base letter
+as continuing lexical material. This prevents a decomposed grapheme from
+manufacturing a false word, prefix, or suffix boundary inside the grapheme.
+
+Regression coverage in `npm run test:lexical-normalization` verifies:
+
+- canonical equivalence between precomposed and decomposed lexical spellings
+- preservation of the existing case-sensitive and case-insensitive policy
+- preservation of creator-authored source strings
+- distinction between Unicode letters and combining marks
+- combining marks as lexical continuation rather than standalone word starters
+- preservation of decomposed graphemes during tokenization and constrained
+  cleanup
+- preservation of the current apostrophe and hyphen behavior
+- phrase matching across canonically equivalent Unicode representations
+- production cypher behavior that rejects false boundaries inside decomposed
+  graphemes while retaining genuine suffix and whole-word matches
+
+Obsidian runtime testing additionally verified that a decomposed selected word
+resolved to a dictionary entry stored with the canonically equivalent
+precomposed spelling, and that a decomposed multi-word selection resolved to a
+precomposed phrase entry. The creator-authored runtime text remained unchanged.
+
+`npm run test:lexical-normalization`, `npm run test:selection-lookup`,
+`npm run test:gloss-rendering`, `npm run test:vault-paths`,
+`npm run test:frontmatter`, `npm run test:body-preview`,
+`npm run test:lexical-senses`, and the production build passed for the H8
+remediation checkpoint.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
 parsing, phonology source parsing, dictionary source parsing, standalone
 linguistic-example source parsing, Markdown body-preview extraction, structured
-lexical-sense Markdown parsing, and explicit-selection lookup semantics
-reviewed; SEC-004-H1 through SEC-004-H7 are remediated and regression-tested.
-The remaining frontmatter and Markdown input surfaces still require review.**
+lexical-sense Markdown parsing, explicit-selection lookup semantics, and Unicode
+lexical normalization reviewed; SEC-004-H1 through SEC-004-H8 are remediated
+and regression-tested. The remaining frontmatter and Markdown input surfaces
+still require review.**
 
 ---
 
@@ -1846,6 +1923,7 @@ audit section.
 | SEC-004-H5 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview cleanup indiscriminately deleted `*`, `_`, and backticks, altering potentially meaningful creator-authored text in derived previews. | Code review; controlled punctuation-fidelity tests; `test:body-preview` regression coverage | Body-preview extraction now preserves creator-authored punctuation. Layout normalization remains allowed, while any future Markdown rendering is left to the presentation layer rather than destructive source-text cleanup. |
 | SEC-004-H6 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Markdown fenced-code examples could be interpreted as structured lexical-sense data, allowing literal documentation text to become real semantic data and English lookup vocabulary. | Code review; controlled fenced-code adversarial tests; downstream English-index review; `test:lexical-senses` regression coverage | Lexical-sense parsing now masks backtick- and tilde-fenced code in an in-memory parsing view before recognizing semantic structure. Source Markdown is unchanged; delimiter type/length boundaries are preserved; `---` remains a separate frontmatter/thematic-break concern. |
 | SEC-004-H7 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Whole-selection cleanup could delete separators and manufacture a different dictionary lookup token from the text the user explicitly selected. | Code review; `test:selection-lookup`; `test:gloss-rendering`; Obsidian runtime verification of single-word lookup, phrase confirmation, cancellation, confirmed phrase translation, and punctuation-separated rejection | Preview-to-English now classifies explicit selection intent before lookup. Safe single words may shed only harmless outer punctuation/whitespace; whitespace-separated multi-word selections require phrase confirmation; unsafe internal separators are rejected rather than deleted. Source text is not modified. |
+| SEC-004-H8 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Unicode combining marks could be dropped or treated as token boundaries, changing creator-authored lexical forms and causing incorrect or failed lookup. | Controlled Unicode tests; `test:lexical-normalization`; production cypher regression coverage; production build; Obsidian runtime verification of canonically equivalent single-word and phrase lookup | Combining marks are preserved as lexical continuation content; NFC is applied only to derived comparison/index keys; dictionary, phrase, panel, and cypher behavior share Unicode-safe lexical semantics; creator-authored source/display spelling is not normalized or rewritten. |
 
 ---
 
@@ -1856,7 +1934,9 @@ reason.
 
 | Section | Item | Status | Rationale | Revisit Trigger |
 | --- | --- | --- | --- | --- |
-| — | — | — | — | — |
+| §4 Frontmatter and Markdown Input | Orthographic punctuation policy and language-level punctuation configuration | Deferred design review | H8 preserves the established apostrophe/hyphen behavior so Unicode remediation does not silently impose a new orthographic policy. Ordinary punctuation may eventually have conservative default lexical positions, while unusual punctuation characters, leading/trailing placement, repeated punctuation, or other language-specific behavior should be explicitly enabled by the language rather than assumed globally. | Word-token grammar, language profiles, orthographic settings, punctuation handling, or configurable lexical-character support changes. |
+| §4 Frontmatter and Markdown Input | Language-aware lexical casing | Deferred design review | H8 retains the current boolean case-sensitive/case-insensitive policy and JavaScript case conversion. Some constructed or natural-language orthographies may require language-specific casing behavior, so derived-key casing should be reviewed before the current policy is treated as universally sufficient. | Language-specific casing is requested; case behavior becomes configurable; language profiles gain casing rules; or lookup expands to languages for which the current case model is insufficient. |
+| Future add-on investigation | Orthography / neography visual tooling | Investigate in future | Writing-system design, orthographic modeling, and neography practices should be researched before deciding whether Workbench should provide a visual glyph/script builder. If pursued, it should be evaluated as a potential add-on rather than assumed core scope. A possible future design may use a fixed-size glyph design space with optional construction grids/guides and reusable construction tools, but no implementation is authorized by this audit note. | Dedicated orthography/neography research begins or visual writing-system tooling is proposed for implementation. |
 
 ---
 

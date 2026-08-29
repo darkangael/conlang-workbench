@@ -7,28 +7,35 @@ import { parseYamlScalarText } from "./frontmatter-values";
 // hyphens. This module centralises the regex so behaviour is consistent.
 //
 // The pattern: a "word" starts with a letter (any Unicode letter, via \p{L})
-// and may contain additional letters, apostrophes, or hyphens. Trailing
-// punctuation is naturally excluded because the engine stops at non-letter
-// non-apostrophe non-hyphen.
+// and may contain additional letters, Unicode combining marks, apostrophes,
+// or hyphens. A combining mark may continue a word but cannot start one.
+// Trailing punctuation is naturally excluded because the engine stops at
+// characters outside the current lexical-token grammar.
 //
 // Compounds like "kala-vren" are treated as one token because they're
 // addressable as one dictionary entry. Decomposition is explicit (the
 // `parts` field) rather than implicit (regex-driven).
 
 /** Match a whole word. Use with .match(WORD_RE) or .replace(WORD_RE, ...). */
-export const WORD_RE = /\p{L}[\p{L}'-]*/gu;
+export const WORD_RE = /\p{L}[\p{L}\p{M}'-]*/gu;
 
 /** Anchored version: test whether a string IS a single word. */
-export const WORD_ANCHORED_RE = /^\p{L}[\p{L}'-]*$/u;
+export const WORD_ANCHORED_RE = /^\p{L}[\p{L}\p{M}'-]*$/u;
 
-/** Strip non-word characters from a string. Used to clean hovered text. */
+/**
+ * Strip characters outside the current word grammar from constrained text.
+ *
+ * Callers must not use this as an authority-granting cleanup step for
+ * arbitrary selections. It preserves combining marks so decomposed Unicode
+ * spelling cannot silently become a different lexical form.
+ */
 export function cleanWord(s: string): string {
-  return s.replace(/[^\p{L}'-]/gu, "");
+  return s.replace(/[^\p{L}\p{M}'-]/gu, "");
 }
 
-/** Test whether a single character is part of a word. */
+/** Test whether a single character is part of the current word grammar. */
 export function isWordChar(ch: string): boolean {
-  return /[\p{L}'-]/u.test(ch);
+  return /[\p{L}\p{M}'-]/u.test(ch);
 }
 
 /**
