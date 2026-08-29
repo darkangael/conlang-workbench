@@ -91,7 +91,10 @@ function hasOwn(
   record: Record<string, unknown>,
   key: string,
 ): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
+  // Function.call() is typed broadly enough that ESLint sees its result as
+  // `any`. Converting it explicitly to Boolean preserves the own-property
+  // check while making the runtime and TypeScript return type agree.
+  return Boolean(Object.prototype.hasOwnProperty.call(record, key));
 }
 
 /**

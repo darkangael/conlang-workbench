@@ -27,10 +27,21 @@ The normal workflow is:
 3. Build the plugin.
 4. Run the linter.
 5. Test the affected functionality in Obsidian.
-6. Inspect the Git diff.
-7. Commit the change.
-8. Push the commit to the remote `develop` branch.
-9. Merge tested, stable work into `main` when appropriate.
+6. Review the changed code for security and data-safety risks appropriate to the boundaries it touches.
+7. Inspect the Git diff.
+8. Commit the change.
+9. Push the commit to the remote `develop` branch.
+10. Merge tested, stable work into `main` when appropriate.
+
+Security and data safety are part of normal development rather than a review reserved
+for release preparation. New or modified code should be checked before it is committed
+and pushed. The depth of that review should match the risk of the change, with particular
+attention to trust boundaries such as creator-authored content, vault paths and file
+access, frontmatter and Markdown parsing, DOM rendering, links and attributes, and
+operations that create, modify, rename, move, or delete creator data.
+
+When the safety of an operation cannot be established, prefer preserving the existing
+data and stopping safely over guessing and mutating creator-authored content.
 
 Experimental work should not be merged into `main` merely because it compiles.
 

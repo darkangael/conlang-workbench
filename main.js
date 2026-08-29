@@ -523,7 +523,7 @@ var LEXICAL_SIGNAL_FIELDS = [
   "inflections"
 ];
 function hasOwn(record, key) {
-  return Object.prototype.hasOwnProperty.call(record, key);
+  return Boolean(Object.prototype.hasOwnProperty.call(record, key));
 }
 function classifyDictionarySourceAuthority(frontmatter) {
   var _a;
@@ -7517,6 +7517,38 @@ function replaceTextNode(plugin, textNode) {
   (_b = textNode.parentNode) == null ? void 0 : _b.replaceChild(frag, textNode);
 }
 
+// settings-validation.ts
+function isOneOf(value, allowed) {
+  return typeof value === "string" && allowed.includes(value);
+}
+function normalizeClosedChoiceSettings(settings) {
+  if (!isOneOf(settings.commitWrapper, [
+    "footnote-style",
+    "html-tooltip",
+    "wikilink"
+  ])) {
+    settings.commitWrapper = DEFAULT_SETTINGS.commitWrapper;
+  }
+  if (!isOneOf(settings.hoverModifier, [
+    "none",
+    "shift",
+    "alt",
+    "ctrl"
+  ])) {
+    settings.hoverModifier = DEFAULT_SETTINGS.hoverModifier;
+  }
+  if (!isOneOf(settings.hoverFallback, ["cypher", "nothing"])) {
+    settings.hoverFallback = DEFAULT_SETTINGS.hoverFallback;
+  }
+  if (!isOneOf(settings.highlightStyle, [
+    "underline",
+    "italic",
+    "background"
+  ])) {
+    settings.highlightStyle = DEFAULT_SETTINGS.highlightStyle;
+  }
+}
+
 // main.ts
 var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
   constructor() {
@@ -7698,6 +7730,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
   async loadSettings() {
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+    normalizeClosedChoiceSettings(this.settings);
     this.migrateSettings();
   }
   /**

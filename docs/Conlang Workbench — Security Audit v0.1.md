@@ -1743,37 +1743,123 @@ finding. Rendered-Markdown and DOM presentation behavior proceeds to §5.**
 
 ### Rendering Methods in Use
 
-Inventory DOM APIs used by the plugin.
+The plugin primarily renders UI through Obsidian DOM helpers such as
+`createEl()`, `createDiv()`, `createSpan()`, `setText()`, and `appendText()`.
+The Reading View highlighter additionally uses standard DOM text-node,
+`DocumentFragment`, and `createElement()` APIs.
+
+The source inventory found no use of raw-HTML parsing or execution sinks such as
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `DOMParser`,
+`createContextualFragment`, `document.write`, `eval`, or `new Function`.
+The plugin also does not pass creator content through `MarkdownRenderer` or an
+equivalent Markdown-to-DOM rendering API.
 
 ### User-Controlled Content
 
-Identify every place where vault or imported content reaches the UI.
+Creator-authored dictionary words, definitions, senses, etymologies, language
+names, morpheme data, phonological data, linguistic examples, translation
+tokens, and related linguistic content reach the UI primarily through text
+sinks including `setText()`, `appendText()`, `textContent`, text options on
+Obsidian DOM helpers, form values, and title properties.
+
+These APIs preserve the creator's strings as text rather than interpreting them
+as HTML.
 
 ### HTML and DOM APIs
 
-Search for potentially dangerous rendering patterns such as:
+No dynamic `href` or `src` assignment was found in the TypeScript source, and
+the audit found no external-navigation or script-execution sink receiving
+creator-authored content.
 
-- `innerHTML`
-- raw HTML insertion
-- direct attribute construction
-- unsanitized URL insertion
+Reading View highlighting walks existing text nodes, creates replacement text
+nodes and spans, and assigns matched creator text through `textContent`.
+Selectors used by highlighting, panels, modals, and filters are fixed
+Workbench-authored selectors rather than selectors constructed from creator
+content.
+
+Clipboard writes use `navigator.clipboard.writeText()`. Structured translator
+output is flattened to text before copying; no `text/html` clipboard payload is
+constructed.
 
 ### Escaping and Sanitization
 
-Verify that user-authored strings are rendered as text unless HTML rendering is
-deliberate and safely handled.
+Creator-authored strings are rendered as text at the reviewed presentation
+boundaries. No reviewed surface deliberately interprets creator-authored
+linguistic content as HTML.
+
+Creator-derived morpheme-type and phonology-category CSS classes are normalized
+to restricted class-token characters before being passed to `addClass()`.
+Highlight classes come from a closed internal highlight-kind mapping, while
+highlight inline styles come from Workbench-authored fixed style declarations.
+Persisted `highlightStyle` values are runtime-normalized to their documented
+closed set before use.
 
 ### Link and Attribute Handling
 
-Review user-controlled links, titles, classes, IDs, and data attributes.
+Dictionary, morpheme, phonological-unit, lookup, and highlight navigation uses
+vault file paths rather than external URLs. Stored paths are resolved through
+`vault.getAbstractFileByPath()`, and navigation proceeds only when the result is
+an Obsidian `TFile`.
+
+The highlight `data-conlang-path` attribute carries the resolved dictionary
+entry's vault path and is re-resolved to a `TFile` before opening. No dynamic
+creator-controlled `href`, `src`, or DOM ID construction was found.
+
+Other reviewed attributes, including accessibility labels and fixed UI titles,
+are Workbench-authored constants. Creator-authored tooltip text is assigned
+through the DOM `title` property and remains text.
 
 ### Findings
 
-None recorded yet.
+#### SEC-005-H1 — Persisted closed-choice settings lacked runtime validation
+
+**Severity:** Hardening
+**Status:** Remediated
+
+Persisted plugin settings were merged with `DEFAULT_SETTINGS` and then trusted as
+`ConlangSettings`. TypeScript union types constrain Workbench-authored code at
+compile time, but they do not validate data loaded from disk at runtime.
+
+Four persisted settings use closed sets of values:
+
+- `commitWrapper`
+- `hoverModifier`
+- `hoverFallback`
+- `highlightStyle`
+
+This was relevant to the DOM boundary because `highlightStyle` participates in
+the highlight class applied to the document, and it was also relevant to
+behavioral safety because `commitWrapper` selects how translated material is
+written back into notes.
+
+The load boundary now calls `normalizeClosedChoiceSettings()` immediately after
+persisted data is merged with the defaults. Invalid runtime values fall back to
+their documented defaults before rendering or mutation behavior can consume
+them.
+
+The normalization is deliberately limited to closed-choice settings. Free-form
+creator configuration, including language names, folders, and linguistic rules,
+is not silently rewritten by this validation step.
+
+A focused regression test exercises the production validation module and
+confirms that:
+
+- valid non-default choices are preserved;
+- invalid strings are rejected;
+- non-string runtime values are rejected;
+- unrelated creator-defined data is left untouched.
+
+The production build and established security/data-safety regression suite pass
+with this remediation.
 
 ### Status
 
-**Not Reviewed**
+**Pass** — The current DOM rendering, creator-content presentation, attribute,
+selector, clipboard, and navigation surfaces have been inventoried against the
+TypeScript source. Creator-authored linguistic content is rendered through text
+APIs rather than raw HTML interpretation; reviewed navigation is constrained to
+resolved vault `TFile` objects; and no dynamic external URL or script-execution
+sink was found. SEC-005-H1 is remediated and regression-tested.
 
 ---
 

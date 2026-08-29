@@ -61,6 +61,7 @@ import {
   registerEntryLinkHandler,
 } from "./highlight";
 import type { HighlightKind } from "./highlight-core";
+import { normalizeClosedChoiceSettings } from "./settings-validation";
 import { EditorView } from "@codemirror/view";
 
 export default class ConlangPlugin extends Plugin {
@@ -285,6 +286,13 @@ export default class ConlangPlugin extends Plugin {
   async loadSettings() {
     const data = (await this.loadData()) as Partial<ConlangSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+
+    // Persisted settings are runtime data, so TypeScript's compile-time unions
+    // cannot guarantee that closed-choice values are actually valid here.
+    // Normalize them before any DOM rendering or mutation behavior can use
+    // those values.
+    normalizeClosedChoiceSettings(this.settings);
+
     this.migrateSettings();
   }
 
