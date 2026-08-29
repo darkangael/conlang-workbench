@@ -42,6 +42,9 @@ const { parsePhonologySource } =
 const { parseDictionarySource } =
   await importBundled("dictionary-source.ts");
 
+const { parseLinguisticExampleSource } =
+  await importBundled("linguistic-example-source.ts");
+
 // ---------------------------------------------------------------------------
 // Shared frontmatter value boundary
 // ---------------------------------------------------------------------------
@@ -888,6 +891,223 @@ const incompleteExplicitLexemeSource = parseDictionarySource(
 assert.ok(incompleteExplicitLexemeSource);
 assert.equal(incompleteExplicitLexemeSource.value, null);
 assert.equal(incompleteExplicitLexemeSource.identity.linguisticID, "talu");
+
+// ---------------------------------------------------------------------------
+// Linguistic-example source adapter
+// ---------------------------------------------------------------------------
+
+function makeLinguisticExampleSource(frontmatter, overrides = {}) {
+  return {
+    path: "Languages/Test Language/Examples/example-001.md",
+    frontmatter,
+    ...overrides,
+  };
+}
+
+// A canonical standalone example produces a clean linguistic value and keeps
+// creator-authored linguistic identity separate from Workbench identity.
+const validExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    example_id: "example-001",
+    text: "Mi varu.",
+    gloss: "1SG flow",
+    translation: "I flow.",
+  }),
+);
+
+assert.ok(validExampleSource);
+assert.equal(validExampleSource.value?.id, "example-001");
+assert.equal(validExampleSource.value?.text, "Mi varu.");
+assert.equal(validExampleSource.value?.translation, "I flow.");
+assert.equal(
+  validExampleSource.identity.linguisticID,
+  "example-001",
+);
+assert.ok(validExampleSource.identity.workbenchID);
+assert.equal(validExampleSource.diagnostics.length, 0);
+
+// The feature has a deliberately narrow source-authority boundary. A foreign
+// document does not become an example merely because it happens to reuse a
+// field such as `text` or `gloss`.
+assert.equal(
+  parseLinguisticExampleSource(
+    makeLinguisticExampleSource({
+      type: "morpheme",
+      text: "Mi varu.",
+      gloss: "1SG flow",
+    }),
+  ),
+  null,
+);
+
+// Untyped Markdown is also outside standalone-example authority. Embedded
+// examples may be adapted separately in the future rather than guessed here.
+assert.equal(
+  parseLinguisticExampleSource(
+    makeLinguisticExampleSource({
+      text: "Mi varu.",
+      translation: "I flow.",
+    }),
+  ),
+  null,
+);
+
+// Malformed document type does not establish feature authority.
+assert.equal(
+  parseLinguisticExampleSource(
+    makeLinguisticExampleSource({
+      type: { malformed: "structure" },
+      text: "Mi varu.",
+    }),
+  ),
+  null,
+);
+
+// A recognized source with missing required text is retained instead of
+// disappearing from Workbench state.
+const missingTextExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    example_id: "example-missing-text",
+  }),
+);
+
+assert.ok(missingTextExampleSource);
+assert.equal(missingTextExampleSource.value, null);
+assert.equal(
+  missingTextExampleSource.identity.linguisticID,
+  "example-missing-text",
+);
+assert.ok(
+  missingTextExampleSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "linguistic-example.unusable-text" &&
+      diagnostic.field === "text" &&
+      diagnostic.severity === "error",
+  ),
+);
+
+// Blank required text is likewise incomplete rather than silently discarded.
+const blankTextExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    text: "   ",
+  }),
+);
+
+assert.ok(blankTextExampleSource);
+assert.equal(blankTextExampleSource.value, null);
+
+// Structured required text must never be stringified into invented content.
+const structuredTextExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    text: { unexpected: "shape" },
+  }),
+);
+
+assert.ok(structuredTextExampleSource);
+assert.equal(structuredTextExampleSource.value, null);
+assert.ok(
+  structuredTextExampleSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "linguistic-example.unusable-text",
+  ),
+);
+
+// example_id is optional. A missing ID does not cause Workbench to invent a
+// linguistic identity from the path or filename.
+const noIdExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    text: "Mi varu.",
+  }),
+);
+
+assert.ok(noIdExampleSource);
+assert.ok(noIdExampleSource.value);
+assert.equal(noIdExampleSource.value.id, undefined);
+assert.equal(noIdExampleSource.identity.linguisticID, undefined);
+assert.ok(noIdExampleSource.identity.workbenchID);
+
+// Structurally malformed optional fields do not invalidate an otherwise usable
+// example. They are omitted from the clean model and retained as diagnostics.
+const malformedOptionalExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    text: "Mi varu.",
+    translation: { unexpected: "shape" },
+    language_id: ["not", "a", "string"],
+    notes: 42,
+  }),
+);
+
+assert.ok(malformedOptionalExampleSource);
+assert.ok(malformedOptionalExampleSource.value);
+assert.equal(
+  malformedOptionalExampleSource.value.translation,
+  undefined,
+);
+assert.equal(
+  malformedOptionalExampleSource.value.languageId,
+  undefined,
+);
+assert.equal(malformedOptionalExampleSource.value.notes, undefined);
+
+for (const field of ["translation", "language_id", "notes"]) {
+  assert.ok(
+    malformedOptionalExampleSource.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "frontmatter.unusable-value" &&
+        diagnostic.field === field &&
+        diagnostic.severity === "warning",
+    ),
+  );
+}
+
+// Empty optional strings are normal template placeholders, not malformed data,
+// and therefore should not generate warning noise.
+const blankOptionalExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    text: "Mi varu.",
+    example_id: "",
+    realization: "   ",
+    translation: "",
+    source: "",
+    context: "",
+    notes: "",
+  }),
+);
+
+assert.ok(blankOptionalExampleSource);
+assert.ok(blankOptionalExampleSource.value);
+assert.equal(blankOptionalExampleSource.value.id, undefined);
+assert.equal(blankOptionalExampleSource.value.translation, undefined);
+assert.equal(blankOptionalExampleSource.diagnostics.length, 0);
+
+// A malformed optional example_id produces a warning but still does not become
+// an invented linguistic identity.
+const malformedIdExampleSource = parseLinguisticExampleSource(
+  makeLinguisticExampleSource({
+    type: "linguistic-example",
+    example_id: { unexpected: "shape" },
+    text: "Mi varu.",
+  }),
+);
+
+assert.ok(malformedIdExampleSource);
+assert.ok(malformedIdExampleSource.value);
+assert.equal(malformedIdExampleSource.value.id, undefined);
+assert.equal(malformedIdExampleSource.identity.linguisticID, undefined);
+assert.ok(
+  malformedIdExampleSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-value" &&
+      diagnostic.field === "example_id",
+  ),
+);
 
 // ---------------------------------------------------------------------------
 // parseStringList()

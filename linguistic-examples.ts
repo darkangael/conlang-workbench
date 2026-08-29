@@ -1,4 +1,11 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
+import {
+  parseLinguisticExampleSource,
+} from "./linguistic-example-source";
+import type {
+  LinguisticExampleSourceInput,
+} from "./linguistic-example-source";
+import type { WorkbenchSourceRecord } from "./workbench-source";
 
 /**
  * A documented example of a language in use.
@@ -51,67 +58,6 @@ export interface LinguisticExample {
 }
 
 /**
- * Convert Markdown frontmatter into a LinguisticExample.
- *
- * Keeping this parsing logic inside the linguistic-examples module prevents
- * callers such as the main plugin or a future Examples tab from needing to
- * understand the example-note YAML schema themselves.
- *
- * Returns null when the frontmatter does not describe a usable linguistic
- * example. This lets a future loader safely scan notes without treating every
- * Markdown file as an example.
- */
-export function parseLinguisticExampleFrontmatter(
-  frontmatter: Record<string, unknown>,
-  path?: string,
-): LinguisticExample | null {
-  // Only notes explicitly identified as linguistic examples belong to this
-  // feature. Other notes may contain examples later, but embedded examples
-  // will be handled separately rather than guessed here.
-  if (frontmatter.type !== "linguistic-example") {
-    return null;
-  }
-
-  // `text` is the one required linguistic tier. A note without original
-  // language text cannot yet serve as a LinguisticExample.
-  const text =
-    typeof frontmatter.text === "string" ? frontmatter.text.trim() : "";
-
-  if (!text) {
-    return null;
-  }
-
-  /**
-   * Read an optional string field consistently.
-   *
-   * YAML values are not guaranteed to be strings, so checking the runtime
-   * type here keeps malformed or unexpected metadata from leaking into the
-   * rest of Workbench.
-   */
-  const optionalString = (value: unknown): string | undefined => {
-    if (typeof value !== "string") return undefined;
-
-    const trimmed = value.trim();
-    return trimmed || undefined;
-  };
-
-  return {
-    id: optionalString(frontmatter.example_id),
-    text,
-    realization: optionalString(frontmatter.realization),
-    segmentation: optionalString(frontmatter.segmentation),
-    gloss: optionalString(frontmatter.gloss),
-    translation: optionalString(frontmatter.translation),
-    language: optionalString(frontmatter.language),
-    languageId: optionalString(frontmatter.language_id),
-    source: optionalString(frontmatter.source),
-    context: optionalString(frontmatter.context),
-    notes: optionalString(frontmatter.notes),
-    path,
-  };
-}
-
-/**
  * A configured source folder for one language's standalone linguistic examples.
  *
  * The caller is responsible for deciding which folder belongs to which
@@ -134,6 +80,15 @@ export interface LinguisticExampleSource {
 export class LinguisticExampleInventory {
   private all: LinguisticExample[] = [];
 
+  // Source records remain separate from valid feature-facing examples.
+  // This lets Workbench preserve and diagnose recognized malformed sources
+  // without pretending they are complete LinguisticExample objects.
+  private sourceRecords: WorkbenchSourceRecord<LinguisticExample>[] = [];
+  private sourceByWorkbenchID = new Map<
+    string,
+    WorkbenchSourceRecord<LinguisticExample>
+  >();
+
   constructor(private app: App) {}
 
   /**
@@ -144,6 +99,8 @@ export class LinguisticExampleInventory {
    */
   clear(): void {
     this.all = [];
+    this.sourceRecords = [];
+    this.sourceByWorkbenchID.clear();
   }
 
   /**
@@ -154,6 +111,29 @@ export class LinguisticExampleInventory {
    */
   allExamples(): LinguisticExample[] {
     return this.all.slice();
+  }
+
+  /**
+   * Return every recognized standalone-example source record, including
+   * malformed sources that could not become complete LinguisticExample values.
+   *
+   * Returning a copy prevents callers from replacing the inventory's internal
+   * collection accidentally.
+   */
+  allSourceRecords(): WorkbenchSourceRecord<LinguisticExample>[] {
+    return this.sourceRecords.slice();
+  }
+
+  /**
+   * Look up a recognized source by Workbench's internal identity.
+   *
+   * This is separate from the optional creator-authored example_id. A source
+   * remains addressable even when its linguistic identity is missing.
+   */
+  lookupWorkbenchID(
+    workbenchID: string,
+  ): WorkbenchSourceRecord<LinguisticExample> | undefined {
+    return this.sourceByWorkbenchID.get(workbenchID);
   }
 
   /**
@@ -198,8 +178,18 @@ export class LinguisticExampleInventory {
       const files = this.collectMarkdownFiles(folder);
 
       for (const file of files) {
-        const example = this.readExample(file);
-        if (!example) continue;
+        const record = this.readSource(file);
+        if (!record) continue;
+
+        // Once a source is positively recognized, retain it even if required
+        // linguistic data is malformed. It remains diagnosable but does not
+        // enter the clean feature-facing example collection.
+        if (record.value === null) {
+          this.addSourceRecord(record);
+          continue;
+        }
+
+        const example = record.value;
 
         // Do not let an example explicitly belonging to another language leak
         // into this source just because its file happens to be inside the
@@ -230,6 +220,9 @@ export class LinguisticExampleInventory {
           example.languageId = source.languageId;
         }
 
+        // Store the source record only after valid language filtering, matching
+        // the existing overlapping-folder behavior used by other inventories.
+        this.addSourceRecord(record);
         this.all.push(example);
         count++;
       }
@@ -262,17 +255,35 @@ export class LinguisticExampleInventory {
   }
 
   /**
-   * Read one Markdown note and convert its cached YAML frontmatter into the
-   * shared LinguisticExample model.
+   * Read one Markdown note and pass its cached YAML frontmatter to the pure
+   * source adapter.
+   *
+   * Vault access stays here while interpretation stays in
+   * linguistic-example-source.ts.
    */
-  private readExample(file: TFile): LinguisticExample | null {
+  private readSource(
+    file: TFile,
+  ): WorkbenchSourceRecord<LinguisticExample> | null {
     const cache: CachedMetadata | null =
       this.app.metadataCache.getFileCache(file);
 
     if (!cache) return null;
 
-    const frontmatter = cache.frontmatter ?? {};
+    const input: LinguisticExampleSourceInput = {
+      path: file.path,
+      frontmatter: cache.frontmatter ?? {},
+    };
 
-    return parseLinguisticExampleFrontmatter(frontmatter, file.path);
+    return parseLinguisticExampleSource(input);
+  }
+
+  /**
+   * Retain one recognized source independently from the clean example index.
+   */
+  private addSourceRecord(
+    record: WorkbenchSourceRecord<LinguisticExample>,
+  ): void {
+    this.sourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, record);
   }
 }
