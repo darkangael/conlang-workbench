@@ -833,8 +833,20 @@ The initial parser inventory identified the following current input surfaces:
 The Language Profile parser, shared `word-tokens.ts` helpers, morpheme,
 phonology, dictionary, standalone linguistic-example source/frontmatter
 handling, Markdown body-preview extraction, and structured lexical-sense
-Markdown parsing have now been reviewed in this pass. The remaining parsers
-still require individual review before §4 can be completed.
+Markdown parsing have now been reviewed in this pass.
+
+A closure reconciliation against the current TypeScript source tree confirmed
+that the inventory covers the plugin's current frontmatter and raw-Markdown
+input surfaces. The only current raw lexical-note Markdown read is coordinated
+by `dictionary.ts` and feeds the already-reviewed body-preview and structured
+lexical-sense parsers. Direct metadata-cache reads used during dictionary
+creation are covered by the existing-entry meaning and source-authority
+reviews. `waitForFrontmatter()` is synchronization for Workbench-created notes
+rather than a creator-data interpretation boundary.
+
+Rendered-Markdown post-processing and highlighting begin at the DOM/rendering
+boundary and are reviewed separately in §5 rather than treated as unfinished
+§4 parsing.
 
 Morpheme parsing is now separated from inventory storage. Raw Obsidian
 frontmatter is interpreted by `morpheme-source.ts`, which produces a
@@ -952,9 +964,10 @@ Workbench does not substitute its own identity for missing linguistic identity.
 
 ### Unexpected Content
 
-No execution behavior was identified in the Language Profile or shared
-string-list/form parsing reviewed so far. Full Markdown-to-UI and body-content
-handling remains to be reviewed here and in §5 DOM Rendering and Injection.
+No execution behavior was identified in the reviewed frontmatter or raw
+Markdown input surfaces. Creator-controlled content that reaches rendered DOM,
+highlighting, links, or other presentation APIs crosses into the separate §5
+DOM Rendering and Injection review.
 
 ### Findings
 
@@ -1713,17 +1726,16 @@ created.
 
 ### Status
 
-**In Progress — Language Profile, shared frontmatter helpers, morpheme source
-parsing, phonology source parsing, dictionary source parsing, standalone
-linguistic-example source parsing, Markdown body-preview extraction, structured
-lexical-sense Markdown parsing, explicit-selection lookup semantics, Unicode
-lexical normalization, general Lookup-command query authority,
-Unicode-safe cursor/hover word scanning, existing-entry dictionary mutation
-authority, creation-time dictionary source authority, and observed Obsidian
-malformed-YAML/duplicate/unusual-key metadata-cache behavior reviewed;
-SEC-004-H1 through SEC-004-H12 are remediated and regression-tested. The
-runtime YAML characterization produced no additional finding. The remaining
-frontmatter and Markdown input surfaces still require review.**
+**Pass — The current frontmatter and raw-Markdown input surfaces have been
+inventoried and reconciled against the current TypeScript source tree. Language
+Profile, shared frontmatter helpers, morpheme, phonology, dictionary, standalone
+linguistic-example, body-preview, structured lexical-sense, explicit-selection
+and general lookup authority, Unicode lexical normalization/scanning,
+existing-entry dictionary mutation authority, creation-time dictionary source
+authority, and observed Obsidian malformed-YAML/duplicate/unusual-key behavior
+have been reviewed. SEC-004-H1 through SEC-004-H12 are remediated and
+regression-tested. The runtime YAML characterization produced no additional
+finding. Rendered-Markdown and DOM presentation behavior proceeds to §5.**
 
 ---
 

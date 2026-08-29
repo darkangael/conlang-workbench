@@ -43,3 +43,6 @@ Thumbs.db
 # Mer is copied from the private Conlangs vault for testing Conlang Workbench.
 # It is not repository test data and should never be committed.
 test-vault/Languages/Mer/
+
+# FUSE temporary files created when open files are removed
+.fuse_hidden*
