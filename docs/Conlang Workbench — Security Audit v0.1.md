@@ -832,9 +832,9 @@ The initial parser inventory identified the following current input surfaces:
 
 The Language Profile parser, shared `word-tokens.ts` helpers, morpheme,
 phonology, dictionary, standalone linguistic-example source/frontmatter
-handling, and Markdown body-preview extraction have now been reviewed in this
-pass. The remaining parsers still require individual review before §4 can be
-completed.
+handling, Markdown body-preview extraction, and structured lexical-sense
+Markdown parsing have now been reviewed in this pass. The remaining parsers
+still require individual review before §4 can be completed.
 
 Morpheme parsing is now separated from inventory storage. Raw Obsidian
 frontmatter is interpreted by `morpheme-source.ts`, which produces a
@@ -1208,13 +1208,78 @@ notation, and a leading linguistic reconstruction marker.
 `npm run test:vault-paths`, the production build, and `git diff --check` passed
 for the combined body-preview remediation checkpoint.
 
+#### SEC-004-H6 — Markdown fenced-code examples could be interpreted as structured lexical-sense data
+
+- **Severity:** Hardening
+- **Primary impact:** Semantic integrity and lookup correctness
+- **Data-safety relevance:** Yes
+- **Status:** Remediated and regression-tested
+
+`lexical-senses.ts` parses optional structured semantic information from a
+dictionary note's `## Senses` section. Before remediation, its heading and field
+recognition operated directly on raw Markdown with regular expressions and did
+not distinguish active Markdown from literal examples inside fenced code
+blocks.
+
+Controlled adversarial tests demonstrated that a complete `## Senses` example
+inside a fenced code block could be parsed as real lexical-sense data. A
+`### Sense` heading inside fenced code within a real Senses section could also
+create a sense, and `**Gloss:**` or `**Lookup:**` fields shown inside fenced
+documentation could be interpreted as semantic fields of a real sense.
+
+This crossed an authority boundary rather than merely affecting presentation.
+Structured sense glosses and lookup terms are intentionally added to the
+dictionary's central English lookup index. Consequently, documentation text
+such as `should-not-be-semantic`, `accidental`, or `example` could become real
+lookup vocabulary even though the creator supplied it only as literal Markdown
+syntax inside a code example.
+
+The source Markdown was never modified. The failure affected Workbench's
+derived semantic interpretation and lookup behavior.
+
+The remediation introduces `markdown-fences.ts`, a small pure helper that
+creates an in-memory parsing view with fenced code content masked before
+lexical-sense structure is recognized. The helper handles backtick and tilde
+code fences, preserves the opening delimiter type and length while locating a
+valid closing fence, and does not alter the creator's source note.
+
+The code-fence helper deliberately does not interpret `---`. YAML frontmatter
+boundaries and ordinary Markdown thematic breaks are separate parsing concerns;
+in particular, an ordinary `---` thematic break inside a Senses section must
+not disable otherwise valid lexical-sense parsing.
+
+Backtick-fence info strings are also checked according to their distinct
+Markdown boundary: an apparent backtick opener whose info string itself
+contains a backtick is treated as ordinary Markdown rather than being allowed
+to hide later semantic content. Valid closing fences may contain permitted
+trailing whitespace, and a shorter or different delimiter does not prematurely
+close an active fence.
+
+Regression coverage in `npm run test:lexical-senses` verifies:
+
+- normal structured lexical-sense parsing remains unchanged
+- complete Senses examples inside backtick fences remain semantically inert
+- sense headings and semantic fields inside fenced code remain inert
+- tilde fences receive the same protection
+- shorter delimiters do not close longer fences
+- tilde delimiters do not close backtick fences
+- active Markdown after a valid closing fence is parsed normally
+- invalid backtick info strings do not hide later semantic content
+- valid closing fences with trailing tab whitespace are recognized
+- ordinary `---` thematic breaks do not behave like code-fence boundaries
+
+`npm run test:lexical-senses`, `npm run test:body-preview`,
+`npm run test:frontmatter`, `npm run test:vault-paths`, the production build,
+and `git diff --check` passed for the remediation checkpoint.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
 parsing, phonology source parsing, dictionary source parsing, standalone
-linguistic-example source parsing, and Markdown body-preview extraction
-reviewed; SEC-004-H1 through SEC-004-H5 are remediated and regression-tested.
-The remaining frontmatter and Markdown input surfaces still require review.**
+linguistic-example source parsing, Markdown body-preview extraction, and
+structured lexical-sense Markdown parsing reviewed; SEC-004-H1 through
+SEC-004-H6 are remediated and regression-tested. The remaining frontmatter and
+Markdown input surfaces still require review.**
 
 ---
 
@@ -1668,6 +1733,7 @@ audit section.
 | SEC-004-H3 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Recognized malformed standalone linguistic-example sources could disappear from inventory state when required `text` could not be safely interpreted. | Code review; `linguistic-example-source.ts`; malformed-source and optional-field regression coverage in `test:frontmatter` | Standalone examples now use a source adapter and durable source records. Recognized malformed sources remain addressable with diagnostics and `value: null`; strict-string semantics are preserved; malformed optional fields are diagnosed without invalidating otherwise usable examples; source Markdown is not rewritten. |
 | SEC-004-H4 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview frontmatter stripping used prefix matching instead of exact fence recognition, allowing ordinary Markdown or malformed frontmatter boundaries to produce incorrect previews. | Code review; controlled adversarial body-preview tests; `test:body-preview` regression coverage | Body-preview extraction now requires exact `---` opening and closing fence lines and returns no preview for an exact opener without an exact closer rather than inventing a body boundary. Source Markdown is not rewritten. |
 | SEC-004-H5 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview cleanup indiscriminately deleted `*`, `_`, and backticks, altering potentially meaningful creator-authored text in derived previews. | Code review; controlled punctuation-fidelity tests; `test:body-preview` regression coverage | Body-preview extraction now preserves creator-authored punctuation. Layout normalization remains allowed, while any future Markdown rendering is left to the presentation layer rather than destructive source-text cleanup. |
+| SEC-004-H6 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Markdown fenced-code examples could be interpreted as structured lexical-sense data, allowing literal documentation text to become real semantic data and English lookup vocabulary. | Code review; controlled fenced-code adversarial tests; downstream English-index review; `test:lexical-senses` regression coverage | Lexical-sense parsing now masks backtick- and tilde-fenced code in an in-memory parsing view before recognizing semantic structure. Source Markdown is unchanged; delimiter type/length boundaries are preserved; `---` remains a separate frontmatter/thematic-break concern. |
 
 ---
 
