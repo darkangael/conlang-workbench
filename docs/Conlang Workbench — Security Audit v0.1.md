@@ -1272,14 +1272,97 @@ Regression coverage in `npm run test:lexical-senses` verifies:
 `npm run test:frontmatter`, `npm run test:vault-paths`, the production build,
 and `git diff --check` passed for the remediation checkpoint.
 
+#### SEC-004-H7 — Whole-selection cleanup could manufacture a different dictionary lookup token
+
+- **Severity:** Hardening
+- **Primary impact:** Semantic integrity and lookup correctness
+- **Data-safety relevance:** Yes
+- **Status:** Remediated and regression-tested
+
+`previewToEnglish()` previously passed the editor's current selection through
+`cleanWord()` before dictionary lookup. That cleanup removes characters outside
+the Workbench word-character set wherever they occur, rather than only
+recognizing safe lexical boundaries.
+
+For a whole explicit selection, this could manufacture a different lookup token
+from text the user did not actually select as one contiguous word. For example,
+`foo.bar`, `one/two`, or `foo bar` could become `foobar`, `onetwo`, or `foobar`
+before dictionary lookup. If the manufactured form existed in the dictionary,
+Preview to English could report that entry even though the selected source text
+did not contain that lexical token.
+
+The source note was never modified. The failure affected derived semantic
+interpretation and lookup behavior.
+
+The remediation introduces `selection-lookup.ts`, a pure classifier for
+explicit selection intent. It distinguishes:
+
+- a safe single lexical token
+- a whitespace-separated multi-word phrase candidate
+- an invalid selection that must not gain lookup authority
+
+Safe single-word classification may exclude outer punctuation or whitespace,
+but it does not discard arbitrary boundary characters such as digits or
+currency symbols. Internal punctuation and other separators are not deleted to
+manufacture a different token. Existing Workbench word semantics for
+apostrophes and hyphens remain unchanged rather than imposing
+English-specific spelling assumptions.
+
+Explicit multi-word selections are treated as phrase candidates rather than
+silently collapsed into one token. `phrase-confirm-modal.ts` requires explicit
+user confirmation before the selected span is translated as a phrase.
+Cancelling, pressing Escape, clicking outside the modal, or otherwise closing
+without confirmation performs no phrase translation.
+
+Confirmed phrase operations are resolved through `glossConlangToEnglish()` and
+rendered with the direction-specific `renderConlangToEnglishString()`.
+Dictionary and phrase matches therefore produce their documentation-language
+definitions, while inflection, cypher fallback, separators, and unmatched text
+retain their established behaviors. The older directionally ambiguous
+`renderTransliterationString()` remains unchanged pending the separately
+recorded future gloss-model direction and language-identity review.
+
+The remediation is deliberately scoped to explicit selections in
+`previewToEnglish()`. The existing cursor-under-word path is already bounded by
+`getSelectionOrWord()` and `isWordChar()` and retains its established behavior.
+Other commands that legitimately accept arbitrary selections were not globally
+restricted.
+
+Regression coverage in `npm run test:selection-lookup` verifies safe
+single-word boundaries, Unicode lexical content, existing apostrophe/hyphen
+semantics, phrase classification, preservation of internal phrase whitespace,
+rejection of unsafe outer material, and rejection of internal punctuation that
+could otherwise manufacture a different lookup token.
+
+Regression coverage in `npm run test:gloss-rendering` verifies
+conlang-to-documentation-language rendering for dictionary and phrase matches,
+inflected forms, separators, cypher fallbacks, unmatched text, and conservative
+fallback behavior for incomplete renderer input.
+
+Obsidian runtime testing additionally verified that:
+
+- an ordinary explicit single-word selection still performs normal dictionary
+  lookup
+- a whitespace-separated multi-word selection opens the phrase-confirmation
+  modal before translation
+- confirming the phrase performs the translation
+- cancelling the modal performs no translation
+- an invalid punctuation-separated explicit selection is rejected rather than
+  translated or collapsed into a different token
+
+`npm run test:selection-lookup`, `npm run test:gloss-rendering`,
+`npm run test:frontmatter`, `npm run test:lexical-senses`,
+`npm run test:body-preview`, `npm run test:vault-paths`, the production build,
+and `git diff --check` passed for the runtime-remediation checkpoint.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
 parsing, phonology source parsing, dictionary source parsing, standalone
-linguistic-example source parsing, Markdown body-preview extraction, and
-structured lexical-sense Markdown parsing reviewed; SEC-004-H1 through
-SEC-004-H6 are remediated and regression-tested. The remaining frontmatter and
-Markdown input surfaces still require review.**
+linguistic-example source parsing, Markdown body-preview extraction, structured
+lexical-sense Markdown parsing, and explicit-selection lookup semantics
+reviewed; SEC-004-H1 through SEC-004-H7 are remediated and regression-tested.
+The remaining frontmatter and Markdown input surfaces still require review.**
 
 ---
 
@@ -1762,6 +1845,7 @@ audit section.
 | SEC-004-H4 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview frontmatter stripping used prefix matching instead of exact fence recognition, allowing ordinary Markdown or malformed frontmatter boundaries to produce incorrect previews. | Code review; controlled adversarial body-preview tests; `test:body-preview` regression coverage | Body-preview extraction now requires exact `---` opening and closing fence lines and returns no preview for an exact opener without an exact closer rather than inventing a body boundary. Source Markdown is not rewritten. |
 | SEC-004-H5 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview cleanup indiscriminately deleted `*`, `_`, and backticks, altering potentially meaningful creator-authored text in derived previews. | Code review; controlled punctuation-fidelity tests; `test:body-preview` regression coverage | Body-preview extraction now preserves creator-authored punctuation. Layout normalization remains allowed, while any future Markdown rendering is left to the presentation layer rather than destructive source-text cleanup. |
 | SEC-004-H6 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Markdown fenced-code examples could be interpreted as structured lexical-sense data, allowing literal documentation text to become real semantic data and English lookup vocabulary. | Code review; controlled fenced-code adversarial tests; downstream English-index review; `test:lexical-senses` regression coverage | Lexical-sense parsing now masks backtick- and tilde-fenced code in an in-memory parsing view before recognizing semantic structure. Source Markdown is unchanged; delimiter type/length boundaries are preserved; `---` remains a separate frontmatter/thematic-break concern. |
+| SEC-004-H7 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Whole-selection cleanup could delete separators and manufacture a different dictionary lookup token from the text the user explicitly selected. | Code review; `test:selection-lookup`; `test:gloss-rendering`; Obsidian runtime verification of single-word lookup, phrase confirmation, cancellation, confirmed phrase translation, and punctuation-separated rejection | Preview-to-English now classifies explicit selection intent before lookup. Safe single words may shed only harmless outer punctuation/whitespace; whitespace-separated multi-word selections require phrase confirmation; unsafe internal separators are rejected rather than deleted. Source text is not modified. |
 
 ---
 
