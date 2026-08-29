@@ -23,7 +23,9 @@ import { App, TFile, TFolder, CachedMetadata } from "obsidian";
 import { DictionaryEntry, LexicalSense } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
 import { parseLexicalSenses } from "./lexical-senses";
-import { parseStringList, parseInflectedForms } from "./word-tokens";
+import { parseDictionarySource } from "./dictionary-source";
+import type { DictionarySourceInput } from "./dictionary-source";
+import type { WorkbenchSourceRecord } from "./workbench-source";
 import { buildPhraseIndex, EMPTY_PHRASE_INDEX, PhraseIndex } from "./phrases";
 
 /**
@@ -67,9 +69,20 @@ export class Dictionary {
   // phrase matcher consumes — it avoids scanning every phrase at every word
   // position, which matters once dictionaries grow large.
   private phraseIdx: PhraseIndex = EMPTY_PHRASE_INDEX;
-  // Ordered list of all entries in insertion order (preserves "recently
+  // Ordered list of all valid entries in insertion order (preserves "recently
   // added" sorting and stable iteration).
   private all: DictionaryEntry[] = [];
+
+  // Source records are kept separately from feature-facing DictionaryEntry
+  // objects. A recognized lexical note can therefore remain known to
+  // Workbench even when malformed required frontmatter prevents it from
+  // becoming a valid dictionary entry.
+  private sourceRecords: WorkbenchSourceRecord<DictionaryEntry>[] = [];
+  private sourceByWorkbenchID = new Map<
+    string,
+    WorkbenchSourceRecord<DictionaryEntry>
+  >();
+
   private app: App;
   // When true, conlang-word indexing and lookups preserve case (see the
   // caseSensitiveMatching setting). English-direction lookups are unaffected.
@@ -100,6 +113,8 @@ export class Dictionary {
     this.phrases = [];
     this.phraseIdx = EMPTY_PHRASE_INDEX;
     this.all = [];
+    this.sourceRecords = [];
+    this.sourceByWorkbenchID.clear();
   }
 
   /**
@@ -234,6 +249,26 @@ export class Dictionary {
   }
 
   /**
+   * Return every recognized lexical source record, including malformed
+   * sources whose value is null and therefore cannot enter the clean indexes.
+   */
+  allSourceRecords(): WorkbenchSourceRecord<DictionaryEntry>[] {
+    return this.sourceRecords.slice();
+  }
+
+  /**
+   * Look up a recognized lexical source by Workbench's internal source handle.
+   *
+   * Workbench identity is deliberately separate from the creator's linguistic
+   * identity. This API must never be used to manufacture a missing lemma.
+   */
+  lookupWorkbenchID(
+    workbenchID: string,
+  ): WorkbenchSourceRecord<DictionaryEntry> | undefined {
+    return this.sourceByWorkbenchID.get(workbenchID);
+  }
+
+  /**
    * Build the index by scanning a single folder for .md files. Kept for
    * callers that only need one language at a time.
    */
@@ -263,23 +298,42 @@ export class Dictionary {
       if (!folder || !(folder instanceof TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
-        const entry = this.readEntry(file);
-        if (!entry) continue;
+        const record = this.readSource(file);
+        if (!record) continue;
+
+        // A positively recognized lexical source remains visible to Workbench
+        // even when malformed required data prevents creation of a clean
+        // DictionaryEntry. It must not silently disappear from source-facing
+        // state or leak into the feature-facing dictionary indexes.
+        if (!record.value) {
+          this.addSourceRecord(record);
+          continue;
+        }
+
+        const entry = record.value;
+
         if (
           source.language &&
           entry.language &&
           entry.language !== source.language
         ) {
+          // Preserve the dictionary's existing overlapping-folder behavior:
+          // valid entries explicitly assigned to another configured language
+          // are not part of this source inventory.
           continue;
         }
+
         // If the frontmatter didn't specify a language, assume it belongs to
         // the source folder's language. This keeps backward-compat with
         // entries that pre-date the explicit language field.
         if (!entry.language && source.language) {
           entry.language = source.language;
         }
+
+        this.addSourceRecord(record);
         this.addEntry(entry);
         count++;
+
         // Every lexical entry may contain structured senses in its Markdown
         // body. Keep the file paired with the parsed entry so body-derived
         // metadata can be loaded once after the index itself is built.
@@ -369,73 +423,39 @@ export class Dictionary {
     return out;
   }
 
-  private readEntry(file: TFile): DictionaryEntry | null {
+  /**
+   * Read cached frontmatter and hand raw source representation to the pure
+   * dictionary adapter. Dictionary itself coordinates inventories and indexes;
+   * it does not decide what malformed YAML means.
+   */
+  private readSource(
+    file: TFile,
+  ): WorkbenchSourceRecord<DictionaryEntry> | null {
     const cache: CachedMetadata | null =
       this.app.metadataCache.getFileCache(file);
+
     if (!cache) return null;
-    const fm = cache.frontmatter ?? {};
-    // Coerce values that should be string-ish. If a user wrote a number or
-    // YAML date by accident, we still get something workable rather than
-    // crashing or silently dropping the entry.
-    const asString = (v: unknown): string | undefined => {
-      if (v === undefined || v === null) return undefined;
-      if (typeof v === "string") return v;
-      if (typeof v === "number" || typeof v === "boolean") return String(v);
-      // Arrays / objects: probably a mistake, treat as missing
-      return undefined;
-    };
-    // Different conlang vaults use different names for the short English meaning.
-    // Workbench's original format uses `definition`, while linguistics-oriented
-    // lexicons commonly use `gloss`. Accept both so users do not have to rewrite
-    // an existing language just to make it readable by the plugin.
-    const definition = asString(
-      fm.definition ?? fm.gloss ?? fm.translation ?? fm.meaning,
-    );
-    if (!definition || !definition.trim()) return null;
 
-    // The conlang form normally comes from frontmatter, with the filename used
-    // as a fallback. `word` is the original Workbench field, while `lemma` is
-    // a common lexicographic term and is what Mer already uses.
-    //
-    // Spaces are allowed in the headword because phrase entries may contain
-    // multiple words. Commas, semicolons, and quotes are still forbidden because
-    // they conflict with how Workbench indexes English definitions.
-    const wordOverride = asString(fm.word ?? fm.lemma)?.trim() ?? "";
-    const word = wordOverride || file.basename;
-    const isPhrase = /\s/.test(word);
-    const wordCount = word.split(/\s+/).filter((w) => w.length > 0).length;
-
-    // Optional `parts` (transparent-compound members) and `aliases` (alternate
-    // surface forms). Both accept a YAML list or a comma-separated string.
-    const parts = parseStringList(fm.parts);
-    const aliases = parseStringList(fm.aliases);
-
-    // Hardcoded inflections (issue #10) and the POS override that lets an
-    // entry borrow another part of speech's rules.
-    const forms = parseInflectedForms(fm.forms ?? fm.inflections);
-    // Accept a YAML list as well as a comma-separated string — Obsidian's
-    // property editor creates list-type properties by default, so a
-    // `- noun` / `- verb` list is at least as likely as "noun, verb".
-    const inflectAs = parseStringList(fm.inflectAs)?.join(",");
-
-    return {
-      word,
-      definition,
+    const input: DictionarySourceInput = {
       path: file.path,
-      partOfSpeech: asString(fm.partOfSpeech ?? fm.pos),
-      ipa: asString(fm.ipa),
-      etymology: asString(fm.etymology),
-      notes: asString(fm.notes),
-      language: asString(fm.language),
+      basename: file.basename,
       mtime: file.stat.mtime,
-      nameCategory: asString(fm.nameCategory ?? fm.category),
-      isPhrase,
-      wordCount,
-      parts,
-      aliases,
-      forms,
-      inflectAs,
+      frontmatter: cache.frontmatter ?? {},
     };
+
+    return parseDictionarySource(input);
+  }
+
+  /**
+   * Retain source-facing state independently from the clean dictionary index.
+   * Malformed recognized sources therefore remain diagnosable without being
+   * treated as valid DictionaryEntry objects.
+   */
+  private addSourceRecord(
+    record: WorkbenchSourceRecord<DictionaryEntry>,
+  ): void {
+    this.sourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, record);
   }
 
   /**

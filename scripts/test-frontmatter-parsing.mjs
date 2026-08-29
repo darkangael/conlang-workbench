@@ -39,6 +39,9 @@ const { parseMorphemeSource } =
 const { parsePhonologySource } =
   await importBundled("phonology-source.ts");
 
+const { parseDictionarySource } =
+  await importBundled("dictionary-source.ts");
+
 // ---------------------------------------------------------------------------
 // Shared frontmatter value boundary
 // ---------------------------------------------------------------------------
@@ -650,6 +653,241 @@ assert.equal(
   ),
   null,
 );
+
+// ---------------------------------------------------------------------------
+// Dictionary source adapter
+// ---------------------------------------------------------------------------
+
+const makeDictionarySource = (
+  frontmatter,
+  {
+    path = "Languages/Test Language/Lexicon/talu.md",
+    basename = "talu",
+    mtime = 1234,
+  } = {},
+) => ({
+  path,
+  basename,
+  mtime,
+  frontmatter,
+});
+
+// Existing linguistics-oriented lemma/gloss notes remain valid without
+// requiring migration to an explicit `type: lexeme` marker.
+const lemmaGlossSource = parseDictionarySource(
+  makeDictionarySource({
+    lemma: "talu",
+    gloss: "river",
+    pos: "noun",
+  }),
+);
+assert.ok(lemmaGlossSource);
+assert.equal(lemmaGlossSource.value?.word, "talu");
+assert.equal(lemmaGlossSource.value?.definition, "river");
+assert.equal(lemmaGlossSource.value?.partOfSpeech, "noun");
+assert.equal(lemmaGlossSource.identity.linguisticID, "talu");
+
+// Explicit lexeme classification is also recognized.
+const explicitLexemeSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lemma: "talu",
+    gloss: "river",
+  }),
+);
+assert.ok(explicitLexemeSource);
+assert.equal(explicitLexemeSource.value?.word, "talu");
+
+// Generic supporting Markdown must not become a malformed dictionary source
+// merely because it lives somewhere under a recursively scanned lexicon path.
+assert.equal(
+  parseDictionarySource(
+    makeDictionarySource({
+      title: "Historical changes",
+      language: "Test Language",
+      notes: "Supporting documentation.",
+    }),
+  ),
+  null,
+);
+
+// An explicit foreign document type keeps ownership with that document kind,
+// even when it contains a field such as `gloss` that lexical notes also use.
+assert.equal(
+  parseDictionarySource(
+    makeDictionarySource({
+      type: "morpheme",
+      gloss: "plural",
+    }),
+  ),
+  null,
+);
+
+// Optional lexical metadata alone is not enough to claim a supporting note as
+// a dictionary entry. It becomes meaningful only after stronger lexical
+// content or an explicit `type: lexeme` establishes dictionary authority.
+assert.equal(
+  parseDictionarySource(
+    makeDictionarySource({
+      pos: "noun",
+    }),
+  ),
+  null,
+);
+
+// Malformed preferred meaning aliases must not suppress a usable fallback.
+const recoveredDefinitionSource = parseDictionarySource(
+  makeDictionarySource({
+    definition: { malformed: "structure" },
+    gloss: "river",
+    lemma: "talu",
+  }),
+);
+assert.ok(recoveredDefinitionSource);
+assert.equal(recoveredDefinitionSource.value?.definition, "river");
+assert.ok(
+  recoveredDefinitionSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "definition",
+  ),
+);
+
+// Blank preferred aliases are likewise unusable rather than authoritative.
+const recoveredBlankDefinitionSource = parseDictionarySource(
+  makeDictionarySource({
+    definition: "   ",
+    gloss: "river",
+    lemma: "talu",
+  }),
+);
+assert.ok(recoveredBlankDefinitionSource);
+assert.equal(recoveredBlankDefinitionSource.value?.definition, "river");
+
+// A malformed preferred headword alias may recover through `lemma`.
+const recoveredWordSource = parseDictionarySource(
+  makeDictionarySource({
+    word: { malformed: "structure" },
+    lemma: "talu",
+    gloss: "river",
+  }),
+);
+assert.ok(recoveredWordSource);
+assert.equal(recoveredWordSource.value?.word, "talu");
+assert.equal(recoveredWordSource.identity.linguisticID, "talu");
+assert.ok(
+  recoveredWordSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "word",
+  ),
+);
+
+// When no word/lemma can be interpreted, the long-standing filename fallback
+// remains the lexical headword rather than causing the entry to disappear.
+const filenameFallbackSource = parseDictionarySource(
+  makeDictionarySource({
+    word: { malformed: "structure" },
+    lemma: ["also", "malformed"],
+    gloss: "river",
+  }),
+);
+assert.ok(filenameFallbackSource);
+assert.equal(filenameFallbackSource.value?.word, "talu");
+assert.equal(filenameFallbackSource.identity.linguisticID, "talu");
+
+// Structured forms use their own parser for first-usable alias recovery.
+// A malformed `forms` value must not suppress valid legacy `inflections`.
+const recoveredFormsSource = parseDictionarySource(
+  makeDictionarySource({
+    lemma: "talu",
+    gloss: "river",
+    forms: 42,
+    inflections: ["plural: talun"],
+  }),
+);
+assert.ok(recoveredFormsSource);
+assert.deepEqual(recoveredFormsSource.value?.forms, [
+  { label: "plural", form: "talun" },
+]);
+assert.ok(
+  recoveredFormsSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-alias" &&
+      diagnostic.field === "forms",
+  ),
+);
+
+// The richer canonical forms shapes remain supported.
+const structuredFormsSource = parseDictionarySource(
+  makeDictionarySource({
+    lemma: "talu",
+    gloss: "river",
+    forms: { plural: ["talun", "talum"] },
+  }),
+);
+assert.ok(structuredFormsSource);
+assert.deepEqual(structuredFormsSource.value?.forms, [
+  { label: "plural", form: "talun" },
+  { label: "plural", form: "talum" },
+]);
+
+// POS and name-category compatibility aliases also select the first usable
+// value rather than the first merely non-null value.
+const recoveredOptionalAliasesSource = parseDictionarySource(
+  makeDictionarySource({
+    lemma: "Tara",
+    gloss: "a named person",
+    partOfSpeech: { malformed: "structure" },
+    pos: "proper-noun",
+    nameCategory: "   ",
+    category: "character",
+  }),
+);
+assert.ok(recoveredOptionalAliasesSource);
+assert.equal(
+  recoveredOptionalAliasesSource.value?.partOfSpeech,
+  "proper-noun",
+);
+assert.equal(
+  recoveredOptionalAliasesSource.value?.nameCategory,
+  "character",
+);
+
+// A recognized lexical source with no interpretable required meaning remains
+// addressable under independent Workbench/source identity but cannot enter the
+// clean DictionaryEntry inventory.
+const malformedLexemeSource = parseDictionarySource(
+  makeDictionarySource({
+    lemma: "talu",
+    gloss: { malformed: "structure" },
+  }),
+);
+assert.ok(malformedLexemeSource);
+assert.equal(malformedLexemeSource.value, null);
+assert.equal(malformedLexemeSource.identity.linguisticID, "talu");
+assert.ok(
+  malformedLexemeSource.identity.workbenchID.startsWith(
+    "wb:obsidian-file:",
+  ),
+);
+assert.ok(
+  malformedLexemeSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "dictionary.entry.missing-definition" &&
+      diagnostic.severity === "error",
+  ),
+);
+
+// Explicit lexeme documents are recognized even when incomplete.
+const incompleteExplicitLexemeSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+  }),
+);
+assert.ok(incompleteExplicitLexemeSource);
+assert.equal(incompleteExplicitLexemeSource.value, null);
+assert.equal(incompleteExplicitLexemeSource.identity.linguisticID, "talu");
 
 // ---------------------------------------------------------------------------
 // parseStringList()

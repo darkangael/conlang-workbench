@@ -364,6 +364,16 @@ function firstParsedFrontmatterValue(candidates, parser) {
   return { rejectedKeys };
 }
 
+// workbench-id.ts
+function createObsidianWorkbenchIdentity(path, linguisticID) {
+  const sourceID = `obsidian-file:${path}`;
+  return {
+    workbenchID: `wb:obsidian-file:${encodeURIComponent(path)}`,
+    sourceID,
+    linguisticID
+  };
+}
+
 // word-tokens.ts
 var WORD_RE = /\p{L}[\p{L}'-]*/gu;
 function cleanWord(s) {
@@ -453,6 +463,150 @@ function parseStringList(value) {
   }
   out = out.filter((item) => item.length > 0);
   return out.length > 0 ? out : void 0;
+}
+
+// dictionary-source.ts
+var LEXICAL_SIGNAL_FIELDS = [
+  "definition",
+  "gloss",
+  "translation",
+  "meaning",
+  "word",
+  "lemma",
+  "forms",
+  "inflections"
+];
+function hasOwn(record, key) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+function addRejectedAliasDiagnostics(diagnostics, rejectedKeys) {
+  for (const field of rejectedKeys) {
+    diagnostics.push({
+      code: "frontmatter.unusable-alias",
+      severity: "warning",
+      field,
+      message: `Frontmatter field "${field}" was present but could not be interpreted in its supported form. A later supported alias may still be used; the source file was not modified.`
+    });
+  }
+}
+function parseDictionarySource(input) {
+  var _a, _b, _c;
+  const fm = input.frontmatter;
+  const diagnostics = [];
+  const declaredType = (_a = parseNonBlankYamlString(fm.type)) == null ? void 0 : _a.toLowerCase();
+  if (declaredType && declaredType !== "lexeme") {
+    return null;
+  }
+  const explicitlyLexeme = declaredType === "lexeme";
+  const hasLexicalSignal = LEXICAL_SIGNAL_FIELDS.some(
+    (key) => hasOwn(fm, key)
+  );
+  if (!explicitlyLexeme && !hasLexicalSignal) {
+    return null;
+  }
+  const definitionResult = firstParsedFrontmatterValue(
+    [
+      { key: "definition", value: fm.definition },
+      { key: "gloss", value: fm.gloss },
+      { key: "translation", value: fm.translation },
+      { key: "meaning", value: fm.meaning }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(
+    diagnostics,
+    definitionResult.rejectedKeys
+  );
+  const wordResult = firstParsedFrontmatterValue(
+    [
+      { key: "word", value: fm.word },
+      { key: "lemma", value: fm.lemma }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(diagnostics, wordResult.rejectedKeys);
+  const word = (_b = wordResult.value) != null ? _b : input.basename;
+  const identity = createObsidianWorkbenchIdentity(
+    input.path,
+    word
+  );
+  if (!definitionResult.value) {
+    diagnostics.push({
+      code: "dictionary.entry.missing-definition",
+      severity: "error",
+      field: "definition",
+      message: "Recognized lexical source has no interpretable definition, gloss, translation, or meaning. The source is retained but is not loaded as a valid dictionary entry."
+    });
+    return {
+      identity,
+      path: input.path,
+      value: null,
+      diagnostics
+    };
+  }
+  const partOfSpeechResult = firstParsedFrontmatterValue(
+    [
+      { key: "partOfSpeech", value: fm.partOfSpeech },
+      { key: "pos", value: fm.pos }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(
+    diagnostics,
+    partOfSpeechResult.rejectedKeys
+  );
+  const nameCategoryResult = firstParsedFrontmatterValue(
+    [
+      { key: "nameCategory", value: fm.nameCategory },
+      { key: "category", value: fm.category }
+    ],
+    parseNonBlankYamlScalarText
+  );
+  addRejectedAliasDiagnostics(
+    diagnostics,
+    nameCategoryResult.rejectedKeys
+  );
+  const formsResult = firstParsedFrontmatterValue(
+    [
+      { key: "forms", value: fm.forms },
+      { key: "inflections", value: fm.inflections }
+    ],
+    parseInflectedForms
+  );
+  addRejectedAliasDiagnostics(diagnostics, formsResult.rejectedKeys);
+  const ipa = parseYamlScalarText(fm.ipa);
+  const etymology = parseYamlScalarText(fm.etymology);
+  const notes = parseYamlScalarText(fm.notes);
+  const language = parseYamlScalarText(fm.language);
+  const parts = parseStringList(fm.parts);
+  const aliases = parseStringList(fm.aliases);
+  const inflectAs = (_c = parseStringList(fm.inflectAs)) == null ? void 0 : _c.join(",");
+  const isPhrase = /\s/.test(word);
+  const wordCount = word.split(/\s+/).filter((piece) => piece.length > 0).length;
+  const entry = {
+    word,
+    definition: definitionResult.value,
+    path: input.path,
+    partOfSpeech: partOfSpeechResult.value,
+    ipa,
+    etymology,
+    notes,
+    language,
+    mtime: input.mtime,
+    nameCategory: nameCategoryResult.value,
+    isPhrase,
+    wordCount,
+    parts,
+    aliases,
+    forms: formsResult.value,
+    inflectAs
+  };
+  return {
+    identity,
+    path: input.path,
+    value: entry,
+    diagnostics
+  };
 }
 
 // phrases.ts
@@ -581,9 +735,15 @@ var _Dictionary = class _Dictionary {
     // phrase matcher consumes — it avoids scanning every phrase at every word
     // position, which matters once dictionaries grow large.
     this.phraseIdx = EMPTY_PHRASE_INDEX;
-    // Ordered list of all entries in insertion order (preserves "recently
+    // Ordered list of all valid entries in insertion order (preserves "recently
     // added" sorting and stable iteration).
     this.all = [];
+    // Source records are kept separately from feature-facing DictionaryEntry
+    // objects. A recognized lexical note can therefore remain known to
+    // Workbench even when malformed required frontmatter prevents it from
+    // becoming a valid dictionary entry.
+    this.sourceRecords = [];
+    this.sourceByWorkbenchID = /* @__PURE__ */ new Map();
     // When true, conlang-word indexing and lookups preserve case (see the
     // caseSensitiveMatching setting). English-direction lookups are unaffected.
     this.caseSensitive = false;
@@ -608,6 +768,8 @@ var _Dictionary = class _Dictionary {
     this.phrases = [];
     this.phraseIdx = EMPTY_PHRASE_INDEX;
     this.all = [];
+    this.sourceRecords = [];
+    this.sourceByWorkbenchID.clear();
   }
   /**
    * Look up a conlang word and return its dictionary entry, if any.
@@ -729,6 +891,22 @@ var _Dictionary = class _Dictionary {
     return this.all.slice();
   }
   /**
+   * Return every recognized lexical source record, including malformed
+   * sources whose value is null and therefore cannot enter the clean indexes.
+   */
+  allSourceRecords() {
+    return this.sourceRecords.slice();
+  }
+  /**
+   * Look up a recognized lexical source by Workbench's internal source handle.
+   *
+   * Workbench identity is deliberately separate from the creator's linguistic
+   * identity. This API must never be used to manufacture a missing lemma.
+   */
+  lookupWorkbenchID(workbenchID) {
+    return this.sourceByWorkbenchID.get(workbenchID);
+  }
+  /**
    * Build the index by scanning a single folder for .md files. Kept for
    * callers that only need one language at a time.
    */
@@ -752,14 +930,20 @@ var _Dictionary = class _Dictionary {
       if (!folder || !(folder instanceof import_obsidian.TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
-        const entry = this.readEntry(file);
-        if (!entry) continue;
+        const record = this.readSource(file);
+        if (!record) continue;
+        if (!record.value) {
+          this.addSourceRecord(record);
+          continue;
+        }
+        const entry = record.value;
         if (source.language && entry.language && entry.language !== source.language) {
           continue;
         }
         if (!entry.language && source.language) {
           entry.language = source.language;
         }
+        this.addSourceRecord(record);
         this.addEntry(entry);
         count++;
         bodyMetadataEntries.push({ entry, file });
@@ -828,47 +1012,31 @@ var _Dictionary = class _Dictionary {
     walk(folder);
     return out;
   }
-  readEntry(file) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+  /**
+   * Read cached frontmatter and hand raw source representation to the pure
+   * dictionary adapter. Dictionary itself coordinates inventories and indexes;
+   * it does not decide what malformed YAML means.
+   */
+  readSource(file) {
+    var _a;
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return null;
-    const fm = (_a = cache.frontmatter) != null ? _a : {};
-    const asString = (v) => {
-      if (v === void 0 || v === null) return void 0;
-      if (typeof v === "string") return v;
-      if (typeof v === "number" || typeof v === "boolean") return String(v);
-      return void 0;
-    };
-    const definition = asString(
-      (_d = (_c = (_b = fm.definition) != null ? _b : fm.gloss) != null ? _c : fm.translation) != null ? _d : fm.meaning
-    );
-    if (!definition || !definition.trim()) return null;
-    const wordOverride = (_g = (_f = asString((_e = fm.word) != null ? _e : fm.lemma)) == null ? void 0 : _f.trim()) != null ? _g : "";
-    const word = wordOverride || file.basename;
-    const isPhrase = /\s/.test(word);
-    const wordCount = word.split(/\s+/).filter((w) => w.length > 0).length;
-    const parts = parseStringList(fm.parts);
-    const aliases = parseStringList(fm.aliases);
-    const forms = parseInflectedForms((_h = fm.forms) != null ? _h : fm.inflections);
-    const inflectAs = (_i = parseStringList(fm.inflectAs)) == null ? void 0 : _i.join(",");
-    return {
-      word,
-      definition,
+    const input = {
       path: file.path,
-      partOfSpeech: asString((_j = fm.partOfSpeech) != null ? _j : fm.pos),
-      ipa: asString(fm.ipa),
-      etymology: asString(fm.etymology),
-      notes: asString(fm.notes),
-      language: asString(fm.language),
+      basename: file.basename,
       mtime: file.stat.mtime,
-      nameCategory: asString((_k = fm.nameCategory) != null ? _k : fm.category),
-      isPhrase,
-      wordCount,
-      parts,
-      aliases,
-      forms,
-      inflectAs
+      frontmatter: (_a = cache.frontmatter) != null ? _a : {}
     };
+    return parseDictionarySource(input);
+  }
+  /**
+   * Retain source-facing state independently from the clean dictionary index.
+   * Malformed recognized sources therefore remain diagnosable without being
+   * treated as valid DictionaryEntry objects.
+   */
+  addSourceRecord(record) {
+    this.sourceRecords.push(record);
+    this.sourceByWorkbenchID.set(record.identity.workbenchID, record);
   }
   /**
    * Add one English lookup key for an entry.
@@ -1053,18 +1221,8 @@ var Dictionary = _Dictionary;
 // morphemes.ts
 var import_obsidian2 = require("obsidian");
 
-// workbench-id.ts
-function createObsidianWorkbenchIdentity(path, linguisticID) {
-  const sourceID = `obsidian-file:${path}`;
-  return {
-    workbenchID: `wb:obsidian-file:${encodeURIComponent(path)}`,
-    sourceID,
-    linguisticID
-  };
-}
-
 // morpheme-source.ts
-function addRejectedAliasDiagnostics(diagnostics, result) {
+function addRejectedAliasDiagnostics2(diagnostics, result) {
   for (const field of result.rejectedKeys) {
     diagnostics.push({
       code: "frontmatter.unusable-alias",
@@ -1089,7 +1247,7 @@ function parseMorphemeSource(input) {
     ],
     parseNonBlankYamlScalarText
   );
-  addRejectedAliasDiagnostics(diagnostics, idResult);
+  addRejectedAliasDiagnostics2(diagnostics, idResult);
   const glossResult = firstParsedFrontmatterValue(
     [
       { key: "gloss", value: fm.gloss },
@@ -1098,7 +1256,7 @@ function parseMorphemeSource(input) {
     ],
     parseNonBlankYamlScalarText
   );
-  addRejectedAliasDiagnostics(diagnostics, glossResult);
+  addRejectedAliasDiagnostics2(diagnostics, glossResult);
   const typeResult = firstParsedFrontmatterValue(
     [
       { key: "morpheme_type", value: fm.morpheme_type },
@@ -1107,7 +1265,7 @@ function parseMorphemeSource(input) {
     ],
     parseNonBlankYamlScalarText
   );
-  addRejectedAliasDiagnostics(diagnostics, typeResult);
+  addRejectedAliasDiagnostics2(diagnostics, typeResult);
   const realizationsResult = firstParsedFrontmatterValue(
     [
       { key: "realizations", value: fm.realizations },
@@ -1115,7 +1273,7 @@ function parseMorphemeSource(input) {
     ],
     parseStringList
   );
-  addRejectedAliasDiagnostics(diagnostics, realizationsResult);
+  addRejectedAliasDiagnostics2(diagnostics, realizationsResult);
   const languageIdResult = firstParsedFrontmatterValue(
     [
       { key: "language_id", value: fm.language_id },
@@ -1123,7 +1281,7 @@ function parseMorphemeSource(input) {
     ],
     parseNonBlankYamlScalarText
   );
-  addRejectedAliasDiagnostics(diagnostics, languageIdResult);
+  addRejectedAliasDiagnostics2(diagnostics, languageIdResult);
   const id = idResult.value;
   const gloss = glossResult.value;
   const identity = createObsidianWorkbenchIdentity(input.path, id);
@@ -1519,7 +1677,7 @@ var LinguisticExampleInventory = class {
 var import_obsidian4 = require("obsidian");
 
 // phonology-source.ts
-function addRejectedAliasDiagnostics2(diagnostics, result) {
+function addRejectedAliasDiagnostics3(diagnostics, result) {
   for (const field of result.rejectedKeys) {
     diagnostics.push({
       code: "frontmatter.unusable-alias",
@@ -1553,7 +1711,7 @@ function parseUnitSource(input) {
     ],
     parseNonBlankYamlString
   );
-  addRejectedAliasDiagnostics2(diagnostics, idResult);
+  addRejectedAliasDiagnostics3(diagnostics, idResult);
   const languageIdResult = firstParsedFrontmatterValue(
     [
       { key: "language_id", value: fm.language_id },
@@ -1562,7 +1720,7 @@ function parseUnitSource(input) {
     ],
     parseNonBlankYamlString
   );
-  addRejectedAliasDiagnostics2(diagnostics, languageIdResult);
+  addRejectedAliasDiagnostics3(diagnostics, languageIdResult);
   const id = idResult.value;
   const symbol = parseNonBlankYamlString(fm.symbol);
   const identity = createObsidianWorkbenchIdentity(input.path, id);
@@ -1618,7 +1776,7 @@ function parseRealizationSource(input) {
     ],
     parseNonBlankYamlString
   );
-  addRejectedAliasDiagnostics2(diagnostics, idResult);
+  addRejectedAliasDiagnostics3(diagnostics, idResult);
   const unitIdResult = firstParsedFrontmatterValue(
     [
       { key: "unit_id", value: fm.unit_id },
@@ -1627,7 +1785,7 @@ function parseRealizationSource(input) {
     ],
     parseNonBlankYamlString
   );
-  addRejectedAliasDiagnostics2(diagnostics, unitIdResult);
+  addRejectedAliasDiagnostics3(diagnostics, unitIdResult);
   const languageIdResult = firstParsedFrontmatterValue(
     [
       { key: "language_id", value: fm.language_id },
@@ -1636,7 +1794,7 @@ function parseRealizationSource(input) {
     ],
     parseNonBlankYamlString
   );
-  addRejectedAliasDiagnostics2(diagnostics, languageIdResult);
+  addRejectedAliasDiagnostics3(diagnostics, languageIdResult);
   const id = idResult.value;
   const unitId = unitIdResult.value;
   const symbol = parseNonBlankYamlString(fm.symbol);
