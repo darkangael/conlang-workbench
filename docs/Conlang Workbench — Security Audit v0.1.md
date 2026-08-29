@@ -1431,15 +1431,89 @@ precomposed phrase entry. The creator-authored runtime text remained unchanged.
 `npm run test:lexical-senses`, and the production build passed for the H8
 remediation checkpoint.
 
+#### SEC-004-H9 — Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query
+
+- **Severity:** Hardening
+- **Primary impact:** Semantic integrity and lookup correctness
+- **Data-safety relevance:** Yes
+- **Source mutation:** No — query interpretation only
+- **Status:** Remediated, regression-tested, build-verified, and runtime-verified
+
+The general **Look up word (all senses)** command previously performed a broad
+character-deletion cleanup immediately before dictionary, inflection, English,
+and cypher lookup. Characters outside its allowlist were removed rather than
+causing the query to be rejected.
+
+Controlled testing confirmed that this could manufacture a different lexical
+query from the user's explicit selection. Examples included `foo/bar`,
+`foo.bar`, `foo,bar`, and `foo123bar`, all of which could become `foobar`.
+The same cleanup also removed Unicode combining marks, allowing decomposed
+`s` + COMBINING CARON + `aru` to become `saru` despite the H8 lexical
+normalization boundary.
+
+The remediation introduces `lookup-query.ts` as the pure authority classifier
+for the general Lookup command. It builds on the existing explicit-selection
+grammar in `selection-lookup.ts` rather than defining a competing lexical
+syntax.
+
+The Lookup command now distinguishes between cursor-derived words and explicit
+editor selections. Explicit selections must classify as either one lexical word
+or a whitespace-separated lexical phrase before lookup authority is granted.
+Harmless outer punctuation or whitespace may expose an otherwise intact lexical
+expression, but internal material is never deleted to manufacture a different
+query.
+
+Phrase lookup intentionally does not require the H7 Preview-to-English
+confirmation dialog. Invoking **Look up word (all senses)** is itself the
+explicit request to search the selected expression; the command therefore
+accepts a valid whitespace-separated phrase directly once its lexical authority
+has been established.
+
+`collectLookupMatches()` no longer performs destructive character cleanup. It
+receives a query that has already crossed the command's authority boundary and
+passes that intact query through dictionary, declared-form, inflection,
+English-lookup, and cypher lookup behavior.
+
+Regression coverage in `npm run test:lookup-query` verifies:
+
+- ordinary single-word lookup authority
+- whitespace-separated phrase authority
+- preservation of harmless outer punctuation and whitespace behavior
+- preservation of the currently established apostrophe and hyphen semantics
+- preservation of precomposed Unicode lexical text
+- exact preservation of decomposed combining-mark lexical text
+- rejection of internal slash, period, comma, em-dash, digit, and mixed
+  separator cases rather than deletion-based query manufacture
+- rejection of empty or otherwise nonlexical selections
+
+Neighboring `test:selection-lookup` and `test:lexical-normalization` coverage
+also passes, confirming that the new Lookup-specific authority layer does not
+replace the H7 Preview-to-English boundary or regress H8 Unicode handling.
+
+Obsidian runtime testing additionally verified that:
+
+- ordinary `varu` lookup continues to work
+- `varu kira` is accepted directly by **Look up word (all senses)** and resolves
+  through the permanent Test Language phrase fixture
+- unsafe selections including `foo/bar`, `foo.bar`, and `foo123bar` are rejected
+  rather than collapsed into another query
+- a decomposed `s` + COMBINING CARON + `aru` selection resolves to the
+  canonically equivalent precomposed `šaru` dictionary entry without rewriting
+  the selected source text
+
+The Test Language vault intentionally retains dedicated H9 lookup-authority,
+phrase, and Unicode fixtures as permanent regression/example material rather
+than treating successful runtime data as disposable.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
 parsing, phonology source parsing, dictionary source parsing, standalone
 linguistic-example source parsing, Markdown body-preview extraction, structured
-lexical-sense Markdown parsing, explicit-selection lookup semantics, and Unicode
-lexical normalization reviewed; SEC-004-H1 through SEC-004-H8 are remediated
-and regression-tested. The remaining frontmatter and Markdown input surfaces
-still require review.**
+lexical-sense Markdown parsing, explicit-selection lookup semantics, Unicode
+lexical normalization, and general Lookup-command query authority reviewed;
+SEC-004-H1 through SEC-004-H9 are remediated and regression-tested. The
+remaining frontmatter and Markdown input surfaces still require review.**
 
 ---
 
@@ -1924,6 +1998,7 @@ audit section.
 | SEC-004-H6 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Markdown fenced-code examples could be interpreted as structured lexical-sense data, allowing literal documentation text to become real semantic data and English lookup vocabulary. | Code review; controlled fenced-code adversarial tests; downstream English-index review; `test:lexical-senses` regression coverage | Lexical-sense parsing now masks backtick- and tilde-fenced code in an in-memory parsing view before recognizing semantic structure. Source Markdown is unchanged; delimiter type/length boundaries are preserved; `---` remains a separate frontmatter/thematic-break concern. |
 | SEC-004-H7 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Whole-selection cleanup could delete separators and manufacture a different dictionary lookup token from the text the user explicitly selected. | Code review; `test:selection-lookup`; `test:gloss-rendering`; Obsidian runtime verification of single-word lookup, phrase confirmation, cancellation, confirmed phrase translation, and punctuation-separated rejection | Preview-to-English now classifies explicit selection intent before lookup. Safe single words may shed only harmless outer punctuation/whitespace; whitespace-separated multi-word selections require phrase confirmation; unsafe internal separators are rejected rather than deleted. Source text is not modified. |
 | SEC-004-H8 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Unicode combining marks could be dropped or treated as token boundaries, changing creator-authored lexical forms and causing incorrect or failed lookup. | Controlled Unicode tests; `test:lexical-normalization`; production cypher regression coverage; production build; Obsidian runtime verification of canonically equivalent single-word and phrase lookup | Combining marks are preserved as lexical continuation content; NFC is applied only to derived comparison/index keys; dictionary, phrase, panel, and cypher behavior share Unicode-safe lexical semantics; creator-authored source/display spelling is not normalized or rewritten. |
+| SEC-004-H9 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query from the user's explicit selection. | Controlled destructive-cleanup tests; `test:lookup-query`; neighboring H7/H8 regression coverage; production build; Obsidian runtime verification of unsafe-selection rejection, phrase lookup, and decomposed-to-precomposed Unicode lookup | The general Lookup command now classifies explicit query authority before lookup; unsafe internal material is rejected rather than deleted; `collectLookupMatches()` no longer manufactures cleaned queries; permanent Test Language fixtures retain the phrase and Unicode runtime cases. |
 
 ---
 

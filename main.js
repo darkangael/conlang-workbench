@@ -2548,6 +2548,22 @@ function classifySelectionLookup(sourceText) {
   };
 }
 
+// lookup-query.ts
+function classifyLookupQuery(sourceText) {
+  const intent = classifySelectionLookup(sourceText);
+  if (intent.kind === "invalid") {
+    return {
+      kind: "invalid",
+      sourceText
+    };
+  }
+  return {
+    kind: "valid",
+    sourceText,
+    lookupText: intent.lookupText
+  };
+}
+
 // phrase-confirm-modal.ts
 var import_obsidian6 = require("obsidian");
 function confirmPhraseTranslation(app, selectedText) {
@@ -8279,13 +8295,24 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
    * plugin does not pick a "best" translation. The user picks.
    */
   async lookupWord(editor) {
+    const explicitSelection = editor.getSelection();
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
       new import_obsidian17.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
-    const query = sel.text.trim();
+    let query = sel.text.trim();
     if (!query) return;
+    if (explicitSelection.length > 0) {
+      const intent = classifyLookupQuery(explicitSelection);
+      if (intent.kind === "invalid") {
+        new import_obsidian17.Notice(
+          "Made Up Words: selection is not a single word or whitespace-separated phrase"
+        );
+        return;
+      }
+      query = intent.lookupText;
+    }
     const matches = this.collectLookupMatches(query);
     new LookupModal(this.app, query, matches).open();
   }
@@ -8299,7 +8326,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
    */
   collectLookupMatches(query) {
     const out = [];
-    const cleaned = query.replace(/[^\p{L}'\s-]/gu, "").trim();
+    const cleaned = query;
     const activeLangs = this.getActiveLanguages();
     const primary = this.getPrimaryLanguage();
     const directMatches = this.dictionary.lookupAll(cleaned);

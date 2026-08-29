@@ -33,6 +33,7 @@ import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
 import { WORD_RE, cleanWord, isWordChar, applyCasing } from "./word-tokens";
 import { classifySelectionLookup } from "./selection-lookup";
+import { classifyLookupQuery } from "./lookup-query";
 import { confirmPhraseTranslation } from "./phrase-confirm-modal";
 import {
   glossConlangToEnglish,
@@ -1133,13 +1134,35 @@ export default class ConlangPlugin extends Plugin {
    * plugin does not pick a "best" translation. The user picks.
    */
   private async lookupWord(editor: Editor) {
+    // Preserve whether the user explicitly selected arbitrary editor text.
+    // Cursor-derived words are already constrained by getSelectionOrWord(),
+    // while explicit selections require a separate lexical authority check.
+    const explicitSelection = editor.getSelection();
+
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
       new Notice("Made Up Words: no selection or word under cursor");
       return;
     }
-    const query = sel.text.trim();
+
+    let query = sel.text.trim();
     if (!query) return;
+
+    if (explicitSelection.length > 0) {
+      const intent = classifyLookupQuery(explicitSelection);
+
+      if (intent.kind === "invalid") {
+        // Never delete internal punctuation, digits, combining marks, or other
+        // content and then perform lookup on a different expression.
+        new Notice(
+          "Made Up Words: selection is not a single word or whitespace-separated phrase",
+        );
+        return;
+      }
+
+      query = intent.lookupText;
+    }
+
     const matches = this.collectLookupMatches(query);
     new LookupModal(this.app, query, matches).open();
   }
@@ -1154,9 +1177,11 @@ export default class ConlangPlugin extends Plugin {
    */
   private collectLookupMatches(query: string): LookupMatch[] {
     const out: LookupMatch[] = [];
-    // Strip everything except letters (any script), apostrophes, hyphens,
-    // and whitespace. Whitespace stays for multi-word phrase queries.
-    const cleaned = query.replace(/[^\p{L}'\s-]/gu, "").trim();
+
+    // `query` has already passed the command's lexical authority boundary.
+    // Do not delete or rewrite characters here: doing so could manufacture a
+    // different word or phrase from what the user actually supplied.
+    const cleaned = query;
     const activeLangs = this.getActiveLanguages();
     const primary = this.getPrimaryLanguage();
 

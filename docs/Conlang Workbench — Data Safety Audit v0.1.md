@@ -930,7 +930,7 @@ audit section.
 
 | ID | Section | Status | Severity | Impact Radius | Summary | Evidence | Action |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | — | — | — | — | No findings recorded yet | — | — |
+| SEC-004-H9 | Security §4 / query interpretation | Remediated and verified | Hardening | Explicit selected query only; no source mutation | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query, including loss of Unicode combining marks. | Security Audit SEC-004-H9; `test:lookup-query`; runtime phrase, rejection, and Unicode-equivalence verification | Lookup now establishes lexical authority before searching and rejects unsafe internal material rather than deleting it. Creator-authored source text remains unchanged. |
 
 ---
 
