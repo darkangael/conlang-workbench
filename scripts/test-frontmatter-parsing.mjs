@@ -39,7 +39,7 @@ const { parseMorphemeSource } =
 const { parsePhonologySource } =
   await importBundled("phonology-source.ts");
 
-const { parseDictionarySource } =
+const { compareDictionaryDefinition, parseDictionarySource } =
   await importBundled("dictionary-source.ts");
 
 const { parseLinguisticExampleSource } =
@@ -766,6 +766,63 @@ const recoveredBlankDefinitionSource = parseDictionarySource(
 );
 assert.ok(recoveredBlankDefinitionSource);
 assert.equal(recoveredBlankDefinitionSource.value?.definition, "river");
+
+// H11: a mutation decision must distinguish a confirmed different meaning
+// from an inability to establish what an existing creator-authored note means.
+// Cache absence is supplied by the caller as `undefined`; unusable or missing
+// frontmatter is likewise "unknown", never permission to create a homograph.
+assert.equal(
+  compareDictionaryDefinition({ definition: "river" }, "river"),
+  "same",
+);
+assert.equal(
+  compareDictionaryDefinition({ definition: "river" }, "forest"),
+  "different",
+);
+assert.equal(
+  compareDictionaryDefinition(undefined, "river"),
+  "unknown",
+);
+assert.equal(
+  compareDictionaryDefinition({}, "river"),
+  "unknown",
+);
+assert.equal(
+  compareDictionaryDefinition(
+    { definition: { malformed: "structure" } },
+    "river",
+  ),
+  "unknown",
+);
+
+// Mutation checks must use the same first-usable alias recovery as the
+// canonical dictionary parser rather than maintaining a narrower copy.
+assert.equal(
+  compareDictionaryDefinition(
+    {
+      definition: { malformed: "structure" },
+      gloss: "river",
+    },
+    "river",
+  ),
+  "same",
+);
+
+// Preserve the dictionary's deliberately tolerant scalar semantics.
+assert.equal(
+  compareDictionaryDefinition({ definition: 42 }, "42"),
+  "same",
+);
+
+// Preserve the established comma/semicolon sense comparison used when deciding
+// whether an existing entry already covers a requested meaning.
+assert.equal(
+  compareDictionaryDefinition(
+    { definition: "river, stream; watercourse" },
+    "stream",
+  ),
+  "same",
+);
 
 // A malformed preferred headword alias may recover through `lemma`.
 const recoveredWordSource = parseDictionarySource(

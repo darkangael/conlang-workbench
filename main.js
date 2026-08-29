@@ -535,6 +535,27 @@ function addRejectedAliasDiagnostics(diagnostics, rejectedKeys) {
     });
   }
 }
+function parseDictionaryDefinition(frontmatter) {
+  return firstParsedFrontmatterValue(
+    [
+      { key: "definition", value: frontmatter.definition },
+      { key: "gloss", value: frontmatter.gloss },
+      { key: "translation", value: frontmatter.translation },
+      { key: "meaning", value: frontmatter.meaning }
+    ],
+    parseNonBlankYamlScalarText
+  );
+}
+function compareDictionaryDefinition(frontmatter, requestedDefinition) {
+  if (!frontmatter) return "unknown";
+  const existingResult = parseDictionaryDefinition(frontmatter);
+  if (!existingResult.value) return "unknown";
+  const toSenses = (value) => value.split(/[,;]/).map((piece) => piece.trim().toLowerCase()).filter((piece) => piece.length > 0);
+  const existingSenses = new Set(toSenses(existingResult.value));
+  const requestedSenses = toSenses(requestedDefinition);
+  if (requestedSenses.length === 0) return "unknown";
+  return requestedSenses.some((sense) => existingSenses.has(sense)) ? "same" : "different";
+}
 function parseDictionarySource(input) {
   var _a, _b, _c;
   const fm = input.frontmatter;
@@ -550,15 +571,7 @@ function parseDictionarySource(input) {
   if (!explicitlyLexeme && !hasLexicalSignal) {
     return null;
   }
-  const definitionResult = firstParsedFrontmatterValue(
-    [
-      { key: "definition", value: fm.definition },
-      { key: "gloss", value: fm.gloss },
-      { key: "translation", value: fm.translation },
-      { key: "meaning", value: fm.meaning }
-    ],
-    parseNonBlankYamlScalarText
-  );
+  const definitionResult = parseDictionaryDefinition(fm);
   addRejectedAliasDiagnostics(
     diagnostics,
     definitionResult.rejectedKeys
@@ -8251,8 +8264,18 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
-      if (this.entryCoversDefinition(existing, p.englishText)) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        p.englishText
+      );
+      if (comparison === "same") {
         return { ok: true, created: false, path };
+      }
+      if (comparison === "unknown") {
+        return {
+          ok: false,
+          error: this.existingDefinitionUnknownMessage(existing)
+        };
       }
       path = this.freeHomographPath(folder, safeName, p.partOfSpeech);
       wordOverride = true;
@@ -8301,20 +8324,30 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     return joinVaultPath(folder, `${safeName} (${Date.now()}).md`);
   }
   /**
-   * True when an existing entry file already covers the given English
-   * definition — i.e. any comma/semicolon-separated sense of the new
-   * definition matches one of the file's senses (case-insensitive). Used to
-   * tell "re-adding the same word" apart from "adding a new sense of a
-   * homograph".
+   * Ask the shared dictionary parser whether an existing entry has the same
+   * meaning, a different meaning, or cannot safely be interpreted.
+   *
+   * `cache?.frontmatter` uses TypeScript's optional chaining operator (`?.`).
+   * If Obsidian has no metadata cache for this file, the expression becomes
+   * `undefined` instead of throwing an error. The comparison helper then
+   * returns "unknown".
+   *
+   * Callers must treat "unknown" as a stop condition. Only "different" is
+   * permission to create a homograph.
    */
-  entryCoversDefinition(file, definition) {
-    var _a, _b, _c, _d;
-    const fm = (_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
-    const existing = (_d = (_c = fm.definition) != null ? _c : fm.translation) != null ? _d : fm.meaning;
-    if (typeof existing !== "string") return false;
-    const toSenses = (s) => s.split(/[,;]/).map((x) => x.trim().toLowerCase()).filter((x) => x.length > 0);
-    const have = new Set(toSenses(existing));
-    return toSenses(definition).some((s) => have.has(s));
+  compareExistingEntryDefinition(file, definition) {
+    const cache = this.app.metadataCache.getFileCache(file);
+    return compareDictionaryDefinition(cache == null ? void 0 : cache.frontmatter, definition);
+  }
+  /**
+   * Build the message shown when Workbench refuses an unsafe creation attempt.
+   *
+   * We deliberately stop instead of guessing. If the existing file cannot be
+   * interpreted safely, Workbench leaves creator-authored data unchanged and
+   * does not create a second file that might represent a false homograph.
+   */
+  existingDefinitionUnknownMessage(file) {
+    return `couldn't safely determine whether existing entry "${file.path}" already contains this meaning because its frontmatter is unavailable or unusable`;
   }
   /** Reload the dictionary + refresh UI after entries were added/changed. */
   async afterEntriesChanged() {
@@ -8487,10 +8520,23 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let path = joinVaultPath(folder, `${safeName}.md`);
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof import_obsidian17.TFile && this.entryCoversDefinition(existing, englishText)) {
-      await this.app.workspace.getLeaf(false).openFile(existing);
-      new import_obsidian17.Notice(`Conlang: opened existing entry "${translated}"`);
-      return;
+    if (existing instanceof import_obsidian17.TFile) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        englishText
+      );
+      if (comparison === "same") {
+        await this.app.workspace.getLeaf(false).openFile(existing);
+        new import_obsidian17.Notice(`Conlang: opened existing entry "${translated}"`);
+        return;
+      }
+      if (comparison === "unknown") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9e3
+        );
+        return;
+      }
     }
     const opts = await this.promptForEntryOptions(englishText, translated);
     if (opts === null) return;
@@ -8565,9 +8611,20 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
-      if (this.entryCoversDefinition(existing, result.englishDefinition)) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        result.englishDefinition
+      );
+      if (comparison === "same") {
         await this.app.workspace.getLeaf(false).openFile(existing);
         new import_obsidian17.Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
+        return;
+      }
+      if (comparison === "unknown") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9e3
+        );
         return;
       }
       path = this.freeHomographPath(folder, safeName, result.partOfSpeech);
@@ -8636,9 +8693,20 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
-      if (this.entryCoversDefinition(existing, referent)) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        referent
+      );
+      if (comparison === "same") {
         await this.app.workspace.getLeaf(false).openFile(existing);
         new import_obsidian17.Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
+        return;
+      }
+      if (comparison === "unknown") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9e3
+        );
         return;
       }
       path = this.freeHomographPath(

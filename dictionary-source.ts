@@ -30,6 +30,28 @@ export interface DictionarySourceInput {
 }
 
 /**
+ * The three possible results when comparing a new meaning with an existing
+ * dictionary entry.
+ *
+ * This is a TypeScript "union type": a value of this type may be exactly one
+ * of these three strings and nothing else.
+ *
+ * - "same" means the existing entry already covers the requested meaning.
+ * - "different" means the existing entry has a usable meaning, but it does not
+ *   match the requested one.
+ * - "unknown" means Workbench could not safely determine what the existing
+ *   entry means.
+ *
+ * Keeping "unknown" separate from "different" is important for data safety.
+ * Failure to read creator-authored data must never become permission to create
+ * another persistent entry.
+ */
+export type DictionaryDefinitionComparison =
+  | "same"
+  | "different"
+  | "unknown";
+
+/**
  * Fields that strongly indicate a note is intended to describe a lexical
  * object. Generic metadata such as `language`, `notes`, `category`, or `ipa`
  * is intentionally excluded because those fields can appear on supporting
@@ -68,6 +90,64 @@ function addRejectedAliasDiagnostics(
         "still be used; the source file was not modified.",
     });
   }
+}
+
+/**
+ * Read the first usable dictionary-definition alias.
+ *
+ * This is shared by ordinary source parsing and mutation-authority checks so
+ * they cannot silently disagree about which creator-authored values count as
+ * a usable definition.
+ */
+function parseDictionaryDefinition(
+  frontmatter: Record<string, unknown>,
+) {
+  return firstParsedFrontmatterValue(
+    [
+      { key: "definition", value: frontmatter.definition },
+      { key: "gloss", value: frontmatter.gloss },
+      { key: "translation", value: frontmatter.translation },
+      { key: "meaning", value: frontmatter.meaning },
+    ],
+    parseNonBlankYamlScalarText,
+  );
+}
+
+/**
+ * Compare a requested meaning with the frontmatter from an existing entry.
+ *
+ * `frontmatter` may be undefined because Obsidian's metadata cache is not
+ * guaranteed to have usable data available at the moment this check runs.
+ *
+ * Missing metadata, missing definitions, and malformed definitions therefore
+ * produce "unknown". Only after Workbench successfully reads an existing
+ * definition may it decide that the meaning is either "same" or "different".
+ */
+export function compareDictionaryDefinition(
+  frontmatter: Record<string, unknown> | undefined,
+  requestedDefinition: string,
+): DictionaryDefinitionComparison {
+  if (!frontmatter) return "unknown";
+
+  const existingResult = parseDictionaryDefinition(frontmatter);
+  if (!existingResult.value) return "unknown";
+
+  const toSenses = (value: string): string[] =>
+    value
+      .split(/[,;]/)
+      .map((piece) => piece.trim().toLowerCase())
+      .filter((piece) => piece.length > 0);
+
+  const existingSenses = new Set(toSenses(existingResult.value));
+  const requestedSenses = toSenses(requestedDefinition);
+
+  // An empty requested meaning cannot safely establish either equivalence or
+  // difference. Keep uncertainty non-authoritative.
+  if (requestedSenses.length === 0) return "unknown";
+
+  return requestedSenses.some((sense) => existingSenses.has(sense))
+    ? "same"
+    : "different";
 }
 
 /**
@@ -113,15 +193,7 @@ export function parseDictionarySource(
   // intentionally preserve tolerant scalar reading, but selection is based on
   // the first value that can actually be interpreted rather than the first
   // value that merely happens to be non-null.
-  const definitionResult = firstParsedFrontmatterValue(
-    [
-      { key: "definition", value: fm.definition },
-      { key: "gloss", value: fm.gloss },
-      { key: "translation", value: fm.translation },
-      { key: "meaning", value: fm.meaning },
-    ],
-    parseNonBlankYamlScalarText,
-  );
+  const definitionResult = parseDictionaryDefinition(fm);
   addRejectedAliasDiagnostics(
     diagnostics,
     definitionResult.rejectedKeys,

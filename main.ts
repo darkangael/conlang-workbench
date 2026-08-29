@@ -20,6 +20,7 @@ import {
 } from "./types";
 import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
+import { compareDictionaryDefinition } from "./dictionary-source";
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
@@ -1013,11 +1014,24 @@ export default class ConlangPlugin extends Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
-      if (this.entryCoversDefinition(existing, p.englishText)) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        p.englishText,
+      );
+
+      if (comparison === "same") {
         return { ok: true, created: false, path };
       }
-      // Same spelling, different meaning: a homograph. Store the new sense
-      // in its own file and declare the shared form via `word:`.
+
+      if (comparison === "unknown") {
+        return {
+          ok: false,
+          error: this.existingDefinitionUnknownMessage(existing),
+        };
+      }
+
+      // Only a confirmed different meaning authorizes creation of another
+      // persistent source for the same spelling.
       path = this.freeHomographPath(folder, safeName, p.partOfSpeech);
       wordOverride = true;
     }
@@ -1072,26 +1086,38 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
-   * True when an existing entry file already covers the given English
-   * definition — i.e. any comma/semicolon-separated sense of the new
-   * definition matches one of the file's senses (case-insensitive). Used to
-   * tell "re-adding the same word" apart from "adding a new sense of a
-   * homograph".
+   * Ask the shared dictionary parser whether an existing entry has the same
+   * meaning, a different meaning, or cannot safely be interpreted.
+   *
+   * `cache?.frontmatter` uses TypeScript's optional chaining operator (`?.`).
+   * If Obsidian has no metadata cache for this file, the expression becomes
+   * `undefined` instead of throwing an error. The comparison helper then
+   * returns "unknown".
+   *
+   * Callers must treat "unknown" as a stop condition. Only "different" is
+   * permission to create a homograph.
    */
-  private entryCoversDefinition(file: TFile, definition: string): boolean {
-    // Frontmatter is typed loosely by Obsidian; treat the values as unknown and
-    // narrow explicitly rather than letting an `any` leak into the comparison.
-    const fm: Record<string, unknown> =
-      this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-    const existing: unknown = fm.definition ?? fm.translation ?? fm.meaning;
-    if (typeof existing !== "string") return false;
-    const toSenses = (s: string) =>
-      s
-        .split(/[,;]/)
-        .map((x) => x.trim().toLowerCase())
-        .filter((x) => x.length > 0);
-    const have = new Set(toSenses(existing));
-    return toSenses(definition).some((s) => have.has(s));
+  private compareExistingEntryDefinition(
+    file: TFile,
+    definition: string,
+  ): "same" | "different" | "unknown" {
+    const cache = this.app.metadataCache.getFileCache(file);
+    return compareDictionaryDefinition(cache?.frontmatter, definition);
+  }
+
+  /**
+   * Build the message shown when Workbench refuses an unsafe creation attempt.
+   *
+   * We deliberately stop instead of guessing. If the existing file cannot be
+   * interpreted safely, Workbench leaves creator-authored data unchanged and
+   * does not create a second file that might represent a false homograph.
+   */
+  private existingDefinitionUnknownMessage(file: TFile): string {
+    return (
+      `couldn't safely determine whether existing entry "${file.path}" ` +
+      "already contains this meaning because its frontmatter is unavailable " +
+      "or unusable"
+    );
   }
 
   /** Reload the dictionary + refresh UI after entries were added/changed. */
@@ -1312,20 +1338,35 @@ export default class ConlangPlugin extends Plugin {
       return;
     }
 
-    // If an entry with this form already covers this meaning, just open it —
-    // don't prompt for POS again. A same-spelling file with a DIFFERENT
-    // meaning is a homograph: fall through and create a new sense file.
+    // First determine what the existing same-spelling file means.
+    //
+    // "same"    -> open the existing entry.
+    // "unknown" -> stop without changing the vault.
+    // "different" continues below and may create a homograph after the user
+    //              supplies the remaining entry information.
     const safeName = translated.replace(/[\\/:*?"<>|]/g, "_");
     let path = joinVaultPath(folder, `${safeName}.md`);
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (
-      existing instanceof TFile &&
-      this.entryCoversDefinition(existing, englishText)
-    ) {
-      await this.app.workspace.getLeaf(false).openFile(existing);
-      new Notice(`Conlang: opened existing entry "${translated}"`);
-      return;
+    if (existing instanceof TFile) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        englishText,
+      );
+
+      if (comparison === "same") {
+        await this.app.workspace.getLeaf(false).openFile(existing);
+        new Notice(`Conlang: opened existing entry "${translated}"`);
+        return;
+      }
+
+      if (comparison === "unknown") {
+        new Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9000,
+        );
+        return;
+      }
     }
 
     // Prompt for part of speech. The user can skip or cancel.
@@ -1420,12 +1461,26 @@ export default class ConlangPlugin extends Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
-      if (this.entryCoversDefinition(existing, result.englishDefinition)) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        result.englishDefinition,
+      );
+
+      if (comparison === "same") {
         await this.app.workspace.getLeaf(false).openFile(existing);
         new Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
         return;
       }
-      // Homograph: same spelling, different meaning → new sense file.
+
+      if (comparison === "unknown") {
+        new Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9000,
+        );
+        return;
+      }
+
+      // Only a confirmed different meaning authorizes a new homograph source.
       path = this.freeHomographPath(folder, safeName, result.partOfSpeech);
       wordOverride = true;
     }
@@ -1502,12 +1557,26 @@ export default class ConlangPlugin extends Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
-      if (this.entryCoversDefinition(existing, referent)) {
+      const comparison = this.compareExistingEntryDefinition(
+        existing,
+        referent,
+      );
+
+      if (comparison === "same") {
         await this.app.workspace.getLeaf(false).openFile(existing);
         new Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
         return;
       }
-      // Homograph: same spelling, different referent → new sense file.
+
+      if (comparison === "unknown") {
+        new Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9000,
+        );
+        return;
+      }
+
+      // Only a confirmed different referent authorizes a new homograph source.
       path = this.freeHomographPath(
         folder,
         safeName,

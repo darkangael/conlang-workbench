@@ -1560,6 +1560,80 @@ The Test Language vault intentionally retains
 `H10 Supplementary Unicode Runtime Test.md` and the `var𐐀u` dictionary entry as
 permanent regression/example fixtures.
 
+#### SEC-004-H11 — Unavailable or uninterpretable existing dictionary metadata could authorize false homograph creation
+
+- **Severity:** Hardening
+- **Primary impact:** Creator-data safety, dictionary source integrity, and mutation authority
+- **Data-safety relevance:** Yes
+- **Source mutation:** Direct relevance — the affected comparison decided whether Workbench could create another persistent dictionary source
+- **Status:** Remediated, regression-tested, build-verified, and runtime-verified
+
+Dictionary-entry creation previously used a boolean
+`entryCoversDefinition()` check to decide whether a same-spelling file already
+covered the requested meaning. The check read Obsidian metadata-cache
+frontmatter directly and returned `false` both when it successfully established
+a different meaning and when the existing metadata was unavailable or could
+not be safely interpreted.
+
+That collapsed two materially different states:
+
+- the existing creator-authored entry has a usable, confirmed different meaning
+- Workbench does not currently know what the existing creator-authored entry
+  means
+
+Because `false` allowed creation to continue through `freeHomographPath()`,
+temporary metadata-cache absence, malformed structured definition data, or
+other uninterpretable definition state could incorrectly authorize creation of
+a persistent homograph source.
+
+The remediation replaces that boolean authority boundary with the explicit
+`DictionaryDefinitionComparison` result:
+
+- `"same"` means the existing entry already covers the requested meaning
+- `"different"` means a usable existing meaning was successfully interpreted
+  and confirmed not to match
+- `"unknown"` means Workbench cannot safely establish the existing meaning
+
+Only `"different"` may now authorize homograph creation. `"unknown"` is a
+stop condition: Workbench reports that it could not safely determine the
+existing meaning and creates no new entry.
+
+Definition interpretation is also shared through
+`parseDictionaryDefinition()`, so ordinary dictionary-source parsing and the
+mutation-authority comparison use the same supported definition aliases
+(`definition`, `gloss`, `translation`, and `meaning`), the same first-usable
+alias selection, and the same tolerant scalar-reading boundary. Unsupported
+structured values remain uninterpreted rather than being converted into text.
+
+All four current dictionary-creation paths that can encounter an existing
+same-spelling source use the tri-state comparison before reaching
+`freeHomographPath()`:
+
+- selection-based dictionary creation
+- translator/panel save-to-dictionary creation
+- the `+ Word` / Add a word path
+- the Add a name path
+
+Regression coverage in `npm run test:frontmatter` verifies same, different, and
+unknown outcomes, including unavailable frontmatter, empty frontmatter,
+malformed structured definitions, usable fallback aliases, tolerant scalar
+definitions, and the established comma/semicolon sense comparison behavior.
+The production build and `git diff --check` also pass at the H11 checkpoint.
+
+Obsidian runtime testing used the permanent Test Language entry `h11test.md`
+with a deliberately structured, unusable `definition` value. Attempting to add
+the same conlang form through `+ Word` produced the safety refusal that
+Workbench could not safely determine whether the entry already contained the
+meaning. After the attempt:
+
+- the original `h11test.md` remained unchanged
+- no disambiguated homograph file was created
+- the creator-authored malformed definition was not repaired, normalized, or
+  rewritten
+
+The Test Language vault intentionally retains `h11test.md` as permanent
+regression/example material for this mutation-authority boundary.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
@@ -1567,9 +1641,10 @@ parsing, phonology source parsing, dictionary source parsing, standalone
 linguistic-example source parsing, Markdown body-preview extraction, structured
 lexical-sense Markdown parsing, explicit-selection lookup semantics, Unicode
 lexical normalization, general Lookup-command query authority, and
-Unicode-safe cursor/hover word scanning reviewed; SEC-004-H1 through SEC-004-H10
-are remediated and regression-tested. The remaining frontmatter and Markdown
-input surfaces still require review.**
+Unicode-safe cursor/hover word scanning and existing-entry dictionary mutation
+authority reviewed; SEC-004-H1 through SEC-004-H11 are remediated and
+regression-tested. The remaining frontmatter and Markdown input surfaces still
+require review.**
 
 ---
 
@@ -2056,6 +2131,7 @@ audit section.
 | SEC-004-H8 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Unicode combining marks could be dropped or treated as token boundaries, changing creator-authored lexical forms and causing incorrect or failed lookup. | Controlled Unicode tests; `test:lexical-normalization`; production cypher regression coverage; production build; Obsidian runtime verification of canonically equivalent single-word and phrase lookup | Combining marks are preserved as lexical continuation content; NFC is applied only to derived comparison/index keys; dictionary, phrase, panel, and cypher behavior share Unicode-safe lexical semantics; creator-authored source/display spelling is not normalized or rewritten. |
 | SEC-004-H9 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query from the user's explicit selection. | Controlled destructive-cleanup tests; `test:lookup-query`; neighboring H7/H8 regression coverage; production build; Obsidian runtime verification of unsafe-selection rejection, phrase lookup, and decomposed-to-precomposed Unicode lookup | The general Lookup command now classifies explicit query authority before lookup; unsafe internal material is rejected rather than deleted; `collectLookupMatches()` no longer manufactures cleaned queries; permanent Test Language fixtures retain the phrase and Unicode runtime cases. |
 | SEC-004-H10 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Cursor and hover word scanning could split valid supplementary-plane Unicode letters by indexing UTF-16 code units rather than complete Unicode code points. | Controlled supplementary-plane reproduction; `test:word-scan`; neighboring H8/H9 regression coverage; production build; Obsidian runtime verification of complete `var𐐀u` cursor lookup and Reading View hover | Shared `word-scan.ts` now scans complete Unicode code points while returning UTF-16-compatible ranges. Existing lexical-boundary semantics are preserved; permanent Test Language H10 fixtures retain the runtime case. |
+| SEC-004-H11 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Existing dictionary-entry mutation decisions could treat unavailable or uninterpretable metadata as proof of a different meaning and incorrectly authorize persistent homograph creation. | Code review of all four dictionary-creation paths; tri-state comparison regression coverage in `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with malformed `h11test.md` | Existing-definition comparison now distinguishes `"same"`, `"different"`, and `"unknown"`. Only a confirmed `"different"` result may authorize homograph creation; `"unknown"` stops without creating or rewriting creator-authored data. |
 
 ---
 
