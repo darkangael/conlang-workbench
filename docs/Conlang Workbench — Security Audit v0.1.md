@@ -831,9 +831,10 @@ The initial parser inventory identified the following current input surfaces:
 - `main.ts` — metadata-cache coordination around dictionary creation/reload
 
 The Language Profile parser, shared `word-tokens.ts` helpers, morpheme,
-phonology, dictionary, and standalone linguistic-example source/frontmatter
-handling have now been reviewed in this pass. The remaining parsers still
-require individual review before §4 can be completed.
+phonology, dictionary, standalone linguistic-example source/frontmatter
+handling, and Markdown body-preview extraction have now been reviewed in this
+pass. The remaining parsers still require individual review before §4 can be
+completed.
 
 Morpheme parsing is now separated from inventory storage. Raw Obsidian
 frontmatter is interpreted by `morpheme-source.ts`, which produces a
@@ -1126,13 +1127,94 @@ Regression coverage in `npm run test:frontmatter` verifies:
 `npm run test:vault-paths`, `npm run test:frontmatter`, the production build,
 and `git diff --check` also passed for the remediation checkpoint.
 
+#### SEC-004-H4 — Body-preview frontmatter stripping used prefix matching rather than exact fence recognition
+
+- **Severity:** Hardening
+- **Primary impact:** Data integrity and preview fidelity
+- **Data-safety relevance:** Yes
+- **Status:** Remediated and regression-tested
+
+`body-preview.ts` extracts the first meaningful body paragraph used for
+proper-noun hover context. The extractor is read-only and does not determine
+dictionary source authority, but its original frontmatter removal logic treated
+a document as beginning with YAML whenever its content merely started with
+`---`. It then searched for the first later occurrence of `\n---` rather than
+requiring an exact closing fence line.
+
+Controlled adversarial tests demonstrated that this prefix matching could
+misidentify ordinary Markdown as frontmatter boundaries. A line containing
+`----` could be accepted as a closing fence, `---not-a-fence` could be treated
+as a closing fence while leaking its suffix into the preview, and a document
+beginning with `----` could be mistaken for a frontmatter-bearing note and lose
+its actual first body paragraph.
+
+An apparent opening frontmatter fence with no exact closing fence could also
+allow metadata-looking text to be interpreted as preview prose.
+
+The source Markdown was never modified. The failure was confined to the
+derived preview, but it could cause Workbench to omit creator-authored body text
+or display text from the wrong logical region of the note.
+
+The remediation now recognizes frontmatter only when the first line is exactly
+`---` and accepts a closing boundary only when a later line is also exactly
+`---`. If an exact opening fence exists without an exact closing fence, the
+extractor returns no preview rather than inventing a boundary between ambiguous
+metadata-looking content and body prose.
+
+Regression coverage in `npm run test:body-preview` verifies normal frontmatter,
+four-hyphen pseudo-fences, three-hyphen prefixes followed by text, unclosed
+apparent frontmatter, and ordinary Markdown beginning with four hyphens.
+
+#### SEC-004-H5 — Body-preview cleanup deleted potentially meaningful creator-authored characters
+
+- **Severity:** Hardening
+- **Primary impact:** Data integrity and preview fidelity
+- **Data-safety relevance:** Yes
+- **Status:** Remediated and regression-tested
+
+After extracting a paragraph, `body-preview.ts` previously removed every `*`,
+`_`, and backtick with a blanket character-replacement expression. That
+operation did not determine whether a character was actually functioning as
+Markdown presentation syntax.
+
+Controlled tests confirmed that the cleanup changed creator-authored text.
+Examples included `foo_bar` becoming `foobar`, `foo*bar` becoming `foobar`,
+backticks disappearing from literal or inline-code-like text, and a leading
+asterisk being removed from linguistic notation such as a reconstructed form.
+
+These characters can carry literal, identifier, transcription, annotation, or
+linguistic meaning. Treating every occurrence as disposable Markdown formatting
+therefore caused the derived preview to represent text the creator did not
+actually write.
+
+The source Markdown was never rewritten, so this finding did not cause
+persistent source corruption. It did, however, violate preview fidelity by
+destructively transforming user-authored content during extraction.
+
+The remediation removes the blanket punctuation deletion. Body-preview
+extraction may still normalize layout by joining the selected paragraph and
+truncating the resulting preview, but it no longer guesses that `*`, `_`, or
+backticks are presentation-only characters.
+
+If Workbench later renders Markdown formatting in previews, that interpretation
+belongs in the presentation layer, where rendering can be deliberate and
+reviewed separately, rather than in destructive source-text extraction.
+
+Regression coverage in `npm run test:body-preview` verifies preservation of
+underscores, asterisks, backticks, inline-code-like text, mixed Markdown-like
+notation, and a leading linguistic reconstruction marker.
+
+`npm run test:body-preview`, `npm run test:frontmatter`,
+`npm run test:vault-paths`, the production build, and `git diff --check` passed
+for the combined body-preview remediation checkpoint.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
-parsing, phonology source parsing, dictionary source parsing, and standalone
-linguistic-example source parsing reviewed; SEC-004-H1, SEC-004-H2, and
-SEC-004-H3 remediated and regression-tested. The remaining frontmatter and
-Markdown input surfaces still require review.**
+parsing, phonology source parsing, dictionary source parsing, standalone
+linguistic-example source parsing, and Markdown body-preview extraction
+reviewed; SEC-004-H1 through SEC-004-H5 are remediated and regression-tested.
+The remaining frontmatter and Markdown input surfaces still require review.**
 
 ---
 
@@ -1584,6 +1666,8 @@ audit section.
 | SEC-004-H1 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Unsupported structured frontmatter values could be silently stringified into values the user did not supply as text. | Code review; scalar/structure boundary regression coverage in `test:frontmatter` | Shared parsing now tolerates simple scalars but leaves unsupported structures uninterpreted; no automatic writeback or normalization occurs. |
 | SEC-004-H2 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Malformed or blank preferred frontmatter aliases could suppress valid supported fallback values and cause recoverable sources to disappear from feature-facing inventories. | Code review; first-usable alias tests; morpheme, phonology, and dictionary source-record regression coverage in `test:frontmatter` | Morpheme, phonology, and dictionary parsing now select the first interpretable supported alias, retain recognized malformed sources under independent Workbench/source identity where applicable, report diagnostics, and avoid silently inventing replacement data. Phonology preserves its strict-string policy and single-classification boundary. Dictionary preserves legacy untyped lexicon compatibility while respecting explicit foreign document types as outside dictionary authority. |
 | SEC-004-H3 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Recognized malformed standalone linguistic-example sources could disappear from inventory state when required `text` could not be safely interpreted. | Code review; `linguistic-example-source.ts`; malformed-source and optional-field regression coverage in `test:frontmatter` | Standalone examples now use a source adapter and durable source records. Recognized malformed sources remain addressable with diagnostics and `value: null`; strict-string semantics are preserved; malformed optional fields are diagnosed without invalidating otherwise usable examples; source Markdown is not rewritten. |
+| SEC-004-H4 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview frontmatter stripping used prefix matching instead of exact fence recognition, allowing ordinary Markdown or malformed frontmatter boundaries to produce incorrect previews. | Code review; controlled adversarial body-preview tests; `test:body-preview` regression coverage | Body-preview extraction now requires exact `---` opening and closing fence lines and returns no preview for an exact opener without an exact closer rather than inventing a body boundary. Source Markdown is not rewritten. |
+| SEC-004-H5 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Body-preview cleanup indiscriminately deleted `*`, `_`, and backticks, altering potentially meaningful creator-authored text in derived previews. | Code review; controlled punctuation-fidelity tests; `test:body-preview` regression coverage | Body-preview extraction now preserves creator-authored punctuation. Layout normalization remains allowed, while any future Markdown rendering is left to the presentation layer rather than destructive source-text cleanup. |
 
 ---
 
