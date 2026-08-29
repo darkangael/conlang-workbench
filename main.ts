@@ -32,6 +32,12 @@ import {
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
 import { WORD_RE, cleanWord, isWordChar, applyCasing } from "./word-tokens";
+import { classifySelectionLookup } from "./selection-lookup";
+import { confirmPhraseTranslation } from "./phrase-confirm-modal";
+import {
+  glossConlangToEnglish,
+  renderConlangToEnglishString,
+} from "./gloss";
 import { ConlangSettingTab } from "./settings";
 import { TranslationPanelView, VIEW_TYPE_PANEL } from "./panel";
 import {
@@ -808,21 +814,92 @@ export default class ConlangPlugin extends Plugin {
   }
 
   private async previewToEnglish(editor: Editor) {
+    // Preserve whether the user explicitly selected text before falling back
+    // to the word under the cursor. Arbitrary explicit selections need a
+    // stricter interpretation boundary than cursor-derived lexical tokens.
+    const explicitSelection = editor.getSelection();
+
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
       new Notice("Made Up Words: no selection or word under cursor");
       return;
     }
+
+    if (explicitSelection.length > 0) {
+      const intent = classifySelectionLookup(explicitSelection);
+
+      if (intent.kind === "invalid") {
+        // Do not delete punctuation or other internal separators and then
+        // perform lookup on a token the user never actually selected.
+        new Notice(
+          "Made Up Words: selection is not a single word or whitespace-separated phrase",
+        );
+        return;
+      }
+
+      if (intent.kind === "phrase") {
+        // A multi-word selection is meaningful, but translating the complete
+        // phrase is a different operation from looking up one lexical token.
+        // Require explicit approval before doing that broader interpretation.
+        const confirmed = await confirmPhraseTranslation(
+          this.app,
+          intent.sourceText,
+        );
+        if (!confirmed) return;
+
+        const lang = this.getActiveLanguage();
+        const tokens = glossConlangToEnglish(
+          intent.lookupText,
+          this.dictionary,
+          lang,
+        );
+        const translated = renderConlangToEnglishString(tokens);
+
+        new Notice(
+          `${intent.sourceText}  →  ${translated}`,
+          6000,
+        );
+        return;
+      }
+
+      // A safely classified explicit single-word selection may exclude only
+      // harmless outer punctuation/whitespace. Use the classifier's lexical
+      // token instead of destructively cleaning the whole selected string.
+      const entry = this.dictionary.lookup(intent.lookupText);
+      if (entry) {
+        new Notice(`${entry.word}  →  ${entry.definition}`, 6000);
+        return;
+      }
+
+      const lang = this.getActiveLanguage();
+      if (!lang) {
+        new Notice("Made Up Words: no active language");
+        return;
+      }
+
+      const reversed = applyCypherReverse(intent.lookupText, lang.sheets);
+      new Notice(
+        `${intent.sourceText}  →  ${reversed} (reverse cypher)`,
+        6000,
+      );
+      return;
+    }
+
+    // The no-selection path is already constrained by getSelectionOrWord():
+    // it scans only characters accepted by isWordChar(). Keep its established
+    // behavior intact rather than broadening this security fix unnecessarily.
     const entry = this.dictionary.lookup(cleanWord(sel.text));
     if (entry) {
       new Notice(`${entry.word}  →  ${entry.definition}`, 6000);
       return;
     }
+
     const lang = this.getActiveLanguage();
     if (!lang) {
       new Notice("Made Up Words: no active language");
       return;
     }
+
     const reversed = applyCypherReverse(sel.text, lang.sheets);
     new Notice(`${sel.text}  →  ${reversed} (reverse cypher)`, 6000);
   }
