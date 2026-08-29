@@ -11,7 +11,8 @@
     "test:frontmatter": "node scripts/test-frontmatter-parsing.mjs",
     "test:body-preview": "node scripts/test-body-preview.mjs",
     "test:lexical-senses": "node scripts/test-lexical-senses.mjs",
-    "test:selection-lookup": "node scripts/test-selection-lookup.mjs"
+    "test:selection-lookup": "node scripts/test-selection-lookup.mjs",
+    "test:gloss-rendering": "node scripts/test-gloss-rendering.mjs"
   },
   "keywords": [
     "obsidian",

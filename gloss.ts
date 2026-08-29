@@ -321,3 +321,61 @@ export function renderTransliterationString(tokens: GlossToken[]): string {
   }
   return out.join("");
 }
+
+
+/**
+ * Render an already-resolved conlang-to-English gloss as a flat preview string.
+ *
+ * This renderer is deliberately direction-specific. The older
+ * `renderTransliterationString()` has different semantics and is kept intact.
+ *
+ * Dictionary and phrase matches use their documentation-language definition,
+ * preserving the behavior of the existing Preview to English command. The
+ * renderer does not perform lookup, normalization, or source mutation; it only
+ * turns resolved GlossTokens into display text.
+ */
+export function renderConlangToEnglishString(tokens: GlossToken[]): string {
+  const out: string[] = [];
+
+  for (const t of tokens) {
+    switch (t.kind) {
+      case "separator":
+        out.push(t.source);
+        break;
+
+      case "dictionary":
+      case "phrase":
+        if (t.candidates && t.candidates.length > 0) {
+          out.push(t.candidates[0].definition);
+        } else {
+          // A token without the data expected for its declared kind should
+          // fail conservatively by preserving the original source text.
+          out.push(t.source);
+        }
+        break;
+
+      case "inflected":
+        if (t.inflection) {
+          // Preserve the established gloss-style representation for inflected
+          // forms: first meaning plus the grammatical label.
+          const sense = firstSense(t.inflection.lemma.definition);
+          out.push(
+            `${sense || t.inflection.lemma.word}.${t.inflection.label.toUpperCase()}`,
+          );
+        } else {
+          out.push(t.source);
+        }
+        break;
+
+      case "cypher-fallback":
+        out.push(t.cypherOutput ?? t.source);
+        break;
+
+      case "no-match":
+        out.push(t.source);
+        break;
+    }
+  }
+
+  return out.join("");
+}
