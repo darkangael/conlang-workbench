@@ -344,6 +344,19 @@ silently discarded from disk.
 Record whether the user receives enough information to locate and repair the
 problem.
 
+A diagnostic must not depend solely on a short-lived transient notice.
+Source-level diagnostics should remain available for as long as the underlying
+malformed source remains unresolved.
+
+When Workbench later provides contextual notice resurfacing, a diagnostic for a
+malformed source should be resurfaced when the user meaningfully interacts with
+the affected source note, such as opening or switching to that note. Background
+indexing, metadata refresh, vault reload, or interaction with unrelated notes
+should not repeatedly surface that warning.
+
+Correcting and reparsing the source should naturally remove diagnostics that no
+longer apply.
+
 ### Findings
 
 None recorded yet.
@@ -798,6 +811,15 @@ None recorded yet.
 ### Current Diagnostics
 
 Inventory warnings, skipped-entry logging, and visible error reporting.
+
+Review diagnostics as durable state separately from transient presentation.
+A short-lived Obsidian notice should not be the only representation of a
+source-data problem.
+
+Contextual resurfacing should be tied to meaningful interaction with the
+affected source file rather than background parsing or unrelated navigation.
+This allows an unresolved warning to become visible again when it is relevant
+without repeatedly interrupting the user while Workbench refreshes indexes.
 
 ### Silent Skips
 

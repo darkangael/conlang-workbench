@@ -830,9 +830,10 @@ The initial parser inventory identified the following current input surfaces:
 - `body-preview.ts` — Markdown-body preview extraction
 - `main.ts` — metadata-cache coordination around dictionary creation/reload
 
-The Language Profile parser, shared `word-tokens.ts` helpers, and morpheme
-source/frontmatter handling have now been reviewed in this pass. The remaining
-parsers still require individual review before §4 can be completed.
+The Language Profile parser, shared `word-tokens.ts` helpers, morpheme,
+phonology, dictionary, and standalone linguistic-example source/frontmatter
+handling have now been reviewed in this pass. The remaining parsers still
+require individual review before §4 can be completed.
 
 Morpheme parsing is now separated from inventory storage. Raw Obsidian
 frontmatter is interpreted by `morpheme-source.ts`, which produces a
@@ -1056,12 +1057,82 @@ exclusion.
 SEC-004-H2 is therefore complete for the alias-suppression pattern identified
 during this review.
 
+#### SEC-004-H3 — Recognized malformed linguistic-example sources could disappear from inventory state
+
+- **Severity:** Hardening
+- **Primary impact:** Data integrity and diagnosability
+- **Data-safety relevance:** Yes
+- **Status:** Remediated and regression-tested
+
+Standalone linguistic examples were previously parsed directly into
+feature-facing `LinguisticExample` values. A note explicitly identified as
+`type: linguistic-example` returned `null` when its required `text` field was
+missing, blank, or structurally incompatible.
+
+That `null` result was indistinguishable from an unrelated Markdown document.
+Consequently, a source Workbench had positively recognized as belonging to the
+linguistic-example feature could disappear from inventory state merely because
+its required linguistic content could not currently be interpreted.
+
+The source Markdown was not modified or deleted, but the omission weakened
+diagnosability and could make malformed user-authored data appear absent from
+Workbench.
+
+The remediation introduces `linguistic-example-source.ts` as a pure source
+adapter. Source authority remains deliberately narrow: only an interpretable
+`type: linguistic-example` is claimed by this adapter. Foreign, untyped, or
+otherwise unrecognized Markdown remains outside its authority.
+
+Once a source is positively recognized, Workbench now retains a
+`WorkbenchSourceRecord<LinguisticExample>` even when the required `text` value
+cannot safely be interpreted. Such a record retains independent Workbench and
+source identity, preserves a creator-authored `example_id` as linguistic
+identity when one is usable, carries an error diagnostic, and uses
+`value: null` rather than pretending that an incomplete example is valid.
+
+Linguistic-example fields deliberately preserve their strict-string policy.
+Numbers, booleans, arrays, and objects are not silently converted into
+creator-authored linguistic text. Malformed optional fields do not invalidate an
+otherwise usable example; the unusable field is omitted from the clean model
+and a warning diagnostic identifies the affected frontmatter field. Blank
+optional strings remain ordinary absent/template values and do not generate
+warning noise.
+
+`LinguisticExampleInventory` now stores recognized source records separately
+from valid feature-facing examples. `allExamples()` continues to expose only
+usable linguistic examples, while source-facing state retains recognized
+malformed notes for diagnosis and later reparse. Existing language filtering
+and source-level language inheritance remain inventory coordination behavior.
+
+The adapter does not mutate source Markdown and does not display transient UI
+notices itself. Diagnostics are durable source-state information. Presentation
+of those diagnostics remains a separate UI/lifecycle responsibility.
+
+Regression coverage in `npm run test:frontmatter` verifies:
+
+- valid canonical linguistic-example parsing
+- foreign and untyped document exclusion
+- malformed document-type exclusion
+- retention of recognized sources with missing, blank, or structured required
+  `text`
+- independent Workbench/source identity when no linguistic ID exists
+- preservation of a valid creator-authored `example_id`
+- omission and warning diagnostics for structurally incompatible optional fields
+- strict rejection rather than scalar coercion for linguistic-example text
+  fields
+- blank optional template fields without unnecessary diagnostics
+- malformed optional `example_id` without invented linguistic identity
+
+`npm run test:vault-paths`, `npm run test:frontmatter`, the production build,
+and `git diff --check` also passed for the remediation checkpoint.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
-parsing, phonology source parsing, and dictionary source parsing reviewed;
-SEC-004-H1 and SEC-004-H2 remediated and regression-tested. The remaining
-frontmatter and Markdown input surfaces still require review.**
+parsing, phonology source parsing, dictionary source parsing, and standalone
+linguistic-example source parsing reviewed; SEC-004-H1, SEC-004-H2, and
+SEC-004-H3 remediated and regression-tested. The remaining frontmatter and
+Markdown input surfaces still require review.**
 
 ---
 
@@ -1512,6 +1583,7 @@ audit section.
 | SEC-003-H1 | §3 Path Handling and Traversal | Remediated and verified | Hardening | Raw string-prefix folder comparison can match unrelated sibling paths. | Code review; `Mer` / `Mermaid` regression coverage in `test:vault-paths` | Replaced raw prefix comparison with component-aware `isPathWithinFolder()`. |
 | SEC-004-H1 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Unsupported structured frontmatter values could be silently stringified into values the user did not supply as text. | Code review; scalar/structure boundary regression coverage in `test:frontmatter` | Shared parsing now tolerates simple scalars but leaves unsupported structures uninterpreted; no automatic writeback or normalization occurs. |
 | SEC-004-H2 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Malformed or blank preferred frontmatter aliases could suppress valid supported fallback values and cause recoverable sources to disappear from feature-facing inventories. | Code review; first-usable alias tests; morpheme, phonology, and dictionary source-record regression coverage in `test:frontmatter` | Morpheme, phonology, and dictionary parsing now select the first interpretable supported alias, retain recognized malformed sources under independent Workbench/source identity where applicable, report diagnostics, and avoid silently inventing replacement data. Phonology preserves its strict-string policy and single-classification boundary. Dictionary preserves legacy untyped lexicon compatibility while respecting explicit foreign document types as outside dictionary authority. |
+| SEC-004-H3 | §4 Frontmatter and Markdown Input | Remediated and regression-tested | Hardening | Recognized malformed standalone linguistic-example sources could disappear from inventory state when required `text` could not be safely interpreted. | Code review; `linguistic-example-source.ts`; malformed-source and optional-field regression coverage in `test:frontmatter` | Standalone examples now use a source adapter and durable source records. Recognized malformed sources remain addressable with diagnostics and `value: null`; strict-string semantics are preserved; malformed optional fields are diagnosed without invalidating otherwise usable examples; source Markdown is not rewritten. |
 
 ---
 
