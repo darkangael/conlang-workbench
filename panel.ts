@@ -1924,7 +1924,7 @@ export class TranslationPanelView extends ItemView {
       this.nameFilter,
       this.languageFilter,
       this.sortKey,
-    ].join(" ");
+    ].join("\u0000");
     if (sig !== this.browserFilterSig) {
       this.browserFilterSig = sig;
       this.browserLimit = TranslationPanelView.BROWSER_PAGE;
