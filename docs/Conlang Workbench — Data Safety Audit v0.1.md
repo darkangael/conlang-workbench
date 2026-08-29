@@ -938,7 +938,7 @@ audit section.
 
 | Section | Item | Status | Rationale | Revisit Trigger |
 | --- | --- | --- | --- | --- |
-| — | — | — | — | — |
+| Translation / gloss architecture | Explicit source-language, target-language, and translation-direction identity | Deferred review | The current gloss model can carry lookup results without explicitly recording which language they came from or are being rendered into. A wholesale redesign is outside the current H7 remediation, but future multilingual translation must not rely on implicit English ↔ conlang direction assumptions. | Translation expands to non-English documentation languages, conlang-to-conlang translation, or direction-aware/richer gloss rendering. |
 
 ---
 
@@ -956,6 +956,7 @@ A new data-safety review should be considered when any of the following occurs:
 - export support changes fidelity or scope
 - stable-ID behavior changes
 - cross-document references are introduced or modified
+- translation expands to new source/target language combinations or the gloss model gains explicit language/direction identity
 - rename/move handling changes
 - bulk editing is introduced
 - an operation expands from note scope to folder, language, or vault scope

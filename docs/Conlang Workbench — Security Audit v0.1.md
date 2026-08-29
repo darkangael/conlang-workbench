@@ -1406,6 +1406,34 @@ Review how external links are constructed and opened.
 
 Identify planned integration points that could introduce new trust boundaries.
 
+#### Future review — Gloss model direction and language identity
+
+The current gloss representation does not explicitly identify the source
+language, target language, or translation direction. Some interpretation is
+therefore supplied implicitly by callers and renderers. This became visible
+during the §4 review when the existing flat gloss renderer was found to embody
+direction-specific assumptions for dictionary and phrase results.
+
+Before translation expands beyond the current documentation-language ↔ conlang
+assumptions, review whether source and target language identity should belong to
+the overall gloss operation, individual tokens, or a richer translation-result
+model.
+
+The review should include:
+
+- explicit source-language identity
+- explicit target-language identity
+- documentation-language identity rather than assuming English
+- direction-aware rendering
+- preservation of structured lexical-sense identity
+- phrase and inflection behavior across language pairs
+- fallback behavior across language pairs
+- eventual conlang-to-conlang translation
+
+This is a deferred architectural review requirement, not SEC-004-H7 itself. It
+does not authorize source mutation or require a wholesale gloss-model redesign
+during the H7 remediation.
+
 ### Explicit User Awareness
 
 Network or external-service behavior should not occur unexpectedly.
