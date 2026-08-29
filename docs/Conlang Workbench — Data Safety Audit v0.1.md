@@ -318,7 +318,23 @@ None recorded yet.
 
 ### Malformed YAML
 
-Determine behavior when frontmatter cannot be parsed normally.
+Runtime characterization has been completed for the current Obsidian
+metadata-cache boundary used by dictionary loading and creation.
+
+Because Obsidian is closed-source software, this audit treats the metadata
+cache as an external trust boundary and records observed behavior rather than
+assuming details of Obsidian's internal YAML parser.
+
+The permanent Test Language fixtures demonstrate that duplicate-key and
+syntactically malformed frontmatter do not become usable dictionary entries.
+Lookup falls back without inventing lexical data. When `+ Word` was used
+against the occupied `malformedprobe.md` path, Workbench could not safely
+establish the existing metadata/authority and refused the mutation; the source
+remained unchanged and no homograph file was created.
+
+A valid control fixture containing unusual unrelated keys remained readable as
+a normal lexical entry, showing that Workbench does not require creator
+frontmatter to contain only Workbench-owned fields.
 
 ### Wrong Types
 

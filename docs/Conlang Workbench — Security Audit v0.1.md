@@ -897,8 +897,34 @@ Regression coverage in `test:frontmatter` now verifies that:
 - supporting Markdown and other explicit document types inside configured
   morpheme folders are not misclassified as malformed morphemes
 
-Malformed YAML itself, duplicate/unusual-key behavior, and malformed values in
-the remaining feature parsers still require review.
+Malformed YAML and duplicate/unusual-key behavior have now been characterized
+at runtime at the Obsidian metadata-cache boundary. Because Obsidian is
+closed-source software, this audit records only behavior observed by Workbench;
+it does not assume which YAML implementation or parsing rules Obsidian uses
+internally.
+
+Permanent Test Language characterization fixtures establish the observed
+boundary:
+
+- `duplicateprobe.md` contains duplicate `definition` keys. Obsidian did not
+  expose it to Workbench as a usable dictionary entry, and Lookup produced only
+  the normal cypher fallback rather than an invented lexical interpretation.
+- `malformedprobe.md` contains syntactically malformed YAML. It likewise did
+  not become a dictionary entry. A subsequent `+ Word` request for
+  `malformedprobe` was refused because Workbench could not safely establish the
+  existing source's metadata/authority; no alternate lexical file was created
+  and the malformed source remained unchanged.
+- `unusualprobe.md` is valid YAML containing the normal lexical fields plus an
+  unrelated quoted key containing a colon and a numeric key. Obsidian exposed
+  the valid lexical metadata normally, Workbench loaded the entry as
+  `unusualprobe` = `river`, and the unrelated keys did not alter lexical
+  semantics.
+
+This runtime characterization therefore found no additional security finding:
+unparseable or ambiguous frontmatter failed closed at the Workbench boundary,
+while valid unusual metadata remained compatible. Malformed values or other
+frontmatter/Markdown surfaces not yet individually reviewed remain in scope for
+the rest of §4.
 
 ### Tolerant Aliases
 
@@ -1691,11 +1717,13 @@ created.
 parsing, phonology source parsing, dictionary source parsing, standalone
 linguistic-example source parsing, Markdown body-preview extraction, structured
 lexical-sense Markdown parsing, explicit-selection lookup semantics, Unicode
-lexical normalization, general Lookup-command query authority, and
+lexical normalization, general Lookup-command query authority,
 Unicode-safe cursor/hover word scanning, existing-entry dictionary mutation
-authority, and creation-time dictionary source authority reviewed; SEC-004-H1
-through SEC-004-H12 are remediated and regression-tested. The remaining frontmatter and Markdown input surfaces still
-require review.**
+authority, creation-time dictionary source authority, and observed Obsidian
+malformed-YAML/duplicate/unusual-key metadata-cache behavior reviewed;
+SEC-004-H1 through SEC-004-H12 are remediated and regression-tested. The
+runtime YAML characterization produced no additional finding. The remaining
+frontmatter and Markdown input surfaces still require review.**
 
 ---
 
