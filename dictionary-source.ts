@@ -52,6 +52,25 @@ export type DictionaryDefinitionComparison =
   | "unknown";
 
 /**
+ * Which feature, if any, has enough evidence to claim a Markdown source as a
+ * dictionary entry.
+ *
+ * This does NOT require `type: lexeme`. Older Workbench dictionaries and the
+ * Mer lexicon commonly identify lexical sources through fields such as
+ * `gloss`, `definition`, or `lemma`, and that compatibility is intentional.
+ *
+ * - "lexical" means Dictionary may interpret the note as a lexical source.
+ * - "other-source" means a usable explicit `type` assigns it elsewhere.
+ * - "unclaimed" means metadata exists but has no lexical authority signal.
+ * - "unknown" means frontmatter itself is unavailable.
+ */
+export type DictionarySourceAuthority =
+  | "lexical"
+  | "other-source"
+  | "unclaimed"
+  | "unknown";
+
+/**
  * Fields that strongly indicate a note is intended to describe a lexical
  * object. Generic metadata such as `language`, `notes`, `category`, or `ipa`
  * is intentionally excluded because those fields can appear on supporting
@@ -73,6 +92,40 @@ function hasOwn(
   key: string,
 ): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/**
+ * Establish whether Dictionary has authority to interpret a source.
+ *
+ * The order matters:
+ *
+ * 1. Missing frontmatter is genuinely unknown and must never authorize
+ *    mutation.
+ * 2. A usable explicit non-lexeme `type` belongs to another source kind.
+ * 3. `type: lexeme` explicitly establishes lexical authority.
+ * 4. Otherwise, strong lexical fields preserve compatibility with older and
+ *    user-authored lexicons that never used a `type` marker.
+ * 5. A note with none of those signals is merely unclaimed by Dictionary.
+ */
+export function classifyDictionarySourceAuthority(
+  frontmatter: Record<string, unknown> | undefined,
+): DictionarySourceAuthority {
+  if (!frontmatter) return "unknown";
+
+  const declaredType =
+    parseNonBlankYamlString(frontmatter.type)?.toLowerCase();
+
+  if (declaredType) {
+    return declaredType === "lexeme"
+      ? "lexical"
+      : "other-source";
+  }
+
+  const hasLexicalSignal = LEXICAL_SIGNAL_FIELDS.some((key) =>
+    hasOwn(frontmatter, key),
+  );
+
+  return hasLexicalSignal ? "lexical" : "unclaimed";
 }
 
 function addRejectedAliasDiagnostics(
@@ -168,24 +221,12 @@ export function parseDictionarySource(
   const fm = input.frontmatter;
   const diagnostics: WorkbenchDiagnostic[] = [];
 
-  const declaredType = parseNonBlankYamlString(fm.type)?.toLowerCase();
-
-  // An explicit usable document type establishes source authority. Dictionary
-  // owns `lexeme`; other named document types belong to their own feature or
-  // remain supporting documentation, even if they happen to reuse fields such
-  // as `gloss`.
-  if (declaredType && declaredType !== "lexeme") {
-    return null;
-  }
-
-  const explicitlyLexeme = declaredType === "lexeme";
-  const hasLexicalSignal = LEXICAL_SIGNAL_FIELDS.some((key) =>
-    hasOwn(fm, key),
-  );
-
+  // Use the same source-authority rule that mutation paths use. This keeps
+  // ordinary parsing and creation-time collision handling from drifting apart.
+  //
   // Untyped legacy lexical notes remain supported through strong lexical
   // fields. Mer and older Workbench dictionaries therefore need no migration.
-  if (!explicitlyLexeme && !hasLexicalSignal) {
+  if (classifyDictionarySourceAuthority(fm) !== "lexical") {
     return null;
   }
 

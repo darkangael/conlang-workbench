@@ -20,7 +20,8 @@ import {
 } from "./types";
 import { applyCypher, applyCypherReverse } from "./cypher";
 import { Dictionary, FormMatch } from "./dictionary";
-import { compareDictionaryDefinition } from "./dictionary-source";
+import {
+  classifyDictionarySourceAuthority, compareDictionaryDefinition } from "./dictionary-source";
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
@@ -1014,6 +1015,25 @@ export default class ConlangPlugin extends Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
+      // Source authority comes before semantic comparison. Only a source that
+      // Dictionary recognizes as lexical may have its gloss/definition used
+      // to decide whether this is the same word or a homograph.
+      const authority = this.classifyExistingDictionarySource(existing);
+
+      if (authority === "unknown") {
+        return {
+          ok: false,
+          error: this.existingDefinitionUnknownMessage(existing),
+        };
+      }
+
+      if (authority !== "lexical") {
+        return {
+          ok: false,
+          error: this.existingNonLexicalSourceMessage(existing),
+        };
+      }
+
       const comparison = this.compareExistingEntryDefinition(
         existing,
         p.englishText,
@@ -1097,6 +1117,25 @@ export default class ConlangPlugin extends Plugin {
    * Callers must treat "unknown" as a stop condition. Only "different" is
    * permission to create a homograph.
    */
+  /**
+   * Ask the shared dictionary source classifier whether an existing file may
+   * be interpreted as a lexical source.
+   *
+   * This check happens before definition comparison. A morpheme, phonological
+   * source, or supporting note may legitimately share fields such as `gloss`,
+   * but those fields do not give Dictionary permission to treat that source
+   * as an existing word.
+   *
+   * Untyped legacy lexical notes remain "lexical" when they contain strong
+   * lexical signals such as `gloss`, `definition`, or `lemma`.
+   */
+  private classifyExistingDictionarySource(
+    file: TFile,
+  ): "lexical" | "other-source" | "unclaimed" | "unknown" {
+    const cache = this.app.metadataCache.getFileCache(file);
+    return classifyDictionarySourceAuthority(cache?.frontmatter);
+  }
+
   private compareExistingEntryDefinition(
     file: TFile,
     definition: string,
@@ -1117,6 +1156,21 @@ export default class ConlangPlugin extends Plugin {
       `couldn't safely determine whether existing entry "${file.path}" ` +
       "already contains this meaning because its frontmatter is unavailable " +
       "or unusable"
+    );
+  }
+
+  /**
+   * Explain why a same-filename source was preserved instead of being treated
+   * as a dictionary entry.
+   *
+   * The user's explicit request to create a word does not authorize Workbench
+   * to reinterpret an existing source that belongs to another feature or has
+   * not established lexical authority.
+   */
+  private existingNonLexicalSourceMessage(file: TFile): string {
+    return (
+      `existing file "${file.path}" is not established as a lexical entry. ` +
+      "It was preserved unchanged and no new entry was created"
     );
   }
 
@@ -1349,6 +1403,24 @@ export default class ConlangPlugin extends Plugin {
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+
+      if (authority === "unknown") {
+        new Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9000,
+        );
+        return;
+      }
+
+      if (authority !== "lexical") {
+        new Notice(
+          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
+          9000,
+        );
+        return;
+      }
+
       const comparison = this.compareExistingEntryDefinition(
         existing,
         englishText,
@@ -1461,6 +1533,24 @@ export default class ConlangPlugin extends Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+
+      if (authority === "unknown") {
+        new Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9000,
+        );
+        return;
+      }
+
+      if (authority !== "lexical") {
+        new Notice(
+          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
+          9000,
+        );
+        return;
+      }
+
       const comparison = this.compareExistingEntryDefinition(
         existing,
         result.englishDefinition,
@@ -1557,6 +1647,24 @@ export default class ConlangPlugin extends Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+
+      if (authority === "unknown") {
+        new Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9000,
+        );
+        return;
+      }
+
+      if (authority !== "lexical") {
+        new Notice(
+          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
+          9000,
+        );
+        return;
+      }
+
       const comparison = this.compareExistingEntryDefinition(
         existing,
         referent,

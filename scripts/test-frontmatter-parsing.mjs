@@ -39,8 +39,11 @@ const { parseMorphemeSource } =
 const { parsePhonologySource } =
   await importBundled("phonology-source.ts");
 
-const { compareDictionaryDefinition, parseDictionarySource } =
-  await importBundled("dictionary-source.ts");
+const {
+  classifyDictionarySourceAuthority,
+  compareDictionaryDefinition,
+  parseDictionarySource,
+} = await importBundled("dictionary-source.ts");
 
 const { parseLinguisticExampleSource } =
   await importBundled("linguistic-example-source.ts");
@@ -766,6 +769,70 @@ const recoveredBlankDefinitionSource = parseDictionarySource(
 );
 assert.ok(recoveredBlankDefinitionSource);
 assert.equal(recoveredBlankDefinitionSource.value?.definition, "river");
+
+// H12: creation-time collision handling must establish dictionary authority
+// BEFORE interpreting shared fields such as `gloss` or `definition`.
+//
+// These four states deliberately answer a different question from H11's
+// same/different/unknown definition comparison:
+//
+// - "lexical"      means Dictionary is allowed to interpret this source.
+// - "other-source" means an explicit usable type gives another feature authority.
+// - "unclaimed"     means metadata is available but nothing claims lexical authority.
+// - "unknown"      means metadata itself is unavailable, so mutation must stop.
+//
+// Keeping source authority separate from definition comparison prevents a
+// morpheme such as `type: morpheme; gloss: river` from being mistaken for an
+// existing word merely because Dictionary also understands the `gloss` field.
+assert.equal(
+  classifyDictionarySourceAuthority(undefined),
+  "unknown",
+);
+
+assert.equal(
+  classifyDictionarySourceAuthority({
+    type: "lexeme",
+    lemma: "talu",
+    gloss: "river",
+  }),
+  "lexical",
+);
+
+assert.equal(
+  classifyDictionarySourceAuthority({
+    lemma: "talu",
+    gloss: "river",
+  }),
+  "lexical",
+);
+
+assert.equal(
+  classifyDictionarySourceAuthority({
+    type: "morpheme",
+    gloss: "river",
+  }),
+  "other-source",
+);
+
+assert.equal(
+  classifyDictionarySourceAuthority({
+    title: "Historical notes",
+    language: "Test Language",
+  }),
+  "unclaimed",
+);
+
+// Preserve the canonical H2 compatibility rule: only a USABLE explicit type
+// establishes foreign authority. A malformed type does not silently override
+// the existing strong-lexical-signal compatibility behavior.
+assert.equal(
+  classifyDictionarySourceAuthority({
+    type: { malformed: "structure" },
+    lemma: "talu",
+    gloss: "river",
+  }),
+  "lexical",
+);
 
 // H11: a mutation decision must distinguish a confirmed different meaning
 // from an inability to establish what an existing creator-authored note means.

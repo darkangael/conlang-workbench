@@ -525,6 +525,18 @@ var LEXICAL_SIGNAL_FIELDS = [
 function hasOwn(record, key) {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
+function classifyDictionarySourceAuthority(frontmatter) {
+  var _a;
+  if (!frontmatter) return "unknown";
+  const declaredType = (_a = parseNonBlankYamlString(frontmatter.type)) == null ? void 0 : _a.toLowerCase();
+  if (declaredType) {
+    return declaredType === "lexeme" ? "lexical" : "other-source";
+  }
+  const hasLexicalSignal = LEXICAL_SIGNAL_FIELDS.some(
+    (key) => hasOwn(frontmatter, key)
+  );
+  return hasLexicalSignal ? "lexical" : "unclaimed";
+}
 function addRejectedAliasDiagnostics(diagnostics, rejectedKeys) {
   for (const field of rejectedKeys) {
     diagnostics.push({
@@ -557,18 +569,10 @@ function compareDictionaryDefinition(frontmatter, requestedDefinition) {
   return requestedSenses.some((sense) => existingSenses.has(sense)) ? "same" : "different";
 }
 function parseDictionarySource(input) {
-  var _a, _b, _c;
+  var _a, _b;
   const fm = input.frontmatter;
   const diagnostics = [];
-  const declaredType = (_a = parseNonBlankYamlString(fm.type)) == null ? void 0 : _a.toLowerCase();
-  if (declaredType && declaredType !== "lexeme") {
-    return null;
-  }
-  const explicitlyLexeme = declaredType === "lexeme";
-  const hasLexicalSignal = LEXICAL_SIGNAL_FIELDS.some(
-    (key) => hasOwn(fm, key)
-  );
-  if (!explicitlyLexeme && !hasLexicalSignal) {
+  if (classifyDictionarySourceAuthority(fm) !== "lexical") {
     return null;
   }
   const definitionResult = parseDictionaryDefinition(fm);
@@ -584,7 +588,7 @@ function parseDictionarySource(input) {
     parseNonBlankYamlScalarText
   );
   addRejectedAliasDiagnostics(diagnostics, wordResult.rejectedKeys);
-  const word = (_b = wordResult.value) != null ? _b : input.basename;
+  const word = (_a = wordResult.value) != null ? _a : input.basename;
   const identity = createObsidianWorkbenchIdentity(
     input.path,
     word
@@ -639,7 +643,7 @@ function parseDictionarySource(input) {
   const language = parseYamlScalarText(fm.language);
   const parts = parseStringList(fm.parts);
   const aliases = parseStringList(fm.aliases);
-  const inflectAs = (_c = parseStringList(fm.inflectAs)) == null ? void 0 : _c.join(",");
+  const inflectAs = (_b = parseStringList(fm.inflectAs)) == null ? void 0 : _b.join(",");
   const isPhrase = /\s/.test(word);
   const wordCount = word.split(/\s+/).filter((piece) => piece.length > 0).length;
   const entry = {
@@ -8264,6 +8268,19 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+      if (authority === "unknown") {
+        return {
+          ok: false,
+          error: this.existingDefinitionUnknownMessage(existing)
+        };
+      }
+      if (authority !== "lexical") {
+        return {
+          ok: false,
+          error: this.existingNonLexicalSourceMessage(existing)
+        };
+      }
       const comparison = this.compareExistingEntryDefinition(
         existing,
         p.englishText
@@ -8335,6 +8352,22 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
    * Callers must treat "unknown" as a stop condition. Only "different" is
    * permission to create a homograph.
    */
+  /**
+   * Ask the shared dictionary source classifier whether an existing file may
+   * be interpreted as a lexical source.
+   *
+   * This check happens before definition comparison. A morpheme, phonological
+   * source, or supporting note may legitimately share fields such as `gloss`,
+   * but those fields do not give Dictionary permission to treat that source
+   * as an existing word.
+   *
+   * Untyped legacy lexical notes remain "lexical" when they contain strong
+   * lexical signals such as `gloss`, `definition`, or `lemma`.
+   */
+  classifyExistingDictionarySource(file) {
+    const cache = this.app.metadataCache.getFileCache(file);
+    return classifyDictionarySourceAuthority(cache == null ? void 0 : cache.frontmatter);
+  }
   compareExistingEntryDefinition(file, definition) {
     const cache = this.app.metadataCache.getFileCache(file);
     return compareDictionaryDefinition(cache == null ? void 0 : cache.frontmatter, definition);
@@ -8348,6 +8381,17 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
    */
   existingDefinitionUnknownMessage(file) {
     return `couldn't safely determine whether existing entry "${file.path}" already contains this meaning because its frontmatter is unavailable or unusable`;
+  }
+  /**
+   * Explain why a same-filename source was preserved instead of being treated
+   * as a dictionary entry.
+   *
+   * The user's explicit request to create a word does not authorize Workbench
+   * to reinterpret an existing source that belongs to another feature or has
+   * not established lexical authority.
+   */
+  existingNonLexicalSourceMessage(file) {
+    return `existing file "${file.path}" is not established as a lexical entry. It was preserved unchanged and no new entry was created`;
   }
   /** Reload the dictionary + refresh UI after entries were added/changed. */
   async afterEntriesChanged() {
@@ -8521,6 +8565,21 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     await this.ensureFolder(folder);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+      if (authority === "unknown") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9e3
+        );
+        return;
+      }
+      if (authority !== "lexical") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
+          9e3
+        );
+        return;
+      }
       const comparison = this.compareExistingEntryDefinition(
         existing,
         englishText
@@ -8611,6 +8670,21 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+      if (authority === "unknown") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9e3
+        );
+        return;
+      }
+      if (authority !== "lexical") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
+          9e3
+        );
+        return;
+      }
       const comparison = this.compareExistingEntryDefinition(
         existing,
         result.englishDefinition
@@ -8693,6 +8767,21 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian17.Plugin {
     let wordOverride = false;
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof import_obsidian17.TFile) {
+      const authority = this.classifyExistingDictionarySource(existing);
+      if (authority === "unknown") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingDefinitionUnknownMessage(existing)}. No new entry was created.`,
+          9e3
+        );
+        return;
+      }
+      if (authority !== "lexical") {
+        new import_obsidian17.Notice(
+          `Conlang Workbench: ${this.existingNonLexicalSourceMessage(existing)}.`,
+          9e3
+        );
+        return;
+      }
       const comparison = this.compareExistingEntryDefinition(
         existing,
         referent

@@ -1634,6 +1634,57 @@ meaning. After the attempt:
 The Test Language vault intentionally retains `h11test.md` as permanent
 regression/example material for this mutation-authority boundary.
 
+#### SEC-004-H12 — Dictionary creation-time collision handling could bypass established source authority
+
+- **Severity:** Hardening
+- **Primary impact:** Creator-data safety, dictionary source integrity, and mutation authority
+- **Data-safety relevance:** Yes
+- **Source mutation:** Direct relevance — collision handling could reuse an existing source as lexical data or authorize creation of another persistent lexical source
+- **Status:** Remediated, regression-tested, build-verified, and runtime-verified
+
+Canonical dictionary parsing already excluded a source with an explicit usable
+non-lexical `type`, even when that source reused fields such as `gloss` or
+`definition`. Creation-time collision handling did not apply the same authority
+decision before comparing meanings.
+
+As a result, if an explicitly non-lexical source occupied the exact filename
+requested for a new dictionary entry, shared semantic fields could be
+interpreted as dictionary data. A matching value could cause that source to be
+reused as though it were the requested word; a different value could cause the
+collision to be treated as lexical homography.
+
+The remediation introduces a shared `DictionarySourceAuthority` classification
+used by both canonical dictionary parsing and creation-time collision handling:
+
+- `"lexical"` — Dictionary may interpret the source as lexical
+- `"other-source"` — a usable explicit non-lexeme `type` assigns authority elsewhere
+- `"unclaimed"` — metadata exists but does not establish lexical authority
+- `"unknown"` — frontmatter itself is unavailable
+
+This does **not** require `type: lexeme`. Untyped creator-authored and legacy
+lexical notes remain intentionally supported when they contain strong lexical
+signals such as `definition`, `gloss`, `translation`, `meaning`, `word`,
+`lemma`, `forms`, or `inflections`. Existing Mer and older Workbench lexicons
+therefore require no migration.
+
+All four dictionary/name creation collision paths now establish lexical source
+authority before interpreting definition aliases. Known other-source and
+unclaimed files stop creation and remain unchanged. Unavailable metadata
+remains the separate `"unknown"` stop condition established by SEC-004-H11.
+
+`test:frontmatter` regression coverage verifies explicit lexical authority,
+legacy untyped lexical sources, explicit other-source authority, unclaimed
+supporting Markdown, unavailable metadata, and the existing malformed-`type`
+compatibility behavior. The full current regression suite and production build
+pass.
+
+Runtime verification used the permanent Test Language fixture
+`Languages/Test Language/Lexicon/h12test.md`, intentionally declared
+`type: morpheme` with `gloss: river` inside the configured Lexicon folder.
+A `+ Word` request for lexical form `h12test` was rejected as a non-lexical
+collision. The fixture remained unchanged and no alternate lexical file was
+created.
+
 ### Status
 
 **In Progress — Language Profile, shared frontmatter helpers, morpheme source
@@ -1641,9 +1692,9 @@ parsing, phonology source parsing, dictionary source parsing, standalone
 linguistic-example source parsing, Markdown body-preview extraction, structured
 lexical-sense Markdown parsing, explicit-selection lookup semantics, Unicode
 lexical normalization, general Lookup-command query authority, and
-Unicode-safe cursor/hover word scanning and existing-entry dictionary mutation
-authority reviewed; SEC-004-H1 through SEC-004-H11 are remediated and
-regression-tested. The remaining frontmatter and Markdown input surfaces still
+Unicode-safe cursor/hover word scanning, existing-entry dictionary mutation
+authority, and creation-time dictionary source authority reviewed; SEC-004-H1
+through SEC-004-H12 are remediated and regression-tested. The remaining frontmatter and Markdown input surfaces still
 require review.**
 
 ---
@@ -2132,6 +2183,7 @@ audit section.
 | SEC-004-H9 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query from the user's explicit selection. | Controlled destructive-cleanup tests; `test:lookup-query`; neighboring H7/H8 regression coverage; production build; Obsidian runtime verification of unsafe-selection rejection, phrase lookup, and decomposed-to-precomposed Unicode lookup | The general Lookup command now classifies explicit query authority before lookup; unsafe internal material is rejected rather than deleted; `collectLookupMatches()` no longer manufactures cleaned queries; permanent Test Language fixtures retain the phrase and Unicode runtime cases. |
 | SEC-004-H10 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Cursor and hover word scanning could split valid supplementary-plane Unicode letters by indexing UTF-16 code units rather than complete Unicode code points. | Controlled supplementary-plane reproduction; `test:word-scan`; neighboring H8/H9 regression coverage; production build; Obsidian runtime verification of complete `var𐐀u` cursor lookup and Reading View hover | Shared `word-scan.ts` now scans complete Unicode code points while returning UTF-16-compatible ranges. Existing lexical-boundary semantics are preserved; permanent Test Language H10 fixtures retain the runtime case. |
 | SEC-004-H11 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Existing dictionary-entry mutation decisions could treat unavailable or uninterpretable metadata as proof of a different meaning and incorrectly authorize persistent homograph creation. | Code review of all four dictionary-creation paths; tri-state comparison regression coverage in `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with malformed `h11test.md` | Existing-definition comparison now distinguishes `"same"`, `"different"`, and `"unknown"`. Only a confirmed `"different"` result may authorize homograph creation; `"unknown"` stops without creating or rewriting creator-authored data. |
+| SEC-004-H12 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Creation-time dictionary collision handling could interpret shared fields from an explicitly non-lexical source as dictionary semantics, bypassing canonical source authority. | Code review of all four creation paths; source-authority regression coverage in `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with `h12test.md` | Dictionary parsing and creation-time collision handling now share one source-authority classifier. Only established lexical sources reach definition comparison; other-source, unclaimed, and unavailable sources stop mutation and remain unchanged. |
 
 ---
 
