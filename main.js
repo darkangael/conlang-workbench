@@ -231,11 +231,15 @@ var import_obsidian = require("obsidian");
 // body-preview.ts
 function extractBodyPreview(content) {
   let body = content;
-  if (body.startsWith("---")) {
-    const end = body.indexOf("\n---", 3);
-    if (end !== -1) {
-      body = body.slice(end + 4);
+  const sourceLines = body.split(/\r?\n/);
+  if (sourceLines[0] === "---") {
+    const closingFenceIndex = sourceLines.findIndex(
+      (line, index) => index > 0 && line === "---"
+    );
+    if (closingFenceIndex === -1) {
+      return "";
     }
+    body = sourceLines.slice(closingFenceIndex + 1).join("\n");
   }
   const lines = body.split(/\r?\n/);
   const paragraph = [];
@@ -259,7 +263,6 @@ function extractBodyPreview(content) {
     inParagraph = true;
   }
   let text = paragraph.join(" ").trim();
-  text = text.replace(/[*_`]/g, "");
   const MAX = 200;
   if (text.length > MAX) {
     text = text.slice(0, MAX).replace(/\s+\S*$/, "") + "\u2026";

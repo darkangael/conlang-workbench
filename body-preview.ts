@@ -11,12 +11,27 @@
 export function extractBodyPreview(content: string): string {
   let body = content;
 
-  // Strip YAML frontmatter
-  if (body.startsWith("---")) {
-    const end = body.indexOf("\n---", 3);
-    if (end !== -1) {
-      body = body.slice(end + 4);
+  // Strip YAML frontmatter only when Markdown starts with an exact `---`
+  // fence and later contains another exact `---` fence on its own line.
+  //
+  // Prefix matching is unsafe here: strings such as `----` or
+  // `---not-a-fence` are ordinary Markdown content and must not be mistaken
+  // for YAML boundaries.
+  const sourceLines = body.split(/\r?\n/);
+  if (sourceLines[0] === "---") {
+    const closingFenceIndex = sourceLines.findIndex(
+      (line, index) => index > 0 && line === "---",
+    );
+
+    // If a note begins an apparent frontmatter block but never closes it,
+    // there is no reliable boundary between metadata-looking text and body
+    // prose. Returning no preview is safer than inventing one from that
+    // ambiguous content.
+    if (closingFenceIndex === -1) {
+      return "";
     }
+
+    body = sourceLines.slice(closingFenceIndex + 1).join("\n");
   }
 
   // Walk lines, skipping headings, blanks, and the auto-generated
@@ -48,8 +63,15 @@ export function extractBodyPreview(content: string): string {
     inParagraph = true;
   }
   let text = paragraph.join(" ").trim();
-  // Strip simple markdown formatting that would render literally
-  text = text.replace(/[*_`]/g, "");
+
+  // Preserve punctuation from the creator's source text.
+  //
+  // Characters such as `*`, `_`, and backticks can be Markdown delimiters,
+  // but they can also carry literal or linguistic meaning. Body-preview
+  // extraction should normalize layout, not guess which punctuation was
+  // intended only as presentation markup. If Workbench later wants rendered
+  // Markdown in previews, that belongs in the presentation layer rather than
+  // destructive source-text cleanup here.
   const MAX = 200;
   if (text.length > MAX) {
     text = text.slice(0, MAX).replace(/\s+\S*$/, "") + "…";
