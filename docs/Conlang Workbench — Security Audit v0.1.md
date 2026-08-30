@@ -1869,19 +1869,18 @@ sink was found. SEC-005-H1 is remediated and regression-tested.
 
 Review of command and mutation boundaries is in progress.
 
-The review has so far concentrated on the two command paths with the clearest
-authority to create or replace creator-authored vault content:
+The review has so far completed three substantial authority boundaries:
 
 - dictionary-entry persistence
-- translation commit into an existing Markdown note
+- translation commit into existing creator-authored Markdown
+- language identity, membership, rename, and canonical source authority
 
-Both paths exposed hardening findings. Dictionary-entry persistence has been
-remediated and verified. Translation commit has had its original unsafe direct
-replacement path removed and its authoritative ready path hardened, while the
-missing-vocabulary repair workflow remains under construction.
+SEC-006-H1 through SEC-006-H3 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
-review before this section can be marked Pass.
+review before this section can be marked Pass. In particular, plugin-initiated
+deletion operations and the remaining settings/path mutation surfaces still
+require review.
 
 ### Command Inventory
 
@@ -2168,6 +2167,150 @@ errors with the established warning baseline.
 lexical creation authority from note-mutation authority, fails closed on
 unresolved or stale state, and requires explicit authorization of the exact
 replacement immediately before the final creator-data mutation.
+
+#### SEC-006-H3 — Language identity and canonical source authority could become ambiguous during settings mutation and reload
+
+**Severity:** Hardening
+
+Language configuration currently uses the human-readable language name as an
+important alpha-era runtime identity. Active-language references, primary
+language selection, configured source folders, and several runtime indexes
+therefore depend upon that identity remaining unambiguous.
+
+The review identified several related authority failures that could otherwise
+cause Workbench to load linguistic data under an unintended language identity
+or silently omit part of the creator's configured state:
+
+- language names could be blank or duplicated;
+- a persisted active-language reference could name a language that no longer
+  exists in the configured language list and be silently omitted by runtime
+  filtering;
+- configured canonical source folders could be invalid, missing, or occupied by
+  a non-folder object;
+- two languages could claim the same canonical inventory source, or
+  ancestor/descendant source trees of the same inventory type;
+- explicit creator-authored `language:` metadata could disagree with configured
+  folder ownership;
+- renaming a language changed a name-based runtime identity without an explicit
+  confirmation and without one shared rollback boundary if persistence or
+  reload failed.
+
+Under folder-authoritative membership, same-inventory source overlap is
+particularly important because the same physical Markdown source could
+otherwise be assigned different runtime language identities depending upon
+which configured source tree loaded it.
+
+**Remediation:**
+
+Language membership and identity handling now use explicit shared authority
+boundaries.
+
+`language-membership.ts` defines the runtime membership policy:
+
+- `Configured folders (recommended)` treats the configured canonical folder as
+  runtime membership authority;
+- `Respect explicit language metadata` retains the previous hybrid behavior in
+  which an explicit conflicting `language:` value rejects membership.
+
+The resolver is pure and read-only. It does not rewrite creator-authored
+`language:` metadata merely because runtime folder authority differs from the
+source field.
+
+Existing direct loader callers retain the previous explicit-metadata behavior
+unless a membership mode is supplied, while normal Workbench reload passes the
+persisted membership setting explicitly.
+
+`language-source-preflight.ts` now validates active language source authority
+before runtime linguistic state is cleared or rebuilt.
+
+The preflight fails closed when it encounters:
+
+- a blank configured language identity;
+- a duplicate configured language identity;
+- an active-language reference that no longer exists in the configured
+  language list;
+- an invalid configured canonical source path;
+- a configured canonical source folder that is missing;
+- a configured canonical source path occupied by a non-folder object;
+- exact or ancestor/descendant overlap between canonical sources of the same
+  inventory type belonging to different languages.
+
+Cross-inventory nesting remains allowed because a language may intentionally
+organize different source types beneath related folder trees.
+
+A blocked preflight displays source diagnostics and returns without clearing or
+rebuilding the currently loaded language profiles, dictionary, morphemes,
+linguistic examples, phonology, or related caches. Workbench does not
+automatically remove stale references, rename folders, move sources, rewrite
+metadata, or guess which language should own an ambiguous source.
+
+Language rename now uses `language-identity.ts` and
+`language-rename-modal.ts`.
+
+A proposed rename:
+
+- is trimmed and validated;
+- rejects blank names;
+- rejects duplicate configured names;
+- rejects a no-op unchanged identity;
+- requires explicit user confirmation;
+- is revalidated after the asynchronous confirmation boundary;
+- preserves the language's existing configured canonical source paths;
+- does not rewrite creator-authored `language:` metadata;
+- updates name-based active and primary language references as one logical
+  settings operation.
+
+If the initial settings save fails, the in-memory rename is restored.
+
+If the renamed settings save succeeds but the subsequent language reload is
+blocked by source preflight, Workbench restores the previous language identity,
+active-language references, primary-language reference, and relevant settings
+UI state, then persists that rollback.
+
+The language-membership setting uses the same fail-closed principle: if changing
+the authority mode successfully persists but the subsequent reload is blocked,
+Workbench restores and persists the previous membership mode rather than leaving
+the creator with a newly persisted configuration that could not be safely
+loaded.
+
+A future daughter-language workflow is deliberately documented as requiring an
+independent copied canonical source tree and unique identity. Parent and daughter
+languages must not be implemented by pointing two language configurations at the
+same canonical source folders.
+
+**Verification:**
+
+Focused regression coverage now exercises:
+
+- folder-authoritative membership;
+- explicit-metadata-respecting membership;
+- creator metadata preservation;
+- blank, unchanged, and duplicate rename rejection;
+- independent canonical source trees;
+- legacy omitted optional sources;
+- invalid source paths;
+- missing configured folders;
+- non-folder source collisions;
+- exact same-inventory overlap;
+- ancestor/descendant same-inventory overlap;
+- permitted cross-inventory nesting;
+- blank configured language identities;
+- duplicate configured language identities;
+- stale/unknown persisted active-language references.
+
+The focused membership/identity and source-preflight regression suites pass.
+
+Production build succeeds.
+
+Lint reports zero errors and the established 14-warning baseline.
+
+Touched source and test files were formatted through Prettier before the
+checkpoint.
+
+The remediation was committed and pushed as `bcd4c83`
+(`Harden language source authority`).
+
+**Status:** Remediated and verified.
 
 ### Status
 
@@ -2591,6 +2734,7 @@ audit section.
 | SEC-004-H12 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Creation-time dictionary collision handling could interpret shared fields from an explicitly non-lexical source as dictionary semantics, bypassing canonical source authority. | Code review of all four creation paths; source-authority regression coverage in `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with `h12test.md` | Dictionary parsing and creation-time collision handling now share one source-authority classifier. Only established lexical sources reach definition comparison; other-source, unclaimed, and unavailable sources stop mutation and remain unchanged. |
 | SEC-006-H1 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Best-effort folder creation did not itself establish a valid lexical mutation destination or centralize collision/source-authority checks at the persistence boundary. | Code review; dictionary-entry-writer regression coverage for creation, collision, path, folder, source-authority, and failure cases; production build; commit `d2c7428` | Persistent lexical creation is centralized in `dictionary-entry-writer.ts`, which validates paths and folders, rechecks collision/source authority, permits homographs only for confirmed different lexical meanings, and performs the final guarded `vault.create()`. |
 | SEC-006-H2 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Translation commit could replace creator-authored selected text without previewing and explicitly authorizing the exact final replacement; related review exposed fallback, ambiguity, and cross-language lexical-authority hazards. | Code review; `test:translation-commit-plan`; `test:translation-vocabulary-repair`; `test:dictionary-language-scope`; `test:inflection-language-scope`; `test:gloss-rendering`; production build; focused runtime verification | Translation commit now uses language-scoped lexical resolution, a fail-closed pure planner, sequential explicitly authorized vocabulary repair, reload/re-plan against captured source and target context, exact replacement preview, explicit Replace authorization, target/file/path/text stale-state guards, and exact non-regenerated replacement. Vocabulary creation has no editor-mutation authority and cancellation leaves creator-authored note text untouched. |
+| SEC-006-H3 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Name-based language identity and canonical source configuration could become ambiguous through blank/duplicate identities, stale active-language references, conflicting membership authority, overlapping same-inventory source trees, or unguarded rename mutation. | Code review; `test-language-membership.mjs`; `test-language-source-preflight.mjs`; production build; lint; commit `bcd4c83` | Runtime membership policy is explicit; source reload preflights identity, paths, folder existence/type, stale active references, and same-inventory overlaps before clearing state; creator metadata is preserved; rename requires confirmation and rollback protection; blocked authority state fails closed without guessing or rerouting creator data. |
 
 ---
 
