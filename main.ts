@@ -49,6 +49,7 @@ import {
   translateEnglishToConlangString,
 } from "./gloss";
 import { buildEnglishToConlangCommitPlan } from "./translation-commit-plan";
+import { repairMissingTranslationVocabulary } from "./translation-vocabulary-repair";
 import { ConlangSettingTab } from "./settings";
 import { TranslationPanelView, VIEW_TYPE_PANEL } from "./panel";
 import {
@@ -775,37 +776,103 @@ export default class ConlangPlugin extends Plugin {
     // A note mutation has a stricter boundary: first obtain the language-scoped
     // gloss tokens, then let the pure commit planner decide whether every
     // lexical item has enough creator-authored authority to be written.
-    const tokens = glossEnglishToConlang(
+    let tokens = glossEnglishToConlang(
       sel.text,
       this.dictionary,
       targetLanguage,
     );
-    const plan = buildEnglishToConlangCommitPlan(tokens);
+    let plan = buildEnglishToConlangCommitPlan(tokens);
 
     if (plan.status === "blocked") {
-      // Do not write a partial translation. One unresolved item invalidates
-      // authorization for the entire selected range.
-      //
-      // This modal explains each blocker independently. Its "create missing"
-      // action authorizes only a later vocabulary-repair step, never replacement
-      // of creator-authored note text.
+      // One unresolved lexical item invalidates authorization for the entire
+      // replacement. The creator may authorize ONE missing-vocabulary repair
+      // pass, but that permission does not authorize editing the original note.
       const action = await promptTranslationUnresolved(
         this.app,
         plan.unresolved,
       );
 
-      if (action === "create-missing") {
-        // The vocabulary creation queue is deliberately the next checkpoint.
-        // Until it is connected, this branch performs no filesystem or editor
-        // mutation.
+      if (action === "cancel") return;
+
+      const repair = await repairMissingTranslationVocabulary(
+        plan.unresolved,
+        targetLanguage,
+        {
+          // Bind the optional Cypher helper to the target captured when this
+          // translation began. It must not drift to a later primary language.
+          promptForWord: (source, language) =>
+            this.promptForWord(source, language),
+
+          // The repair controller receives lexical persistence authority only.
+          // It has no Editor, selection, range, or replaceRange() capability.
+          writeWord: (language, result) =>
+            this.writeWordEntry(language, result),
+        },
+      );
+
+      // Cancelling any word modal terminates the remaining translation flow.
+      // Entries explicitly saved before cancellation remain durable because
+      // each of those vocabulary writes was independently authorized.
+      if (repair.status === "cancelled") return;
+
+      if (repair.status === "failed") {
         new Notice(
-          "Made Up Words: missing-word creation will open here next. Nothing was replaced.",
-          8000,
+          `Conlang Workbench: ${repair.error}. Translation was not replaced.`,
+          9000,
         );
+        return;
       }
 
-      return;
+      // "in-progress" means the permitted vocabulary-repair pass succeeded,
+      // not that the translation itself is complete. Reload authoritative
+      // lexical data before asking the planner again.
+      await this.afterEntriesChanged();
+
+      // Never reuse the pre-repair planner result. Re-resolve the ORIGINAL
+      // captured source text against the SAME captured target language.
+      tokens = glossEnglishToConlang(
+        sel.text,
+        this.dictionary,
+        targetLanguage,
+      );
+      plan = buildEnglishToConlangCommitPlan(tokens);
+
+      if (plan.status === "blocked") {
+        // A completed repair pass should have consumed every missing-vocabulary
+        // item that the creator authorized. Cancellation and write failure
+        // already return above, so reaching this point with another "missing"
+        // classification means our repair/reload assumptions did not hold.
+        //
+        // Fail closed rather than silently starting another repair cycle or
+        // pretending the translation is safe to commit.
+        const stillMissing = plan.unresolved.some(
+          (item) => item.reason === "missing",
+        );
+
+        if (stillMissing) {
+          new Notice(
+            "Conlang Workbench: vocabulary repair finished, but a missing word " +
+              "did not resolve after reload. Nothing was replaced.",
+            9000,
+          );
+          return;
+        }
+
+        // At this stage the remaining blockers are things the repair queue was
+        // never authorized to solve, such as ambiguity or unsupported forms.
+        // Keep them visible until the creator closes the diagnostic modal.
+        await promptTranslationUnresolved(
+          this.app,
+          plan.unresolved,
+          true,
+        );
+        return;
+      }
     }
+
+    // This guard documents the authority boundary for TypeScript and future
+    // readers: only a ready planner result may ever reach replacement preview.
+    if (plan.status !== "ready") return;
 
     // `plan.replacement` is the exact Markdown string authorized by the
     // planner. Preview that exact value and, if the creator confirms, pass the
@@ -817,6 +884,24 @@ export default class ConlangPlugin extends Plugin {
     });
 
     if (!confirmed) return;
+
+    // Translation approval is also scoped to the target language captured when
+    // this operation began. Do not silently reinterpret an approved preview
+    // through a different primary language if settings changed asynchronously.
+    //
+    // LanguageConfig does not yet have a stable settings-level id, so the
+    // current alpha boundary uses the configured language name as identity.
+    const currentTargetLanguage = this.getActiveLanguage();
+    if (
+      !currentTargetLanguage ||
+      currentTargetLanguage.name !== targetLanguage.name
+    ) {
+      new Notice(
+        "Made Up Words: the target language changed while the preview was open. Nothing was replaced.",
+        8000,
+      );
+      return;
+    }
 
     // The editor callback context remains associated with the originating
     // Markdown view/file. If that target changed while the modal was open, the
@@ -1512,15 +1597,26 @@ export default class ConlangPlugin extends Plugin {
    * starts empty, while translation repair already knows which source word is
    * missing and can save the creator from retyping it.
    *
+   * `targetLanguage` is also optional. Ordinary "+ Word" creation keeps the
+   * existing behavior of deriving through the current active language.
+   * Translation repair instead supplies the language captured when that
+   * translation operation began. This prevents the optional Cypher button from
+   * silently deriving a form through a different language.
+   *
    * This helper only owns the modal interaction. It does not write to the vault
    * or open files, which lets several workflows reuse the same creator input
    * without inheriting one another's mutation behavior.
    */
   private promptForWord(
     initialEnglishDefinition = "",
+    targetLanguage?: LanguageConfig,
   ): Promise<WordCreationResult | null> {
     return new Promise((resolve) => {
-      const cypherFn = (s: string) => this.translateToConlang(s);
+      const cypherFn = (s: string) =>
+        targetLanguage
+          ? this.translateToConlangWith(s, targetLanguage)
+          : this.translateToConlang(s);
+
       new WordCreationModal(
         this.app,
         cypherFn,

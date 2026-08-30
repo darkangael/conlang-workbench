@@ -3023,18 +3023,24 @@ var TranslationCommitModal = class extends import_obsidian8.Modal {
 
 // translation-unresolved-modal.ts
 var import_obsidian9 = require("obsidian");
-function promptTranslationUnresolved(app, unresolved) {
+function promptTranslationUnresolved(app, unresolved, postRepair = false) {
   return new Promise((resolve) => {
-    const modal = new TranslationUnresolvedModal(app, unresolved, resolve);
+    const modal = new TranslationUnresolvedModal(
+      app,
+      unresolved,
+      resolve,
+      postRepair
+    );
     modal.open();
   });
 }
 var TranslationUnresolvedModal = class extends import_obsidian9.Modal {
-  constructor(app, unresolved, resolve) {
+  constructor(app, unresolved, resolve, postRepair) {
     super(app);
     this.decided = false;
     this.unresolved = unresolved;
     this.resolve = resolve;
+    this.postRepair = postRepair;
   }
   onOpen() {
     var _a;
@@ -3043,7 +3049,7 @@ var TranslationUnresolvedModal = class extends import_obsidian9.Modal {
       text: "Translation cannot be replaced yet"
     });
     contentEl.createEl("p", {
-      text: "Some parts of the selected text do not yet have enough lexical authority for a safe replacement. Nothing has been changed."
+      text: this.postRepair ? "Vocabulary repair finished, but some parts of the translation still cannot be resolved safely. The remaining problems are shown below. Nothing in the original note has been replaced." : "Some parts of the selected text do not yet have enough lexical authority for a safe replacement. Nothing has been changed."
     });
     const list = contentEl.createEl("ul");
     for (const item of this.unresolved) {
@@ -3079,6 +3085,9 @@ var TranslationUnresolvedModal = class extends import_obsidian9.Modal {
           text: "Missing vocabulary can be repaired here. Other blockers are explained above and will still need to be resolved separately."
         });
       }
+      contentEl.createEl("p", {
+        text: "If you cancel or close this workflow after starting, any vocabulary entries you already created will remain saved. Anything still unfinished, including the translation replacement, will be cancelled."
+      });
     }
     const buttonRow = contentEl.createDiv({
       cls: "conlang-modal-buttons"
@@ -3089,7 +3098,7 @@ var TranslationUnresolvedModal = class extends import_obsidian9.Modal {
     cancelButton.addEventListener("click", () => {
       this.finish("cancel");
     });
-    if (missingCount > 0) {
+    if (missingCount > 0 && !this.postRepair) {
       const createButton = buttonRow.createEl("button", {
         text: missingCount === 1 ? "Create missing word" : "Create missing words"
       });
@@ -3471,6 +3480,43 @@ function buildEnglishToConlangCommitPlan(tokens) {
     translated: translatedParts.join(""),
     replacement: replacementParts.join(""),
     resolved
+  };
+}
+
+// translation-vocabulary-repair.ts
+async function repairMissingTranslationVocabulary(unresolved, targetLanguage, dependencies) {
+  const missing = unresolved.filter((item) => item.reason === "missing");
+  let createdCount = 0;
+  let existingCount = 0;
+  for (const item of missing) {
+    const word = await dependencies.promptForWord(item.source, targetLanguage);
+    if (!word) {
+      return {
+        status: "cancelled",
+        createdCount,
+        existingCount
+      };
+    }
+    const writeResult = await dependencies.writeWord(targetLanguage, word);
+    if (writeResult.status === "created") {
+      createdCount += 1;
+      continue;
+    }
+    if (writeResult.status === "existing") {
+      existingCount += 1;
+      continue;
+    }
+    return {
+      status: "failed",
+      createdCount,
+      existingCount,
+      error: writeResult.error
+    };
+  }
+  return {
+    status: "completed",
+    createdCount,
+    existingCount
   };
 }
 
@@ -8638,31 +8684,79 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian20.Plugin {
       new import_obsidian20.Notice("Made Up Words: no active language");
       return;
     }
-    const tokens = glossEnglishToConlang(
+    let tokens = glossEnglishToConlang(
       sel.text,
       this.dictionary,
       targetLanguage
     );
-    const plan = buildEnglishToConlangCommitPlan(tokens);
+    let plan = buildEnglishToConlangCommitPlan(tokens);
     if (plan.status === "blocked") {
       const action = await promptTranslationUnresolved(
         this.app,
         plan.unresolved
       );
-      if (action === "create-missing") {
+      if (action === "cancel") return;
+      const repair = await repairMissingTranslationVocabulary(
+        plan.unresolved,
+        targetLanguage,
+        {
+          // Bind the optional Cypher helper to the target captured when this
+          // translation began. It must not drift to a later primary language.
+          promptForWord: (source, language) => this.promptForWord(source, language),
+          // The repair controller receives lexical persistence authority only.
+          // It has no Editor, selection, range, or replaceRange() capability.
+          writeWord: (language, result) => this.writeWordEntry(language, result)
+        }
+      );
+      if (repair.status === "cancelled") return;
+      if (repair.status === "failed") {
         new import_obsidian20.Notice(
-          "Made Up Words: missing-word creation will open here next. Nothing was replaced.",
-          8e3
+          `Conlang Workbench: ${repair.error}. Translation was not replaced.`,
+          9e3
         );
+        return;
       }
-      return;
+      await this.afterEntriesChanged();
+      tokens = glossEnglishToConlang(
+        sel.text,
+        this.dictionary,
+        targetLanguage
+      );
+      plan = buildEnglishToConlangCommitPlan(tokens);
+      if (plan.status === "blocked") {
+        const stillMissing = plan.unresolved.some(
+          (item) => item.reason === "missing"
+        );
+        if (stillMissing) {
+          new import_obsidian20.Notice(
+            "Conlang Workbench: vocabulary repair finished, but a missing word did not resolve after reload. Nothing was replaced.",
+            9e3
+          );
+          return;
+        }
+        await promptTranslationUnresolved(
+          this.app,
+          plan.unresolved,
+          true
+        );
+        return;
+      }
     }
+    if (plan.status !== "ready") return;
     const confirmed = await confirmTranslationCommit(this.app, {
       original: sel.text,
       translated: plan.translated,
       replacement: plan.replacement
     });
     if (!confirmed) return;
+    const currentTargetLanguage = this.getActiveLanguage();
+    if (!currentTargetLanguage || currentTargetLanguage.name !== targetLanguage.name) {
+      new import_obsidian20.Notice(
+        "Made Up Words: the target language changed while the preview was open. Nothing was replaced.",
+        8e3
+      );
+      return;
+    }
     const currentFile = ctx.file;
     if (!currentFile || currentFile !== originalFile || currentFile.path !== originalPath) {
       new import_obsidian20.Notice(
@@ -9197,13 +9291,19 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian20.Plugin {
    * starts empty, while translation repair already knows which source word is
    * missing and can save the creator from retyping it.
    *
+   * `targetLanguage` is also optional. Ordinary "+ Word" creation keeps the
+   * existing behavior of deriving through the current active language.
+   * Translation repair instead supplies the language captured when that
+   * translation operation began. This prevents the optional Cypher button from
+   * silently deriving a form through a different language.
+   *
    * This helper only owns the modal interaction. It does not write to the vault
    * or open files, which lets several workflows reuse the same creator input
    * without inheriting one another's mutation behavior.
    */
-  promptForWord(initialEnglishDefinition = "") {
+  promptForWord(initialEnglishDefinition = "", targetLanguage) {
     return new Promise((resolve) => {
-      const cypherFn = (s) => this.translateToConlang(s);
+      const cypherFn = (s) => targetLanguage ? this.translateToConlangWith(s, targetLanguage) : this.translateToConlang(s);
       new WordCreationModal(
         this.app,
         cypherFn,

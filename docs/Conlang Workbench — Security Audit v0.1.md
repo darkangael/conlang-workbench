@@ -2073,7 +2073,7 @@ ordinary exploratory translation behavior:
 - multiple lexical destinations could be reduced to a silent first choice
 - unresolved source material lacked a fail-closed whole-replacement boundary
 
-**Remediation completed so far:**
+**Remediation completed:**
 
 English-to-conlang translation now uses the shared gloss pipeline so established
 dictionary and phrase results remain creator-authored lexical forms and only
@@ -2082,8 +2082,8 @@ unresolved exploratory output receives cypher fallback.
 Dictionary and morphology resolution used by the translation path are
 language-scoped.
 
-`translation-commit-plan.ts` now provides a pure authoritative planning
-boundary. It:
+`translation-commit-plan.ts` provides a pure authoritative planning boundary.
+It:
 
 - preserves separators exactly
 - accepts dictionary/phrase material only when it resolves to one distinct
@@ -2099,44 +2099,75 @@ boundary. It:
 
 `translation-commit-modal.ts` previews the original text, translated text, and
 exact Markdown replacement through text-only DOM APIs. Only the explicit
-Replace button authorizes the ready-path mutation; implicit close cancels.
+Replace button authorizes note mutation; implicit close cancels.
 
-After confirmation, the command rechecks the originating file/path and exact
-selected range text. The exact replacement shown in the preview is then passed
-to `replaceRange()` without regeneration.
+`translation-unresolved-modal.ts` provides a separate blocked-state decision
+boundary. It explains missing, ambiguous, and unsupported items, identifies
+cypher output only as a suggestion, displays known ambiguity candidates, and
+offers vocabulary creation only when at least one blocker is actually missing.
+Choosing that action does not authorize note replacement.
 
-`translation-unresolved-modal.ts` now provides a separate blocked-state
-decision boundary. It explains missing, ambiguous, and unsupported items,
-identifies cypher output only as a suggestion, displays known ambiguity
-candidates, and offers vocabulary creation only when at least one blocker is
-actually missing. Choosing that action does not authorize note replacement.
+`translation-vocabulary-repair.ts` owns the sequential missing-vocabulary repair
+queue. The controller receives lexical persistence authority but no `Editor`,
+selection, range, or `replaceRange()` capability. Only unresolved items marked
+as missing enter the queue. Each lexical entry requires its own explicit word
+creation action and is persisted through the hardened dictionary-entry writer.
 
-Regression coverage currently includes the authoritative planner,
+The repair workflow remains bound to the target language captured when the
+translation began. Cancelling any creation modal terminates the current
+translation operation. Vocabulary entries already deliberately saved remain
+saved; unfinished and later entries are not created, and the original note is
+not replaced.
+
+After a successful repair pass, the plugin reloads authoritative lexical data
+and re-plans the original captured text against the same captured target
+language. It does not assume that vocabulary creation resolved the blocker.
+
+If ambiguity or unsupported material remains after repair, the workflow presents
+a persistent diagnostic modal and stops without replacing the original note.
+A fresh missing item at that stage is treated as an invariant failure and fails
+closed rather than silently starting another repair pass.
+
+Only a fully ready re-planned result reaches a fresh exact replacement preview.
+Vocabulary creation never inherits or grants authorization to modify the
+creator-authored note.
+
+Immediately before the final replacement, the command verifies:
+
+- the current primary language still matches the captured target language
+- the originating file object still matches
+- the originating file path still matches
+- the original selected range still contains exactly the captured source text
+
+Only after those checks does the command pass the exact previewed replacement
+string to the single `replaceRange()` mutation point without regeneration.
+
+Focused regression coverage now includes the authoritative planner,
 language-scoped dictionary resolution, language-scoped inflection resolution,
-and gloss rendering. These tests and the production build pass.
+gloss rendering, and the missing-vocabulary repair controller. Repair tests
+cover ordered missing-word handling, cancellation before any write,
+cancellation after an earlier successful write, existing lexical entries,
+persistence failure, and the no-missing defensive case.
 
-**Remaining remediation before closure:**
+Runtime verification confirmed:
 
-- connect the explicit missing-vocabulary action to the hardened lexical writer
-- keep that repair queue bound to the captured target language rather than a
-  subsequently selected primary language
-- reload and re-plan after vocabulary creation rather than assuming creation
-  resolved the blocker
-- stop safely on cancellation or lack of progress while retaining vocabulary
-  already deliberately saved
-- recheck originating note/range/text state across the repair workflow
-- verify the captured target-language context is still valid before final
-  authorization rather than silently switching languages
-- show a fresh exact replacement preview after successful lexical repair
-- preserve the rule that vocabulary creation never itself authorizes note
-  mutation
-- complete focused runtime/adversarial verification of the repaired blocked
-  path
+- established vocabulary reaches the exact replacement preview
+- missing vocabulary blocks replacement and requires explicit creation
+- cancelling during the repair queue stops the translation while retaining
+  previously created vocabulary
+- successful repair reloads and re-plans the captured source text
+- remaining ambiguity is shown rather than silently resolved
+- the post-repair diagnostic path does not offer another vocabulary-creation
+  action
+- no translation replacement occurs without a separate explicit Replace action
 
-**Status:** Remediation in progress. The original direct-replacement authority
-path has been removed and the ready-path authorization boundary is hardened and
-regression-tested, but the missing-vocabulary repair workflow is not yet
-complete.
+The production build passes, regression tests pass, and lint remains at zero
+errors with the established warning baseline.
+
+**Status:** Remediated and verified. The translation commit path now separates
+lexical creation authority from note-mutation authority, fails closed on
+unresolved or stale state, and requires explicit authorization of the exact
+replacement immediately before the final creator-data mutation.
 
 ### Status
 
@@ -2559,7 +2590,7 @@ audit section.
 | SEC-004-H11 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Existing dictionary-entry mutation decisions could treat unavailable or uninterpretable metadata as proof of a different meaning and incorrectly authorize persistent homograph creation. | Code review of all four dictionary-creation paths; tri-state comparison regression coverage in `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with malformed `h11test.md` | Existing-definition comparison now distinguishes `"same"`, `"different"`, and `"unknown"`. Only a confirmed `"different"` result may authorize homograph creation; `"unknown"` stops without creating or rewriting creator-authored data. |
 | SEC-004-H12 | §4 Frontmatter and Markdown Input | Remediated and verified | Hardening | Creation-time dictionary collision handling could interpret shared fields from an explicitly non-lexical source as dictionary semantics, bypassing canonical source authority. | Code review of all four creation paths; source-authority regression coverage in `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with `h12test.md` | Dictionary parsing and creation-time collision handling now share one source-authority classifier. Only established lexical sources reach definition comparison; other-source, unclaimed, and unavailable sources stop mutation and remain unchanged. |
 | SEC-006-H1 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Best-effort folder creation did not itself establish a valid lexical mutation destination or centralize collision/source-authority checks at the persistence boundary. | Code review; dictionary-entry-writer regression coverage for creation, collision, path, folder, source-authority, and failure cases; production build; commit `d2c7428` | Persistent lexical creation is centralized in `dictionary-entry-writer.ts`, which validates paths and folders, rechecks collision/source authority, permits homographs only for confirmed different lexical meanings, and performs the final guarded `vault.create()`. |
-| SEC-006-H2 | §6 Commands and Mutating Operations | Remediation in progress | Hardening | Translation commit could replace creator-authored selected text without previewing and explicitly authorizing the exact final replacement; related review exposed fallback, ambiguity, and cross-language lexical-authority hazards. | Code review; `test:translation-commit-plan`; `test:dictionary-language-scope`; `test:inflection-language-scope`; `test:gloss-rendering`; production build | Ready-path commit now uses language-scoped lexical resolution, a fail-closed pure planner, exact replacement preview, explicit Replace authorization, stale file/text guards, and exact non-regenerated replacement. Blocked-state diagnostics are implemented; the missing-vocabulary repair/re-plan workflow and final runtime verification remain before closure. |
+| SEC-006-H2 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Translation commit could replace creator-authored selected text without previewing and explicitly authorizing the exact final replacement; related review exposed fallback, ambiguity, and cross-language lexical-authority hazards. | Code review; `test:translation-commit-plan`; `test:translation-vocabulary-repair`; `test:dictionary-language-scope`; `test:inflection-language-scope`; `test:gloss-rendering`; production build; focused runtime verification | Translation commit now uses language-scoped lexical resolution, a fail-closed pure planner, sequential explicitly authorized vocabulary repair, reload/re-plan against captured source and target context, exact replacement preview, explicit Replace authorization, target/file/path/text stale-state guards, and exact non-regenerated replacement. Vocabulary creation has no editor-mutation authority and cancellation leaves creator-authored note text untouched. |
 
 ---
 

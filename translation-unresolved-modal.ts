@@ -22,9 +22,15 @@ export type TranslationUnresolvedAction = "cancel" | "create-missing";
 export function promptTranslationUnresolved(
   app: App,
   unresolved: TranslationCommitUnresolved[],
+  postRepair = false,
 ): Promise<TranslationUnresolvedAction> {
   return new Promise<TranslationUnresolvedAction>((resolve) => {
-    const modal = new TranslationUnresolvedModal(app, unresolved, resolve);
+    const modal = new TranslationUnresolvedModal(
+      app,
+      unresolved,
+      resolve,
+      postRepair,
+    );
     modal.open();
   });
 }
@@ -38,16 +44,19 @@ export function promptTranslationUnresolved(
 class TranslationUnresolvedModal extends Modal {
   private readonly unresolved: TranslationCommitUnresolved[];
   private readonly resolve: (action: TranslationUnresolvedAction) => void;
+  private readonly postRepair: boolean;
   private decided = false;
 
   constructor(
     app: App,
     unresolved: TranslationCommitUnresolved[],
     resolve: (action: TranslationUnresolvedAction) => void,
+    postRepair: boolean,
   ) {
     super(app);
     this.unresolved = unresolved;
     this.resolve = resolve;
+    this.postRepair = postRepair;
   }
 
   onOpen() {
@@ -58,9 +67,12 @@ class TranslationUnresolvedModal extends Modal {
     });
 
     contentEl.createEl("p", {
-      text:
-        "Some parts of the selected text do not yet have enough lexical " +
-        "authority for a safe replacement. Nothing has been changed.",
+      text: this.postRepair
+        ? "Vocabulary repair finished, but some parts of the translation still " +
+          "cannot be resolved safely. The remaining problems are shown below. " +
+          "Nothing in the original note has been replaced."
+        : "Some parts of the selected text do not yet have enough lexical " +
+          "authority for a safe replacement. Nothing has been changed.",
     });
 
     const list = contentEl.createEl("ul");
@@ -113,6 +125,13 @@ class TranslationUnresolvedModal extends Modal {
             "explained above and will still need to be resolved separately.",
         });
       }
+
+      contentEl.createEl("p", {
+        text:
+          "If you cancel or close this workflow after starting, any vocabulary " +
+          "entries you already created will remain saved. Anything still " +
+          "unfinished, including the translation replacement, will be cancelled.",
+      });
     }
 
     const buttonRow = contentEl.createDiv({
@@ -130,7 +149,7 @@ class TranslationUnresolvedModal extends Modal {
     // Only missing vocabulary can be repaired by creating new words.
     // Ambiguity and unsupported structures need different resolution paths, so
     // do not show a creation action when it cannot actually solve anything.
-    if (missingCount > 0) {
+    if (missingCount > 0 && !this.postRepair) {
       const createButton = buttonRow.createEl("button", {
         text:
           missingCount === 1 ? "Create missing word" : "Create missing words",
