@@ -8,6 +8,7 @@ import {
   Notice,
   Plugin,
   TFile,
+  TFolder,
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
@@ -29,10 +30,7 @@ import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
 import { loadLanguageProfile } from "./language-profile";
-import {
-  isPathWithinFolder,
-  validateVaultRelativePath,
-} from "./vault-paths";
+import { isPathWithinFolder, validateVaultRelativePath } from "./vault-paths";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
 import { WORD_RE, cleanWord } from "./word-tokens";
@@ -70,6 +68,8 @@ import {
 } from "./highlight";
 import type { HighlightKind } from "./highlight-core";
 import { normalizeClosedChoiceSettings } from "./settings-validation";
+import { preflightLanguageSources } from "./language-source-preflight";
+import { showLanguageSourceDiagnostics } from "./language-source-diagnostics-modal";
 import { EditorView } from "@codemirror/view";
 
 export default class ConlangPlugin extends Plugin {
@@ -208,10 +208,14 @@ export default class ConlangPlugin extends Plugin {
       id: "reload-dictionary",
       name: "Reload dictionary",
       callback: async () => {
-        const n = await this.reloadActiveLanguage();
+        const result = await this.reloadActiveLanguage();
+        if (result.status === "blocked") return;
+
         this.refreshPanel();
         this.refreshHighlights();
-        new Notice(`Made Up Words: loaded ${n} dictionary entries`);
+        new Notice(
+          `Made Up Words: loaded ${result.dictionaryCount} dictionary entries`,
+        );
       },
     });
 
@@ -432,7 +436,32 @@ export default class ConlangPlugin extends Plugin {
     return lang ? this.getLanguageProfile(lang) : null;
   }
 
-  async reloadActiveLanguage(): Promise<number> {
+  async reloadActiveLanguage(): Promise<
+    { status: "loaded"; dictionaryCount: number } | { status: "blocked" }
+  > {
+    /*
+     * Establish source authority before touching ANY currently loaded state.
+     *
+     * A malformed path, missing configured folder, non-folder collision, or
+     * cross-language overlap must not result in a half-cleared/half-rebuilt
+     * runtime. The existing indexes remain authoritative until a complete
+     * replacement load has passed this gate.
+     */
+    const issues = preflightLanguageSources(
+      this.settings.languages,
+      this.settings.activeLanguages,
+      (path) => {
+        const existing = this.app.vault.getAbstractFileByPath(path);
+        if (!existing) return "missing";
+        return existing instanceof TFolder ? "folder" : "other";
+      },
+    );
+
+    if (issues.length > 0) {
+      showLanguageSourceDiagnostics(this.app, issues);
+      return { status: "blocked" };
+    }
+
     // With multi-active languages, this loads ALL active dictionaries
     // into the single Dictionary index. Each entry carries its `language`
     // field so callers can distinguish source.
@@ -457,11 +486,12 @@ export default class ConlangPlugin extends Plugin {
       this.linguisticExamples.clear();
       this.phonology.clear();
       this.classifyCache.clear();
-      return 0;
+      return { status: "loaded", dictionaryCount: 0 };
     }
 
     const count = await this.dictionary.loadFromFolders(
       active.map((l) => ({ folder: l.dictionaryFolder, language: l.name })),
+      this.settings.languageMembership,
     );
 
     // Morphemes are loaded from their own optional canonical folders and remain
@@ -475,6 +505,7 @@ export default class ConlangPlugin extends Plugin {
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
         })),
+      this.settings.languageMembership,
     );
 
     // Standalone linguistic examples are loaded from their own optional canonical
@@ -488,6 +519,7 @@ export default class ConlangPlugin extends Plugin {
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
         })),
+      this.settings.languageMembership,
     );
 
     // Canonical phonological units are loaded from each active language's
@@ -501,12 +533,13 @@ export default class ConlangPlugin extends Plugin {
           language: l.name,
           languageId: this.getLanguageProfile(l)?.id,
         })),
+      this.settings.languageMembership,
     );
 
     // The dictionary changed, so cached word classifications are stale.
     // Morphemes do not yet participate in classification.
     this.classifyCache.clear();
-    return count;
+    return { status: "loaded", dictionaryCount: count };
   }
 
   // === Panel management ===
@@ -830,11 +863,7 @@ export default class ConlangPlugin extends Plugin {
 
       // Never reuse the pre-repair planner result. Re-resolve the ORIGINAL
       // captured source text against the SAME captured target language.
-      tokens = glossEnglishToConlang(
-        sel.text,
-        this.dictionary,
-        targetLanguage,
-      );
+      tokens = glossEnglishToConlang(sel.text, this.dictionary, targetLanguage);
       plan = buildEnglishToConlangCommitPlan(tokens);
 
       if (plan.status === "blocked") {
@@ -861,11 +890,7 @@ export default class ConlangPlugin extends Plugin {
         // At this stage the remaining blockers are things the repair queue was
         // never authorized to solve, such as ambiguity or unsupported forms.
         // Keep them visible until the creator closes the diagnostic modal.
-        await promptTranslationUnresolved(
-          this.app,
-          plan.unresolved,
-          true,
-        );
+        await promptTranslationUnresolved(this.app, plan.unresolved, true);
         return;
       }
     }
@@ -1004,10 +1029,7 @@ export default class ConlangPlugin extends Plugin {
         );
         const translated = renderConlangToEnglishString(tokens);
 
-        new Notice(
-          `${intent.sourceText}  →  ${translated}`,
-          6000,
-        );
+        new Notice(`${intent.sourceText}  →  ${translated}`, 6000);
         return;
       }
 
@@ -1027,10 +1049,7 @@ export default class ConlangPlugin extends Plugin {
       }
 
       const reversed = applyCypherReverse(intent.lookupText, lang.sheets);
-      new Notice(
-        `${intent.sourceText}  →  ${reversed} (reverse cypher)`,
-        6000,
-      );
+      new Notice(`${intent.sourceText}  →  ${reversed} (reverse cypher)`, 6000);
       return;
     }
 

@@ -254,6 +254,17 @@ export interface ConlangSettings {
   // Which language new entries default to, and the target for English→conlang
   // translation. Must be one of the active languages.
   primaryLanguage: string;
+
+  // Decide how configured canonical folders interact with an optional
+  // creator-authored `language:` field.
+  //
+  // "folder" is the recommended Workbench model: the configured canonical
+  // source establishes runtime language membership. Existing `language:`
+  // metadata remains untouched on disk and does not override that source.
+  //
+  // "respect-explicit" preserves the older behavior: when a source explicitly
+  // declares `language:`, it must match the configured language.
+  languageMembership: "folder" | "respect-explicit";
   // Legacy single-language field. Kept for backwards compat on migration;
   // not used directly anymore. Migration code reads this and populates
   // activeLanguages/primaryLanguage if they're empty.
@@ -379,6 +390,7 @@ export const DEFAULT_SETTINGS: ConlangSettings = {
   ],
   activeLanguages: ["Example"],
   primaryLanguage: "Example",
+  languageMembership: "folder",
   commitWrapper: "html-tooltip",
   hoverModifier: "shift",
   hoverConlang: true,

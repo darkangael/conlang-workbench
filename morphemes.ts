@@ -1,9 +1,10 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
-import { Morpheme } from "./types";
 import {
-  MorphemeSourceInput,
-  parseMorphemeSource,
-} from "./morpheme-source";
+  resolveLanguageMembership,
+  type LanguageMembershipMode,
+} from "./language-membership";
+import { Morpheme } from "./types";
+import { MorphemeSourceInput, parseMorphemeSource } from "./morpheme-source";
 import { WorkbenchSourceRecord } from "./workbench-source";
 
 /**
@@ -35,10 +36,7 @@ export class MorphemeInventory {
    */
   private sourceRecords: WorkbenchSourceRecord<Morpheme>[] = [];
 
-  private byWorkbenchID = new Map<
-    string,
-    WorkbenchSourceRecord<Morpheme>
-  >();
+  private byWorkbenchID = new Map<string, WorkbenchSourceRecord<Morpheme>>();
 
   // Stable morpheme IDs may be unique only within a language, so keep all
   // matches rather than assuming one globally unique ID across the vault.
@@ -128,7 +126,10 @@ export class MorphemeInventory {
    * Language name and stable Language Profile ID are inherited from the
    * configured source when a morpheme note does not declare them explicitly.
    */
-  async loadFromFolders(sources: MorphemeSource[]): Promise<number> {
+  async loadFromFolders(
+    sources: MorphemeSource[],
+    membershipMode: LanguageMembershipMode = "respect-explicit",
+  ): Promise<number> {
     this.clear();
 
     let count = 0;
@@ -149,15 +150,12 @@ export class MorphemeInventory {
         const morpheme = record.value;
 
         if (morpheme) {
-          // Do not allow entries explicitly assigned to another language to
-          // leak into this configured source merely because folders overlap.
-          if (
-            source.language &&
-            morpheme.language &&
-            morpheme.language !== source.language
-          ) {
-            continue;
-          }
+          const membership = resolveLanguageMembership(
+            source.language,
+            morpheme.language,
+            membershipMode,
+          );
+          if (!membership.accepted) continue;
 
           if (
             source.languageId &&
@@ -167,11 +165,8 @@ export class MorphemeInventory {
             continue;
           }
 
-          // Preserve compatibility with simple notes: language identity may be
-          // inherited from configuration rather than repeated in every file.
-          if (!morpheme.language && source.language) {
-            morpheme.language = source.language;
-          }
+          // Assign runtime membership without modifying the canonical note.
+          morpheme.language = membership.runtimeLanguage;
 
           if (!morpheme.languageId && source.languageId) {
             morpheme.languageId = source.languageId;

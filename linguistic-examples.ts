@@ -1,10 +1,10 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
 import {
-  parseLinguisticExampleSource,
-} from "./linguistic-example-source";
-import type {
-  LinguisticExampleSourceInput,
-} from "./linguistic-example-source";
+  resolveLanguageMembership,
+  type LanguageMembershipMode,
+} from "./language-membership";
+import { parseLinguisticExampleSource } from "./linguistic-example-source";
+import type { LinguisticExampleSourceInput } from "./linguistic-example-source";
 import type { WorkbenchSourceRecord } from "./workbench-source";
 
 /**
@@ -163,7 +163,10 @@ export class LinguisticExampleInventory {
    * not declare language identity, it may inherit it from the configured
    * source, just as the morpheme inventory does.
    */
-  async loadFromFolders(sources: LinguisticExampleSource[]): Promise<number> {
+  async loadFromFolders(
+    sources: LinguisticExampleSource[],
+    membershipMode: LanguageMembershipMode = "respect-explicit",
+  ): Promise<number> {
     this.clear();
 
     let count = 0;
@@ -191,16 +194,12 @@ export class LinguisticExampleInventory {
 
         const example = record.value;
 
-        // Do not let an example explicitly belonging to another language leak
-        // into this source just because its file happens to be inside the
-        // configured folder.
-        if (
-          source.language &&
-          example.language &&
-          example.language !== source.language
-        ) {
-          continue;
-        }
+        const membership = resolveLanguageMembership(
+          source.language,
+          example.language,
+          membershipMode,
+        );
+        if (!membership.accepted) continue;
 
         if (
           source.languageId &&
@@ -210,11 +209,8 @@ export class LinguisticExampleInventory {
           continue;
         }
 
-        // Simple notes do not have to repeat language metadata if the source
-        // configuration already tells Workbench which language owns them.
-        if (!example.language && source.language) {
-          example.language = source.language;
-        }
+        // Assign runtime membership without rewriting source metadata.
+        example.language = membership.runtimeLanguage;
 
         if (!example.languageId && source.languageId) {
           example.languageId = source.languageId;

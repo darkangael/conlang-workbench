@@ -16,6 +16,8 @@ import {
   LanguageConfig,
 } from "./types";
 import { INFLECTION_PRESETS, findPreset } from "./presets";
+import { validateLanguageRename } from "./language-identity";
+import { confirmLanguageRename } from "./language-rename-modal";
 
 export class ConlangSettingTab extends PluginSettingTab {
   plugin: ConlangPlugin;
@@ -84,6 +86,92 @@ export class ConlangSettingTab extends PluginSettingTab {
         "Active languages contribute to hover, lookup, dictionary browsing, " +
           "and highlighting. Tick to activate; click the star to set the primary.",
       );
+
+    new Setting(containerEl)
+      .setName("Language membership")
+      .setDesc(
+        "Configured folders is recommended: canonical source folders determine " +
+          "runtime membership and existing `language:` metadata is left untouched. " +
+          "Respect explicit metadata preserves the older behavior and rejects a " +
+          "source whose `language:` value conflicts with its configured language.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("folder", "Configured folders (recommended)");
+        dropdown.addOption(
+          "respect-explicit",
+          "Respect explicit language metadata",
+        );
+        dropdown.setValue(this.plugin.settings.languageMembership);
+        dropdown.onChange(async (value) => {
+          const previousMembership = this.plugin.settings.languageMembership;
+          const requestedMembership =
+            value as ConlangSettings["languageMembership"];
+
+          if (requestedMembership === previousMembership) return;
+
+          /*
+           * Changing membership policy changes which creator-authored sources
+           * are accepted into runtime indexes. Treat the setting and successful
+           * reload as one logical operation rather than leaving configuration
+           * and loaded data under different authority rules.
+           */
+          this.plugin.settings.languageMembership = requestedMembership;
+
+          try {
+            await this.plugin.saveSettings();
+          } catch (error) {
+            // The requested setting was never established reliably. Restore the
+            // in-memory value immediately and make the control reflect it.
+            this.plugin.settings.languageMembership = previousMembership;
+            dropdown.setValue(previousMembership);
+
+            console.error(
+              "Made Up Words: failed to save language membership setting",
+              error,
+            );
+            new Notice(
+              "Made Up Words: could not save the language membership change.",
+            );
+            return;
+          }
+
+          const reload = await this.plugin.reloadActiveLanguage();
+
+          if (reload.status === "blocked") {
+            /*
+             * Preflight guarantees a blocked reload left the old runtime indexes
+             * untouched. Restore the old setting so persisted configuration and
+             * currently loaded authority remain aligned.
+             */
+            this.plugin.settings.languageMembership = previousMembership;
+            dropdown.setValue(previousMembership);
+
+            try {
+              await this.plugin.saveSettings();
+            } catch (error) {
+              console.error(
+                "Made Up Words: failed to persist language membership rollback",
+                error,
+              );
+              new Notice(
+                "Made Up Words: reload was blocked and the previous membership " +
+                  "setting could not be saved. Review settings before restarting Obsidian.",
+              );
+              return;
+            }
+
+            new Notice(
+              "Made Up Words: language membership was restored because reload was blocked.",
+            );
+            this.rerender();
+            return;
+          }
+
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+          this.rerender();
+        });
+      });
 
     const list = containerEl.createDiv({ cls: "conlang-lang-overview" });
     for (const lang of this.plugin.settings.languages) {
@@ -156,10 +244,14 @@ export class ConlangSettingTab extends PluginSettingTab {
       )
       .addButton((btn) =>
         btn.setButtonText("Reload dictionaries").onClick(async () => {
-          const n = await this.plugin.reloadActiveLanguage();
+          const result = await this.plugin.reloadActiveLanguage();
+          if (result.status === "blocked") return;
+
           this.plugin.refreshPanel();
           this.plugin.refreshHighlights();
-          new Notice(`Made Up Words: loaded ${n} dictionary entries`);
+          new Notice(
+            `Made Up Words: loaded ${result.dictionaryCount} dictionary entries`,
+          );
         }),
       );
   }
@@ -473,30 +565,208 @@ export class ConlangSettingTab extends PluginSettingTab {
 
     const body = card.createDiv({ cls: "conlang-card-body" });
 
-    new Setting(body).setName("Name").addText((t) =>
-      t.setValue(lang.name).onChange(async (v) => {
-        const oldName = lang.name;
-        lang.name = v;
+    new Setting(body)
+      .setName("Name")
+      .setDesc(
+        "Language names must be unique. Renaming keeps the configured canonical " +
+          "folders and files in place and does not rewrite creator-authored metadata.",
+      )
+      .addText((text) => {
+        text.setValue(lang.name);
 
-        // Language names are still used as runtime references by the inherited
-        // settings model. Keep those references valid when a language is renamed.
-        this.plugin.settings.activeLanguages =
-          this.plugin.settings.activeLanguages.map((n) =>
-            n === oldName ? v : n,
+        const requestRename = async () => {
+          const oldName = lang.name;
+
+          const validation = validateLanguageRename(
+            this.plugin.settings.languages,
+            lang,
+            text.getValue(),
           );
 
-        if (this.plugin.settings.primaryLanguage === oldName) {
-          this.plugin.settings.primaryLanguage = v;
-        }
+          if (!validation.ok) {
+            text.setValue(oldName);
 
-        // Preserve expanded-card state, which is also keyed by language name.
-        if (this.openCards.delete(oldName)) this.openCards.add(v);
-        if (this.openSheets.delete(oldName)) this.openSheets.add(v);
-        if (this.openInflections.delete(oldName)) this.openInflections.add(v);
+            if (validation.reason === "blank") {
+              new Notice("Made Up Words: a language name cannot be blank.");
+            } else if (validation.reason === "duplicate") {
+              new Notice(
+                "Made Up Words: every configured language must have a unique name.",
+              );
+            }
 
-        await this.plugin.saveSettings();
-      }),
-    );
+            return;
+          }
+
+          const newName = validation.name;
+
+          // Prevent a second edit while the confirmation modal is deciding
+          // whether this exact old-name -> new-name transition is authorized.
+          text.inputEl.disabled = true;
+
+          const confirmed = await confirmLanguageRename(
+            this.app,
+            oldName,
+            newName,
+          );
+
+          text.inputEl.disabled = false;
+
+          if (!confirmed) {
+            text.setValue(oldName);
+            return;
+          }
+
+          // Confirmation is asynchronous. Re-check both the source identity and
+          // destination availability before mutating settings so stale approval
+          // cannot authorize a different rename.
+          if (lang.name !== oldName) {
+            text.setValue(lang.name);
+            new Notice(
+              "Made Up Words: the language changed while rename confirmation was open.",
+            );
+            return;
+          }
+
+          const freshValidation = validateLanguageRename(
+            this.plugin.settings.languages,
+            lang,
+            newName,
+          );
+
+          if (!freshValidation.ok) {
+            text.setValue(lang.name);
+            new Notice(
+              "Made Up Words: the requested language name is no longer available.",
+            );
+            return;
+          }
+
+          /*
+           * Snapshot every name-keyed setting/UI value before changing anything.
+           * LanguageConfig.name is still the alpha runtime identity, so a failed
+           * persistence or blocked reload must restore the whole logical rename.
+           */
+          const previousActiveLanguages = [
+            ...this.plugin.settings.activeLanguages,
+          ];
+          const previousPrimaryLanguage = this.plugin.settings.primaryLanguage;
+          const cardWasOpen = this.openCards.has(oldName);
+          const sheetsWereOpen = this.openSheets.has(oldName);
+          const inflectionsWereOpen = this.openInflections.has(oldName);
+
+          const restoreRenameState = () => {
+            lang.name = oldName;
+            this.plugin.settings.activeLanguages = [...previousActiveLanguages];
+            this.plugin.settings.primaryLanguage = previousPrimaryLanguage;
+
+            this.openCards.delete(newName);
+            this.openSheets.delete(newName);
+            this.openInflections.delete(newName);
+
+            if (cardWasOpen) this.openCards.add(oldName);
+            if (sheetsWereOpen) this.openSheets.add(oldName);
+            if (inflectionsWereOpen) {
+              this.openInflections.add(oldName);
+            }
+
+            text.setValue(oldName);
+          };
+
+          lang.name = newName;
+
+          // LanguageConfig.name remains the inherited alpha runtime identity.
+          // Migrate every settings reference as one logical operation.
+          this.plugin.settings.activeLanguages =
+            this.plugin.settings.activeLanguages.map((name) =>
+              name === oldName ? newName : name,
+            );
+
+          if (this.plugin.settings.primaryLanguage === oldName) {
+            this.plugin.settings.primaryLanguage = newName;
+          }
+
+          // These sets only preserve settings-card expansion state, but they
+          // are also keyed by the inherited language name.
+          if (this.openCards.delete(oldName)) this.openCards.add(newName);
+          if (this.openSheets.delete(oldName)) this.openSheets.add(newName);
+
+          if (this.openInflections.delete(oldName)) {
+            this.openInflections.add(newName);
+          }
+
+          try {
+            await this.plugin.saveSettings();
+          } catch (error) {
+            /*
+             * saveData rejected, so the new identity was not established
+             * reliably. Restore all in-memory name references immediately.
+             */
+            restoreRenameState();
+
+            console.error(
+              "Made Up Words: failed to save language rename",
+              error,
+            );
+            new Notice(
+              "Made Up Words: the language rename could not be saved and was restored.",
+            );
+            this.rerender();
+            return;
+          }
+
+          // Parsed inventories carry runtime language labels. Reload immediately
+          // so the old identity cannot survive in memory after the saved rename.
+          const reload = await this.plugin.reloadActiveLanguage();
+
+          if (reload.status === "blocked") {
+            /*
+             * The preflight gate guarantees that a blocked reload left the old
+             * runtime data untouched. Roll settings back to that same identity.
+             */
+            restoreRenameState();
+
+            try {
+              await this.plugin.saveSettings();
+            } catch (error) {
+              console.error(
+                "Made Up Words: failed to persist language rename rollback",
+                error,
+              );
+              new Notice(
+                "Made Up Words: reload was blocked and the previous language " +
+                  "name could not be saved. Review settings before restarting Obsidian.",
+              );
+              this.rerender();
+              return;
+            }
+
+            new Notice(
+              "Made Up Words: the language rename was restored because reload was blocked.",
+            );
+            this.rerender();
+            return;
+          }
+
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+          this.rerender();
+        };
+
+        // Obsidian's TextComponent.onChange fires for every keystroke. Native
+        // "change" fires when the edit is committed, normally when focus leaves
+        // the field, so one intended rename produces one confirmation request.
+        text.inputEl.addEventListener("change", () => {
+          void requestRename();
+        });
+
+        // Enter commits the field by moving focus out of it.
+        text.inputEl.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter") return;
+
+          event.preventDefault();
+          text.inputEl.blur();
+        });
+      });
 
     new Setting(body)
       .setName("Dictionary folder")
@@ -620,12 +890,14 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(body)
       .addButton((b) =>
         b.setButtonText("Reload language data").onClick(async () => {
-          const n = await this.plugin.reloadActiveLanguage();
+          const result = await this.plugin.reloadActiveLanguage();
+          if (result.status === "blocked") return;
+
           this.plugin.refreshPanel();
           this.plugin.refreshHighlights();
           new Notice(
             isActive
-              ? `Reloaded — ${n} dictionary entries across active languages`
+              ? `Reloaded — ${result.dictionaryCount} dictionary entries across active languages`
               : `${lang.name} is inactive; activate it to load its language data.`,
           );
         }),

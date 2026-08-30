@@ -20,6 +20,10 @@
 // Body of the note can contain freeform usage notes; we include it as `notes`.
 
 import { App, TFile, TFolder, CachedMetadata } from "obsidian";
+import {
+  resolveLanguageMembership,
+  type LanguageMembershipMode,
+} from "./language-membership";
 import { DictionaryEntry, LexicalSense } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
 import { parseLexicalSenses } from "./lexical-senses";
@@ -150,10 +154,7 @@ export class Dictionary {
    * When a language is supplied, only entries from that lexicon are eligible.
    * Use lookupAll() when the caller must preserve lexical ambiguity.
    */
-  lookup(
-    conlangWord: string,
-    language?: string,
-  ): DictionaryEntry | undefined {
+  lookup(conlangWord: string, language?: string): DictionaryEntry | undefined {
     return this.lookupAll(conlangWord, language)[0];
   }
 
@@ -163,10 +164,7 @@ export class Dictionary {
    * With no language scope, results may come from any loaded lexicon.
    * Supplying a language restricts the result to that lexicon.
    */
-  lookupAll(
-    conlangWord: string,
-    language?: string,
-  ): DictionaryEntry[] {
+  lookupAll(conlangWord: string, language?: string): DictionaryEntry[] {
     const entries = this.byWord.get(this.norm(conlangWord)) ?? [];
 
     return language === undefined
@@ -182,10 +180,7 @@ export class Dictionary {
    * another word's inflected form — and `findInflection` after, so that a
    * hardcoded irregular beats whatever the rules would have derived.
    */
-  lookupForm(
-    surfaceForm: string,
-    language?: string,
-  ): FormMatch[] {
+  lookupForm(surfaceForm: string, language?: string): FormMatch[] {
     const matches = this.byForm.get(this.norm(surfaceForm)) ?? [];
 
     return language === undefined
@@ -229,10 +224,7 @@ export class Dictionary {
   phraseIndex(language?: string): PhraseIndex {
     if (language === undefined) return this.phraseIdx;
 
-    return buildPhraseIndex(
-      this.allPhrases(language),
-      this.caseSensitive,
-    );
+    return buildPhraseIndex(this.allPhrases(language), this.caseSensitive);
   }
 
   /**
@@ -241,10 +233,7 @@ export class Dictionary {
    * With no language scope this searches all loaded lexicons. A supplied
    * language restricts the result to that lexicon.
    */
-  lookupEnglish(
-    english: string,
-    language?: string,
-  ): DictionaryEntry[] {
+  lookupEnglish(english: string, language?: string): DictionaryEntry[] {
     const entries = this.byEnglish.get(english.toLowerCase()) ?? [];
 
     return language === undefined
@@ -273,9 +262,7 @@ export class Dictionary {
     const entries =
       language === undefined
         ? indexedEntries
-        : indexedEntries.filter((entry) =>
-            this.inLanguage(entry, language),
-          );
+        : indexedEntries.filter((entry) => this.inLanguage(entry, language));
     const matches: EnglishLookupMatch[] = [];
 
     for (const entry of entries) {
@@ -364,6 +351,7 @@ export class Dictionary {
    */
   async loadFromFolders(
     sources: { folder: string; language?: string }[],
+    membershipMode: LanguageMembershipMode = "respect-explicit",
   ): Promise<number> {
     this.clear();
     let count = 0;
@@ -387,23 +375,16 @@ export class Dictionary {
 
         const entry = record.value;
 
-        if (
-          source.language &&
-          entry.language &&
-          entry.language !== source.language
-        ) {
-          // Preserve the dictionary's existing overlapping-folder behavior:
-          // valid entries explicitly assigned to another configured language
-          // are not part of this source inventory.
-          continue;
-        }
+        const membership = resolveLanguageMembership(
+          source.language,
+          entry.language,
+          membershipMode,
+        );
+        if (!membership.accepted) continue;
 
-        // If the frontmatter didn't specify a language, assume it belongs to
-        // the source folder's language. This keeps backward-compat with
-        // entries that pre-date the explicit language field.
-        if (!entry.language && source.language) {
-          entry.language = source.language;
-        }
+        // Runtime scope follows the selected membership policy. This changes
+        // only the parsed in-memory entry; creator-authored YAML is untouched.
+        entry.language = membership.runtimeLanguage;
 
         this.addSourceRecord(record);
         this.addEntry(entry);

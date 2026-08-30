@@ -1,4 +1,8 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
+import {
+  resolveLanguageMembership,
+  type LanguageMembershipMode,
+} from "./language-membership";
 import { parsePhonologySource } from "./phonology-source";
 import type {
   PhonologySourceInput,
@@ -140,16 +144,13 @@ export class PhonologyInventory {
   // Keeping units and realizations separate gives callers strongly typed
   // diagnostic collections rather than a mixed union they must reinterpret.
   private unitSourceRecords: WorkbenchSourceRecord<PhonologicalUnit>[] = [];
-  private realizationSourceRecords:
-    WorkbenchSourceRecord<PhonologicalRealization>[] = [];
+  private realizationSourceRecords: WorkbenchSourceRecord<PhonologicalRealization>[] =
+    [];
 
   // Workbench identity addresses the source record itself. This index is
   // deliberately separate from linguistic ID indexes: one must never silently
   // substitute for the other.
-  private sourceByWorkbenchID = new Map<
-    string,
-    PhonologySourceRecord
-  >();
+  private sourceByWorkbenchID = new Map<string, PhonologySourceRecord>();
 
   constructor(private app: App) {}
 
@@ -200,8 +201,7 @@ export class PhonologyInventory {
   /**
    * Return every recognized phonological-realization source record.
    */
-  allRealizationSourceRecords():
-    WorkbenchSourceRecord<PhonologicalRealization>[] {
+  allRealizationSourceRecords(): WorkbenchSourceRecord<PhonologicalRealization>[] {
     return this.realizationSourceRecords.slice();
   }
 
@@ -211,9 +211,7 @@ export class PhonologyInventory {
    * Workbench identity is a source handle only. Callers must not treat it as a
    * replacement for the creator-authored unit or realization ID.
    */
-  lookupWorkbenchID(
-    workbenchID: string,
-  ): PhonologySourceRecord | undefined {
+  lookupWorkbenchID(workbenchID: string): PhonologySourceRecord | undefined {
     return this.sourceByWorkbenchID.get(workbenchID);
   }
 
@@ -312,7 +310,10 @@ export class PhonologyInventory {
    * inherited only when the note omits it, matching the pattern used by the
    * other language-specific inventories.
    */
-  async loadFromFolders(sources: PhonologySource[]): Promise<number> {
+  async loadFromFolders(
+    sources: PhonologySource[],
+    membershipMode: LanguageMembershipMode = "respect-explicit",
+  ): Promise<number> {
     this.clear();
 
     let count = 0;
@@ -344,16 +345,12 @@ export class PhonologyInventory {
             continue;
           }
 
-          // If both the configured source and the note explicitly name a
-          // language, they must agree. This preserves the existing protection
-          // against misplaced valid notes entering another active language.
-          if (
-            source.language &&
-            unit.language &&
-            unit.language !== source.language
-          ) {
-            continue;
-          }
+          const membership = resolveLanguageMembership(
+            source.language,
+            unit.language,
+            membershipMode,
+          );
+          if (!membership.accepted) continue;
 
           if (
             source.languageId &&
@@ -363,11 +360,8 @@ export class PhonologyInventory {
             continue;
           }
 
-          // Source-level language context is inherited only when the valid note
-          // omits it. The adapter itself remains independent of configuration.
-          if (!unit.language && source.language) {
-            unit.language = source.language;
-          }
+          // Assign runtime membership without modifying creator-authored YAML.
+          unit.language = membership.runtimeLanguage;
 
           if (!unit.languageId && source.languageId) {
             unit.languageId = source.languageId;
@@ -389,14 +383,12 @@ export class PhonologyInventory {
           continue;
         }
 
-        // Realizations use the same language-boundary protection as units.
-        if (
-          source.language &&
-          realization.language &&
-          realization.language !== source.language
-        ) {
-          continue;
-        }
+        const membership = resolveLanguageMembership(
+          source.language,
+          realization.language,
+          membershipMode,
+        );
+        if (!membership.accepted) continue;
 
         if (
           source.languageId &&
@@ -406,9 +398,8 @@ export class PhonologyInventory {
           continue;
         }
 
-        if (!realization.language && source.language) {
-          realization.language = source.language;
-        }
+        // Assign runtime membership without modifying creator-authored YAML.
+        realization.language = membership.runtimeLanguage;
 
         if (!realization.languageId && source.languageId) {
           realization.languageId = source.languageId;

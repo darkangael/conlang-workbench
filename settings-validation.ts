@@ -1,7 +1,4 @@
-import {
-  ConlangSettings,
-  DEFAULT_SETTINGS,
-} from "./types";
+import { ConlangSettings, DEFAULT_SETTINGS } from "./types";
 
 /**
  * Runtime validation for persisted settings whose valid values form a closed
@@ -32,6 +29,15 @@ function isOneOf<T extends string>(
  */
 export function normalizeClosedChoiceSettings(settings: ConlangSettings): void {
   if (
+    !isOneOf(settings.languageMembership, [
+      "folder",
+      "respect-explicit",
+    ] as const)
+  ) {
+    settings.languageMembership = DEFAULT_SETTINGS.languageMembership;
+  }
+
+  if (
     !isOneOf(settings.commitWrapper, [
       "footnote-style",
       "html-tooltip",
@@ -42,12 +48,7 @@ export function normalizeClosedChoiceSettings(settings: ConlangSettings): void {
   }
 
   if (
-    !isOneOf(settings.hoverModifier, [
-      "none",
-      "shift",
-      "alt",
-      "ctrl",
-    ] as const)
+    !isOneOf(settings.hoverModifier, ["none", "shift", "alt", "ctrl"] as const)
   ) {
     settings.hoverModifier = DEFAULT_SETTINGS.hoverModifier;
   }
