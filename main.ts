@@ -3,6 +3,7 @@
 import {
   Editor,
   EditorPosition,
+  MarkdownFileInfo,
   MarkdownView,
   Notice,
   Plugin,
@@ -22,6 +23,7 @@ import { Dictionary, FormMatch } from "./dictionary";
 import {
   inspectDictionaryEntry,
   writeDictionaryEntry,
+  type DictionaryEntryWriteResult,
 } from "./dictionary-entry-writer";
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
@@ -33,15 +35,20 @@ import {
 } from "./vault-paths";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
-import { WORD_RE, cleanWord, applyCasing } from "./word-tokens";
+import { WORD_RE, cleanWord } from "./word-tokens";
 import { findWordRangeAt } from "./word-scan";
 import { classifySelectionLookup } from "./selection-lookup";
 import { classifyLookupQuery } from "./lookup-query";
 import { confirmPhraseTranslation } from "./phrase-confirm-modal";
+import { confirmTranslationCommit } from "./translation-commit-modal";
+import { promptTranslationUnresolved } from "./translation-unresolved-modal";
 import {
   glossConlangToEnglish,
+  glossEnglishToConlang,
   renderConlangToEnglishString,
+  translateEnglishToConlangString,
 } from "./gloss";
+import { buildEnglishToConlangCommitPlan } from "./translation-commit-plan";
 import { ConlangSettingTab } from "./settings";
 import { TranslationPanelView, VIEW_TYPE_PANEL } from "./panel";
 import {
@@ -186,7 +193,8 @@ export default class ConlangPlugin extends Plugin {
     this.addCommand({
       id: "translate-selection-commit",
       name: "Translate selection to primary language and replace",
-      editorCallback: (editor: Editor) => this.commitSelectionToConlang(editor),
+      editorCallback: (editor: Editor, ctx) =>
+        this.commitSelectionToConlang(editor, ctx),
     });
 
     this.addCommand({
@@ -668,92 +676,15 @@ export default class ConlangPlugin extends Plugin {
     return this.translateToConlangWith(text, lang);
   }
 
-  /** Translate English text using a specific language's cypher sheets. */
+  /**
+   * Translate English text through the shared translation module.
+   *
+   * main.ts only supplies the active dictionary and language. The gloss module
+   * owns the safety-sensitive rule that dictionary results are final and the
+   * cypher is used only as fallback for unmatched source material.
+   */
   private translateToConlangWith(text: string, lang: LanguageConfig): string {
-    const replaced = this.replaceEnglishWithDictionary(text);
-    return applyCypher(replaced, lang.sheets);
-  }
-
-  private replaceEnglishWithDictionary(text: string): string {
-    // Tokenise into words and non-word spans so we can substitute whole
-    // phrases while preserving punctuation and spacing.
-    const segments: { text: string; isWord: boolean }[] = [];
-    const wordRe = new RegExp(WORD_RE.source, "gu");
-    let lastEnd = 0;
-    let m: RegExpExecArray | null;
-    while ((m = wordRe.exec(text)) !== null) {
-      if (m.index > lastEnd) {
-        segments.push({ text: text.slice(lastEnd, m.index), isWord: false });
-      }
-      segments.push({ text: m[0], isWord: true });
-      lastEnd = m.index + m[0].length;
-    }
-    if (lastEnd < text.length) {
-      segments.push({ text: text.slice(lastEnd), isWord: false });
-    }
-
-    // Walk segments, trying multi-word English matches first at each word.
-    // We try sequences of up to 5 words — long enough for typical phrases
-    // ("by the way", "thank you very much") without blowing up the search.
-    const MAX_PHRASE_LENGTH = 5;
-    const out: string[] = [];
-    let i = 0;
-    while (i < segments.length) {
-      const seg = segments[i];
-      if (!seg.isWord) {
-        out.push(seg.text);
-        i++;
-        continue;
-      }
-
-      // Try longest match starting here
-      let matched = false;
-      for (let n = MAX_PHRASE_LENGTH; n >= 1; n--) {
-        // Collect n consecutive word tokens (skipping over any non-word
-        // segments that contain only whitespace — punctuation breaks the phrase).
-        const collected: string[] = [];
-        let j = i;
-        let cleanGaps = true;
-        while (collected.length < n && j < segments.length) {
-          const s = segments[j];
-          if (s.isWord) {
-            collected.push(s.text);
-            j++;
-            continue;
-          }
-          // Non-word segment between words: must be whitespace-only
-          if (!/^\s+$/.test(s.text)) {
-            cleanGaps = false;
-            break;
-          }
-          j++;
-        }
-        if (!cleanGaps) continue;
-        if (collected.length < n) continue;
-
-        const phrase = collected.join(" ");
-        const hits = this.dictionary.lookupEnglish(phrase);
-        if (hits.length > 0) {
-          out.push(applyCasing(phrase, hits[0].word));
-          i = j;
-          matched = true;
-          break;
-        }
-      }
-
-      if (!matched) {
-        // Fall through to single-word translation with original casing
-        const word = seg.text;
-        const entries = this.dictionary.lookupEnglish(word);
-        if (entries.length > 0) {
-          out.push(applyCasing(word, entries[0].word));
-        } else {
-          out.push(word);
-        }
-        i++;
-      }
-    }
-    return out.join("");
+    return translateEnglishToConlangString(text, this.dictionary, lang);
   }
 
   private getSelectionOrWord(
@@ -794,18 +725,137 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
-   * Commit the editor's current selection (or word under cursor) as conlang.
-   * Public so the panel can call it.
+   * Preview and explicitly authorize replacement of creator-authored text.
+   *
+   * The proposed replacement is generated exactly once before confirmation.
+   * If approved, that same string is passed to replaceRange(); translation or
+   * wrapper logic is never rerun after the user has reviewed the preview.
+   *
+   * Because a modal introduces an asynchronous gap, the command also captures
+   * its original file and source text. Both must still match immediately before
+   * mutation or the operation stops safely.
    */
-  async commitSelectionToConlang(editor: Editor) {
+  async commitSelectionToConlang(
+    editor: Editor,
+    ctx: MarkdownView | MarkdownFileInfo,
+  ) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
       new Notice("Made Up Words: no selection or word under cursor");
       return;
     }
-    const translated = this.translateToConlang(sel.text);
-    const wrapped = this.wrapForCommit(translated, sel.text);
-    editor.replaceRange(wrapped, sel.from, sel.to);
+
+    // Capture both object identity and the path now. TFile.path can change if a
+    // file is renamed, so storing the path separately lets us detect that
+    // change even if Obsidian retains the same TFile object.
+    const originalFile = ctx.file;
+    const originalPath = originalFile?.path ?? null;
+
+    if (!originalFile || !originalPath) {
+      new Notice(
+        "Made Up Words: could not identify the note containing this text",
+      );
+      return;
+    }
+
+    // Capture the target language before opening any asynchronous UI.
+    //
+    // LanguageConfig is the linguistic authority for this operation: its name
+    // scopes lexical resolution to one lexicon, while its rules/sheets describe
+    // that language's configured translation behavior. We must not silently
+    // switch to a different primary language if settings change later.
+    const targetLanguage = this.getActiveLanguage();
+
+    if (!targetLanguage) {
+      new Notice("Made Up Words: no active language");
+      return;
+    }
+
+    // The ordinary Translator is allowed to show exploratory cypher fallback.
+    // A note mutation has a stricter boundary: first obtain the language-scoped
+    // gloss tokens, then let the pure commit planner decide whether every
+    // lexical item has enough creator-authored authority to be written.
+    const tokens = glossEnglishToConlang(
+      sel.text,
+      this.dictionary,
+      targetLanguage,
+    );
+    const plan = buildEnglishToConlangCommitPlan(tokens);
+
+    if (plan.status === "blocked") {
+      // Do not write a partial translation. One unresolved item invalidates
+      // authorization for the entire selected range.
+      //
+      // This modal explains each blocker independently. Its "create missing"
+      // action authorizes only a later vocabulary-repair step, never replacement
+      // of creator-authored note text.
+      const action = await promptTranslationUnresolved(
+        this.app,
+        plan.unresolved,
+      );
+
+      if (action === "create-missing") {
+        // The vocabulary creation queue is deliberately the next checkpoint.
+        // Until it is connected, this branch performs no filesystem or editor
+        // mutation.
+        new Notice(
+          "Made Up Words: missing-word creation will open here next. Nothing was replaced.",
+          8000,
+        );
+      }
+
+      return;
+    }
+
+    // `plan.replacement` is the exact Markdown string authorized by the
+    // planner. Preview that exact value and, if the creator confirms, pass the
+    // same string to replaceRange() without regenerating or wrapping it.
+    const confirmed = await confirmTranslationCommit(this.app, {
+      original: sel.text,
+      translated: plan.translated,
+      replacement: plan.replacement,
+    });
+
+    if (!confirmed) return;
+
+    // The editor callback context remains associated with the originating
+    // Markdown view/file. If that target changed while the modal was open, the
+    // user's approval no longer describes the current document.
+    const currentFile = ctx.file;
+    if (
+      !currentFile ||
+      currentFile !== originalFile ||
+      currentFile.path !== originalPath
+    ) {
+      new Notice(
+        "Made Up Words: the target note changed while the preview was open. Nothing was replaced.",
+        8000,
+      );
+      return;
+    }
+
+    let currentText: string;
+    try {
+      currentText = editor.getRange(sel.from, sel.to);
+    } catch {
+      // Structural edits can make a previously valid range unusable. Treat
+      // that as stale authorization rather than guessing at a new target.
+      new Notice(
+        "Made Up Words: the target text changed while the preview was open. Nothing was replaced.",
+        8000,
+      );
+      return;
+    }
+
+    if (currentText !== sel.text) {
+      new Notice(
+        "Made Up Words: the target text changed while the preview was open. Nothing was replaced.",
+        8000,
+      );
+      return;
+    }
+
+    editor.replaceRange(plan.replacement, sel.from, sel.to);
   }
 
   private wrapForCommit(translated: string, original: string): string {
@@ -1163,6 +1213,7 @@ export default class ConlangPlugin extends Plugin {
           cleaned,
           this.dictionary,
           lang.inflections,
+          lang.name,
         );
         if (!inflectionMatch) continue;
         // Skip if this lemma is already on the list — either as a direct hit
@@ -1359,38 +1410,66 @@ export default class ConlangPlugin extends Plugin {
       new Notice("Made Up Words: no active language");
       return;
     }
-    const result = await new Promise<WordCreationResult | null>((resolve) => {
-      const cypherFn = (s: string) => this.translateToConlang(s);
-      new WordCreationModal(this.app, cypherFn, resolve).open();
-    });
+    const result = await this.promptForWord();
     if (!result) return;
 
-    const folder = lang.dictionaryFolder;
+    const writeResult = await this.writeWordEntry(lang, result);
 
-    // The dictionary folder is user-configurable, so validate it at the
-    // interactive boundary and fail without mutation if it is unsafe.
-    try {
-      validateVaultRelativePath(folder);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+    if (writeResult.status === "blocked" || writeResult.status === "failed") {
       new Notice(
-        `Conlang Workbench: invalid dictionary folder for ${lang.name} — ${msg}`,
+        `Conlang Workbench: ${writeResult.error}. No new entry was created.`,
         9000,
       );
       return;
     }
 
+    if (writeResult.status === "existing") {
+      await this.app.workspace.getLeaf(false).openFile(writeResult.file);
+      new Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
+      return;
+    }
+
+    await this.app.workspace.getLeaf(false).openFile(writeResult.file);
+    await this.afterEntriesChanged();
+
+    new Notice(
+      writeResult.wordOverride
+        ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word`
+        : `Conlang: added "${result.conlangWord}"`,
+    );
+  }
+
+  /**
+   * Persist one ordinary lexical entry without taking over the workspace.
+   *
+   * This is intentionally separate from createWordFromPanel(): persistence is
+   * shared behavior, while opening the resulting note is specific to the panel
+   * command. Translation repair can therefore create vocabulary without moving
+   * the creator away from the note whose text may later be replaced.
+   *
+   * writeDictionaryEntry() remains the security-sensitive authority boundary.
+   * It revalidates the configured path, current vault objects, lexical source
+   * authority, same-meaning collisions, and genuine homographs immediately
+   * before writing.
+   *
+   * Newly created files are also allowed to reach Obsidian's metadata cache
+   * before this helper returns. A caller that reloads Dictionary immediately
+   * afterward will therefore not silently miss the new lexical entry.
+   */
+  private async writeWordEntry(
+    lang: LanguageConfig,
+    result: WordCreationResult,
+  ): Promise<DictionaryEntryWriteResult> {
     const writeResult = await writeDictionaryEntry({
       app: this.app,
       form: result.conlangWord,
       definition: result.englishDefinition,
       partOfSpeech: result.partOfSpeech,
-      dictionaryFolder: folder,
+      dictionaryFolder: lang.dictionaryFolder,
 
-      // WordCreationModal has already collected all of the linguistic fields
-      // needed by this command. The writer owns collision handling and the
-      // persistent vault boundary; this callback retains the Word command's
-      // established Markdown layout.
+      // The writer owns persistence safety, while this callback owns the
+      // ordinary-word Markdown schema. Keeping those responsibilities separate
+      // lets names and other lexical source types retain their own metadata.
       buildContent: ({ wordOverride }) => {
         const fmLines = [
           "---",
@@ -1419,33 +1498,36 @@ export default class ConlangPlugin extends Plugin {
       },
     });
 
-    if (writeResult.status === "blocked" || writeResult.status === "failed") {
-      new Notice(
-        `Conlang Workbench: ${writeResult.error}. No new entry was created.`,
-        9000,
-      );
-      return;
+    if (writeResult.status === "created") {
+      await this.waitForFrontmatter(writeResult.file);
     }
 
-    if (writeResult.status === "existing") {
-      await this.app.workspace.getLeaf(false).openFile(writeResult.file);
-      new Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
-      return;
-    }
+    return writeResult;
+  }
 
-    const file = writeResult.file;
-    await this.app.workspace.getLeaf(false).openFile(file);
-    await this.waitForFrontmatter(file);
-    await this.reloadActiveLanguage();
-    this.refreshPanel();
-    this.refreshHighlights();
-    this.lastHoverWord = null;
-
-    new Notice(
-      writeResult.wordOverride
-        ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word`
-        : `Conlang: added "${result.conlangWord}"`,
-    );
+  /**
+   * Ask the creator for one ordinary lexical entry.
+   *
+   * `initialEnglishDefinition` is optional because the normal "+ Word" command
+   * starts empty, while translation repair already knows which source word is
+   * missing and can save the creator from retyping it.
+   *
+   * This helper only owns the modal interaction. It does not write to the vault
+   * or open files, which lets several workflows reuse the same creator input
+   * without inheriting one another's mutation behavior.
+   */
+  private promptForWord(
+    initialEnglishDefinition = "",
+  ): Promise<WordCreationResult | null> {
+    return new Promise((resolve) => {
+      const cypherFn = (s: string) => this.translateToConlang(s);
+      new WordCreationModal(
+        this.app,
+        cypherFn,
+        resolve,
+        initialEnglishDefinition,
+      ).open();
+    });
   }
 
   /**
@@ -1731,6 +1813,7 @@ export default class ConlangPlugin extends Plugin {
             cleaned,
             this.dictionary,
             activeLang.inflections,
+            activeLang.name,
           );
           if (inflectionMatch) break;
         }

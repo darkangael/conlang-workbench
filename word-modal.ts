@@ -72,10 +72,16 @@ export class WordCreationModal extends Modal {
     app: App,
     cypherFn: (englishText: string) => string,
     resolve: (result: WordCreationResult | null) => void,
+    initialEnglishDefinition = "",
   ) {
     super(app);
     this.cypherFn = cypherFn;
     this.resolve = resolve;
+
+    // Translation repair can already know which source-language word is
+    // missing. Prefill that known meaning without inventing a conlang form:
+    // the creator still explicitly chooses or derives the lexical form.
+    this.englishDefinition = initialEnglishDefinition;
   }
 
   onOpen() {
@@ -87,6 +93,12 @@ export class WordCreationModal extends Modal {
       text: "English meaning",
     });
     this.englishInput = contentEl.createEl("input", { type: "text" });
+
+    // Internal modal state and the visible input must start with the same
+    // value. Setting only one would make the form display something different
+    // from the value submit() eventually saves.
+    this.englishInput.value = this.englishDefinition;
+
     // The sentence-case rule reads the full stop in "e.g." as a sentence
     // boundary and asks for the next word to be capitalised ("E.g. Noun").
     // The copy is correct as written, so that warning is expected here.

@@ -29,6 +29,7 @@ export function findInflection(
   word: string,
   dictionary: Dictionary,
   rules: InflectionRule[] | undefined,
+  language?: string,
 ): InflectionMatch | null {
   if (!rules || rules.length === 0) return null;
   const lower = word.toLowerCase();
@@ -41,7 +42,11 @@ export function findInflection(
     if (!candidate) continue;
     if (candidate === lower) continue; // rule didn't actually change anything
 
-    const entry = dictionary.lookup(candidate);
+    // Rules describe morphology, but the reconstructed spelling still has
+    // to resolve inside the lexicon whose morphology we are interpreting.
+    // Without this scope, one language's rule could accidentally claim an
+    // identically spelled lemma that exists only in another loaded language.
+    const entry = dictionary.lookup(candidate, language);
     if (!entry) continue;
 
     // If the rule has a POS filter, the lemma must match one of the allowed

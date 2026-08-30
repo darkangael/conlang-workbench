@@ -84,7 +84,14 @@ function computeClassifyWord(
     if (plugin.dictionary.lookupForm(cleaned).length > 0) return "conlang";
     // Inflected form that resolves to a headword via this language's rules.
     for (const lang of plugin.getActiveLanguages()) {
-      if (findInflection(cleaned, plugin.dictionary, lang.inflections)) {
+      if (
+        findInflection(
+          cleaned,
+          plugin.dictionary,
+          lang.inflections,
+          lang.name,
+        )
+      ) {
         return "conlang";
       }
     }
@@ -160,7 +167,12 @@ function resolveEntryPath(
   const declared = plugin.dictionary.lookupForm(cleaned)[0];
   if (declared) return declared.lemma.path;
   for (const lang of plugin.getActiveLanguages()) {
-    const infl = findInflection(cleaned, plugin.dictionary, lang.inflections);
+    const infl = findInflection(
+      cleaned,
+      plugin.dictionary,
+      lang.inflections,
+      lang.name,
+    );
     if (infl) return infl.lemma.path;
   }
   return undefined;

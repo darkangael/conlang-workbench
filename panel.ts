@@ -594,6 +594,7 @@ export class TranslationPanelView extends ItemView {
         cleaned,
         this.plugin.dictionary,
         lang.inflections,
+        lang.name,
       );
       if (m) {
         return {
@@ -657,6 +658,7 @@ export class TranslationPanelView extends ItemView {
             t.text,
             this.plugin.dictionary,
             lang.inflections,
+            lang.name,
           );
           if (m) entry = m.lemma;
         }
@@ -951,6 +953,7 @@ export class TranslationPanelView extends ItemView {
           word,
           this.plugin.dictionary,
           lang.inflections,
+          lang.name,
         );
         if (m) {
           const sense = firstSense(m.lemma.definition) || m.lemma.word;

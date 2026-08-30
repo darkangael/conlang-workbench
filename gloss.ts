@@ -65,6 +65,27 @@ export function glossEnglishToConlang(
 }
 
 /**
+ * Translate English text to one plain conlang string using the shared gloss
+ * pipeline.
+ *
+ * Dictionary matches are final creator-authored forms. Only source tokens that
+ * fail dictionary lookup may receive cypher fallback, so a successful lexical
+ * translation is never passed through the cypher a second time.
+ *
+ * This helper deliberately composes the resolver and renderer rather than
+ * duplicating either responsibility. UI callers that need richer ambiguity or
+ * provenance information should continue using glossEnglishToConlang().
+ */
+export function translateEnglishToConlangString(
+  text: string,
+  dictionary: Dictionary,
+  lang: LanguageConfig | null,
+): string {
+  const tokens = glossEnglishToConlang(text, dictionary, lang);
+  return renderTransliterationString(tokens);
+}
+
+/**
  * Build a gloss for conlang text being looked up against the English dictionary.
  *
  * For each conlang word: try direct match, then phrase, then inflection,
@@ -77,7 +98,10 @@ export function glossConlangToEnglish(
   lang: LanguageConfig | null,
 ): GlossToken[] {
   const tokens: GlossToken[] = [];
-  const phrases = dictionary.phraseIndex();
+  // In this direction `lang` describes the language being interpreted.
+  // Restrict phrase resolution to that source lexicon so an identically
+  // spelled phrase in another loaded language cannot acquire authority here.
+  const phrases = dictionary.phraseIndex(lang?.name);
   const phraseTokens = tokeniseWithPhrases(text, phrases);
 
   for (const t of phraseTokens) {
@@ -95,13 +119,13 @@ export function glossConlangToEnglish(
     }
     // word token: try direct, inflected, cypher-reverse
     const word = t.text;
-    const direct = dictionary.lookup(word);
+    const direct = dictionary.lookup(word, lang?.name);
     if (direct) {
       tokens.push({ kind: "dictionary", source: word, candidates: [direct] });
       continue;
     }
     // Hardcoded forms declared on an entry beat rule-derived ones.
-    const declared = dictionary.lookupForm(word)[0];
+    const declared = dictionary.lookupForm(word, lang?.name)[0];
     if (declared) {
       tokens.push({
         kind: "inflected",
@@ -111,7 +135,12 @@ export function glossConlangToEnglish(
       continue;
     }
     if (lang) {
-      const m = findInflection(word, dictionary, lang.inflections);
+      const m = findInflection(
+        word,
+        dictionary,
+        lang.inflections,
+        lang.name,
+      );
       if (m) {
         tokens.push({
           kind: "inflected",
@@ -200,7 +229,13 @@ function tokeniseEnglishAgainstDictionary(
       if (collected.length < n) continue;
 
       const phrase = collected.join(" ");
-      const englishMatches = dictionary.lookupEnglishMatches(phrase);
+      // English is the documentation/source side here, while `lang`
+      // identifies the target lexicon. Only entries belonging to that target
+      // language may become lexical translation candidates.
+      const englishMatches = dictionary.lookupEnglishMatches(
+        phrase,
+        lang?.name,
+      );
 
       if (englishMatches.length > 0) {
         // Several structured senses may point to the same dictionary entry.
@@ -229,7 +264,10 @@ function tokeniseEnglishAgainstDictionary(
     // Single word: preserve both the simple candidate entries and any richer
     // structured-sense match information.
     const word = seg.text;
-    const englishMatches = dictionary.lookupEnglishMatches(word);
+    const englishMatches = dictionary.lookupEnglishMatches(
+      word,
+      lang?.name,
+    );
 
     if (englishMatches.length > 0) {
       const candidates = Array.from(
@@ -249,7 +287,7 @@ function tokeniseEnglishAgainstDictionary(
     // The input might already be a conlang word the user typed by mistake
     // (or because they want to see what it means). Recognise it and surface
     // the entry — clearer than pretending we don't know it and cyphering.
-    const conlangDirect = dictionary.lookup(word);
+    const conlangDirect = dictionary.lookup(word, lang?.name);
     if (conlangDirect) {
       out.push({
         kind: "dictionary",

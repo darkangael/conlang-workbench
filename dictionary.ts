@@ -112,6 +112,26 @@ export class Dictionary {
     return normalizeLexicalKey(s, this.caseSensitive);
   }
 
+  /**
+   * Decide whether an entry belongs inside an optional lexical language scope.
+   *
+   * An omitted language deliberately means "all loaded languages". Global
+   * search, hover, and other exploratory features may legitimately inspect
+   * several lexicons at once.
+   *
+   * When a language is supplied, matching is strict. This prevents an
+   * authoritative language-specific operation from borrowing a same-spelled
+   * or same-defined entry from another loaded language.
+   *
+   * Entries loaded from a configured language source receive that source
+   * language at runtime even when their Markdown note has no explicit
+   * `language:` field. The scope therefore does not impose new creator YAML
+   * requirements or write inferred metadata back to the vault.
+   */
+  private inLanguage(entry: DictionaryEntry, language?: string): boolean {
+    return language === undefined || entry.language === language;
+  }
+
   clear() {
     this.byWord.clear();
     this.byEnglish.clear();
@@ -124,20 +144,34 @@ export class Dictionary {
   }
 
   /**
-   * Look up a conlang word and return its dictionary entry, if any.
-   * Returns the FIRST match if multiple languages share the spelling.
-   * Use lookupAll() to get every match.
+   * Look up a conlang word and return its first dictionary entry, if any.
+   *
+   * With no language scope this preserves the existing global-first behavior.
+   * When a language is supplied, only entries from that lexicon are eligible.
+   * Use lookupAll() when the caller must preserve lexical ambiguity.
    */
-  lookup(conlangWord: string): DictionaryEntry | undefined {
-    return this.byWord.get(this.norm(conlangWord))?.[0];
+  lookup(
+    conlangWord: string,
+    language?: string,
+  ): DictionaryEntry | undefined {
+    return this.lookupAll(conlangWord, language)[0];
   }
 
   /**
-   * Look up a conlang word across all loaded languages. Returns every entry
-   * whose word matches, regardless of source language. Empty array if none.
+   * Look up every entry matching a conlang word.
+   *
+   * With no language scope, results may come from any loaded lexicon.
+   * Supplying a language restricts the result to that lexicon.
    */
-  lookupAll(conlangWord: string): DictionaryEntry[] {
-    return this.byWord.get(this.norm(conlangWord)) ?? [];
+  lookupAll(
+    conlangWord: string,
+    language?: string,
+  ): DictionaryEntry[] {
+    const entries = this.byWord.get(this.norm(conlangWord)) ?? [];
+
+    return language === undefined
+      ? entries
+      : entries.filter((entry) => this.inLanguage(entry, language));
   }
 
   /**
@@ -148,8 +182,15 @@ export class Dictionary {
    * another word's inflected form — and `findInflection` after, so that a
    * hardcoded irregular beats whatever the rules would have derived.
    */
-  lookupForm(surfaceForm: string): FormMatch[] {
-    return this.byForm.get(this.norm(surfaceForm)) ?? [];
+  lookupForm(
+    surfaceForm: string,
+    language?: string,
+  ): FormMatch[] {
+    const matches = this.byForm.get(this.norm(surfaceForm)) ?? [];
+
+    return language === undefined
+      ? matches
+      : matches.filter((match) => this.inLanguage(match.lemma, language));
   }
 
   /**
@@ -169,27 +210,46 @@ export class Dictionary {
   }
 
   /**
-   * Get all phrase entries (entries whose word contains a space),
-   * sorted longest-first by word count. Used by the phrase matcher.
+   * Get phrase entries (entries whose word contains a space), sorted
+   * longest-first by word count. An optional language restricts the inventory
+   * to one lexicon before phrase matching.
    */
-  allPhrases(): DictionaryEntry[] {
-    return this.phrases;
+  allPhrases(language?: string): DictionaryEntry[] {
+    return language === undefined
+      ? this.phrases
+      : this.phrases.filter((entry) => this.inLanguage(entry, language));
   }
 
   /**
-   * First-word index over all phrase entries. This is what the phrase
-   * matcher (tokeniseWithPhrases / matchPhraseAtStart) consumes.
+   * Build or return the first-word index consumed by the phrase matcher.
+   *
+   * The existing pre-built global index is returned when no language is
+   * supplied. A language scope derives an index containing only that lexicon.
    */
-  phraseIndex(): PhraseIndex {
-    return this.phraseIdx;
+  phraseIndex(language?: string): PhraseIndex {
+    if (language === undefined) return this.phraseIdx;
+
+    return buildPhraseIndex(
+      this.allPhrases(language),
+      this.caseSensitive,
+    );
   }
 
   /**
-   * Look up English text and return any conlang entries that translate to it.
-   * Useful for the "highlight English, translate to conlang" workflow.
+   * Look up English text and return conlang entries that translate to it.
+   *
+   * With no language scope this searches all loaded lexicons. A supplied
+   * language restricts the result to that lexicon.
    */
-  lookupEnglish(english: string): DictionaryEntry[] {
-    return this.byEnglish.get(english.toLowerCase()) ?? [];
+  lookupEnglish(
+    english: string,
+    language?: string,
+  ): DictionaryEntry[] {
+    const entries = this.byEnglish.get(english.toLowerCase()) ?? [];
+
+    return language === undefined
+      ? entries
+      : entries.filter((entry) => this.inLanguage(entry, language));
   }
 
   /**
@@ -204,9 +264,18 @@ export class Dictionary {
    * the English key, each matching sense is returned separately. If no
    * structured sense matches, the entry is still returned without a sense.
    */
-  lookupEnglishMatches(english: string): EnglishLookupMatch[] {
+  lookupEnglishMatches(
+    english: string,
+    language?: string,
+  ): EnglishLookupMatch[] {
     const normalized = english.trim().toLowerCase();
-    const entries = this.byEnglish.get(normalized) ?? [];
+    const indexedEntries = this.byEnglish.get(normalized) ?? [];
+    const entries =
+      language === undefined
+        ? indexedEntries
+        : indexedEntries.filter((entry) =>
+            this.inLanguage(entry, language),
+          );
     const matches: EnglishLookupMatch[] = [];
 
     for (const entry of entries) {
