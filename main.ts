@@ -82,6 +82,10 @@ import {
   type PrimaryLanguageStateResult,
 } from "./primary-language-state";
 import {
+  applyPersistedSettingState,
+  type PersistedSettingStateResult,
+} from "./persisted-setting-state";
+import {
   applyCaseSensitiveMatchingState,
   type CaseSensitiveMatchingStateResult,
 } from "./case-sensitive-state";
@@ -304,8 +308,26 @@ export default class ConlangPlugin extends Plugin {
       id: "toggle-highlighting",
       name: "Toggle known-word highlighting",
       callback: async () => {
-        this.settings.highlightKnownWords = !this.settings.highlightKnownWords;
-        await this.saveSettings();
+        const requested = !this.settings.highlightKnownWords;
+        const result = await this.setPersistedSettingState(
+          () => this.settings.highlightKnownWords,
+          (value) => {
+            this.settings.highlightKnownWords = value;
+          },
+          requested,
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save highlighting preference",
+            result.error,
+          );
+          new Notice("Made Up Words: could not save the highlighting change.");
+          return;
+        }
+
+        if (result.status === "unchanged") return;
+
         new Notice(
           `Made Up Words: highlighting ${
             this.settings.highlightKnownWords ? "on" : "off"
@@ -496,6 +518,32 @@ export default class ConlangPlugin extends Plugin {
     return applyPrimaryLanguageState({
       state: this.settings,
       primaryLanguage,
+      save: () => this.saveSettings(),
+    });
+  }
+
+  /**
+   * Persist one ordinary settings preference without allowing a failed write
+   * to remain authoritative in the live settings object.
+   *
+   * These preferences are consumed directly from settings rather than through
+   * a rebuilt linguistic inventory. The requested value therefore needs only
+   * one authority boundary: successful persistence. The pure H12 transaction
+   * restores the previous live value when saveData() fails so runtime behavior
+   * and later whole-settings saves cannot inherit an unsuccessful request.
+   *
+   * read/write callbacks intentionally support both top-level settings and
+   * nested values such as LanguageConfig.hoverEnabled.
+   */
+  async setPersistedSettingState<T>(
+    read: () => T,
+    write: (value: T) => void,
+    requested: T,
+  ): Promise<PersistedSettingStateResult> {
+    return applyPersistedSettingState({
+      read,
+      write,
+      requested,
       save: () => this.saveSettings(),
     });
   }

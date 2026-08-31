@@ -766,9 +766,23 @@ export class ConlangSettingTab extends PluginSettingTab {
         dd.addOption("ctrl", "Ctrl / Cmd");
         dd.setValue(this.plugin.settings.hoverModifier);
         dd.onChange(async (value) => {
-          this.plugin.settings.hoverModifier =
-            value as ConlangSettings["hoverModifier"];
-          await this.plugin.saveSettings();
+          const requested = value as ConlangSettings["hoverModifier"];
+          const result = await this.plugin.setPersistedSettingState(
+            () => this.plugin.settings.hoverModifier,
+            (next) => {
+              this.plugin.settings.hoverModifier = next;
+            },
+            requested,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to save hover modifier preference",
+              result.error,
+            );
+            new Notice("Made Up Words: could not save the hover modifier.");
+            this.rerender();
+          }
         });
       });
 
@@ -780,8 +794,22 @@ export class ConlangSettingTab extends PluginSettingTab {
       )
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.hoverConlang).onChange(async (v) => {
-          this.plugin.settings.hoverConlang = v;
-          await this.plugin.saveSettings();
+          const result = await this.plugin.setPersistedSettingState(
+            () => this.plugin.settings.hoverConlang,
+            (next) => {
+              this.plugin.settings.hoverConlang = next;
+            },
+            v,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to save conlang-hover preference",
+              result.error,
+            );
+            new Notice("Made Up Words: could not save the hover change.");
+            this.rerender();
+          }
         }),
       );
 
@@ -796,9 +824,27 @@ export class ConlangSettingTab extends PluginSettingTab {
       )
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.hoverEnglish).onChange(async (v) => {
-          this.plugin.settings.hoverEnglish = v;
-          await this.plugin.saveSettings();
-          // Redraw so the fallback dropdown below enables/disables with it.
+          const result = await this.plugin.setPersistedSettingState(
+            () => this.plugin.settings.hoverEnglish,
+            (next) => {
+              this.plugin.settings.hoverEnglish = next;
+            },
+            v,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to save English-hover preference",
+              result.error,
+            );
+            new Notice("Made Up Words: could not save the hover change.");
+          }
+
+          /*
+           * Redraw after either outcome. On success this updates the fallback
+           * control's enabled state; on failure it restores the visible toggle
+           * to the previous authoritative setting.
+           */
           this.rerender();
         }),
       );
@@ -817,9 +863,23 @@ export class ConlangSettingTab extends PluginSettingTab {
         dd.setValue(this.plugin.settings.hoverFallback);
         dd.setDisabled(!this.plugin.settings.hoverEnglish);
         dd.onChange(async (value) => {
-          this.plugin.settings.hoverFallback =
-            value as ConlangSettings["hoverFallback"];
-          await this.plugin.saveSettings();
+          const requested = value as ConlangSettings["hoverFallback"];
+          const result = await this.plugin.setPersistedSettingState(
+            () => this.plugin.settings.hoverFallback,
+            (next) => {
+              this.plugin.settings.hoverFallback = next;
+            },
+            requested,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to save hover fallback preference",
+              result.error,
+            );
+            new Notice("Made Up Words: could not save the hover fallback.");
+            this.rerender();
+          }
         });
       });
   }
@@ -835,8 +895,28 @@ export class ConlangSettingTab extends PluginSettingTab {
         tg
           .setValue(this.plugin.settings.highlightKnownWords)
           .onChange(async (v) => {
-            this.plugin.settings.highlightKnownWords = v;
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setPersistedSettingState(
+              () => this.plugin.settings.highlightKnownWords,
+              (next) => {
+                this.plugin.settings.highlightKnownWords = next;
+              },
+              v,
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to save highlighting preference",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the highlighting change.",
+              );
+            }
+
+            /*
+             * The master toggle controls whether the subordinate highlight
+             * settings are rendered, so redraw after both success and rollback.
+             */
             this.rerender();
           }),
       );
@@ -854,9 +934,23 @@ export class ConlangSettingTab extends PluginSettingTab {
         dd.addOption("background", "Background highlight");
         dd.setValue(this.plugin.settings.highlightStyle);
         dd.onChange(async (value) => {
-          this.plugin.settings.highlightStyle =
-            value as ConlangSettings["highlightStyle"];
-          await this.plugin.saveSettings();
+          const requested = value as ConlangSettings["highlightStyle"];
+          const result = await this.plugin.setPersistedSettingState(
+            () => this.plugin.settings.highlightStyle,
+            (next) => {
+              this.plugin.settings.highlightStyle = next;
+            },
+            requested,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to save highlight style preference",
+              result.error,
+            );
+            new Notice("Made Up Words: could not save the highlight style.");
+            this.rerender();
+          }
         });
       });
 
@@ -869,8 +963,24 @@ export class ConlangSettingTab extends PluginSettingTab {
         tg
           .setValue(this.plugin.settings.highlightConlang)
           .onChange(async (v) => {
-            this.plugin.settings.highlightConlang = v;
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setPersistedSettingState(
+              () => this.plugin.settings.highlightConlang,
+              (next) => {
+                this.plugin.settings.highlightConlang = next;
+              },
+              v,
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to save conlang-highlighting preference",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the highlighting change.",
+              );
+              this.rerender();
+            }
           }),
       );
 
@@ -884,8 +994,24 @@ export class ConlangSettingTab extends PluginSettingTab {
         tg
           .setValue(this.plugin.settings.highlightEnglish)
           .onChange(async (v) => {
-            this.plugin.settings.highlightEnglish = v;
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setPersistedSettingState(
+              () => this.plugin.settings.highlightEnglish,
+              (next) => {
+                this.plugin.settings.highlightEnglish = next;
+              },
+              v,
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to save English-highlighting preference",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the highlighting change.",
+              );
+              this.rerender();
+            }
           }),
       );
   }
@@ -983,8 +1109,24 @@ export class ConlangSettingTab extends PluginSettingTab {
         tg
           .setValue(this.plugin.settings.showFormsInTooltip)
           .onChange(async (v) => {
-            this.plugin.settings.showFormsInTooltip = v;
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setPersistedSettingState(
+              () => this.plugin.settings.showFormsInTooltip,
+              (next) => {
+                this.plugin.settings.showFormsInTooltip = next;
+              },
+              v,
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to save tooltip-forms preference",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the tooltip forms change.",
+              );
+              this.rerender();
+            }
           }),
       );
   }
@@ -1002,9 +1144,25 @@ export class ConlangSettingTab extends PluginSettingTab {
         dd.addOption("wikilink", "Wikilink to dictionary entry");
         dd.setValue(this.plugin.settings.commitWrapper);
         dd.onChange(async (value) => {
-          this.plugin.settings.commitWrapper =
-            value as ConlangSettings["commitWrapper"];
-          await this.plugin.saveSettings();
+          const requested = value as ConlangSettings["commitWrapper"];
+          const result = await this.plugin.setPersistedSettingState(
+            () => this.plugin.settings.commitWrapper,
+            (next) => {
+              this.plugin.settings.commitWrapper = next;
+            },
+            requested,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to save translation wrapper preference",
+              result.error,
+            );
+            new Notice(
+              "Made Up Words: could not save the translation wrapper.",
+            );
+            this.rerender();
+          }
         });
       });
   }
@@ -1511,8 +1669,24 @@ export class ConlangSettingTab extends PluginSettingTab {
       .setDesc("Show translation tooltips when hovering this language's words.")
       .addToggle((tg) =>
         tg.setValue(lang.hoverEnabled).onChange(async (v) => {
-          lang.hoverEnabled = v;
-          await this.plugin.saveSettings();
+          const result = await this.plugin.setPersistedSettingState(
+            () => lang.hoverEnabled,
+            (next) => {
+              lang.hoverEnabled = next;
+            },
+            v,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              `Made Up Words: failed to save hover preference for "${lang.name}"`,
+              result.error,
+            );
+            new Notice(
+              `Made Up Words: could not save hover settings for "${lang.name}".`,
+            );
+            this.rerender();
+          }
         }),
       );
 

@@ -5129,24 +5129,63 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       dd.addOption("ctrl", "Ctrl / Cmd");
       dd.setValue(this.plugin.settings.hoverModifier);
       dd.onChange(async (value) => {
-        this.plugin.settings.hoverModifier = value;
-        await this.plugin.saveSettings();
+        const requested = value;
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.hoverModifier,
+          (next) => {
+            this.plugin.settings.hoverModifier = next;
+          },
+          requested
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save hover modifier preference",
+            result.error
+          );
+          new import_obsidian14.Notice("Made Up Words: could not save the hover modifier.");
+          this.rerender();
+        }
       });
     });
     new import_obsidian14.Setting(containerEl).setName("Show your words' meanings").setDesc(
       "Hovering one of your made-up words shows its dictionary entry. Covers headwords, phrases, declared forms, and inflected forms."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.hoverConlang).onChange(async (v) => {
-        this.plugin.settings.hoverConlang = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.hoverConlang,
+          (next) => {
+            this.plugin.settings.hoverConlang = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save conlang-hover preference",
+            result.error
+          );
+          new import_obsidian14.Notice("Made Up Words: could not save the hover change.");
+          this.rerender();
+        }
       })
     );
     new import_obsidian14.Setting(containerEl).setName("Show English to conlang translations").setDesc(
       "Hovering an English word shows the conlang words that mean it. Turn this off if your made-up words are being mistaken for English. It also switches off the cypher preview below, which transforms hovered text the same way. A word that's already one of your headwords is never treated as English, whichever way this is set."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.hoverEnglish).onChange(async (v) => {
-        this.plugin.settings.hoverEnglish = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.hoverEnglish,
+          (next) => {
+            this.plugin.settings.hoverEnglish = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save English-hover preference",
+            result.error
+          );
+          new import_obsidian14.Notice("Made Up Words: could not save the hover change.");
+        }
         this.rerender();
       })
     );
@@ -5158,8 +5197,22 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       dd.setValue(this.plugin.settings.hoverFallback);
       dd.setDisabled(!this.plugin.settings.hoverEnglish);
       dd.onChange(async (value) => {
-        this.plugin.settings.hoverFallback = value;
-        await this.plugin.saveSettings();
+        const requested = value;
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.hoverFallback,
+          (next) => {
+            this.plugin.settings.hoverFallback = next;
+          },
+          requested
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save hover fallback preference",
+            result.error
+          );
+          new import_obsidian14.Notice("Made Up Words: could not save the hover fallback.");
+          this.rerender();
+        }
       });
     });
   }
@@ -5169,8 +5222,22 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       "Visually mark recognised words in both the editor and Reading view."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightKnownWords).onChange(async (v) => {
-        this.plugin.settings.highlightKnownWords = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.highlightKnownWords,
+          (next) => {
+            this.plugin.settings.highlightKnownWords = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save highlighting preference",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the highlighting change."
+          );
+        }
         this.rerender();
       })
     );
@@ -5183,24 +5250,68 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       dd.addOption("background", "Background highlight");
       dd.setValue(this.plugin.settings.highlightStyle);
       dd.onChange(async (value) => {
-        this.plugin.settings.highlightStyle = value;
-        await this.plugin.saveSettings();
+        const requested = value;
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.highlightStyle,
+          (next) => {
+            this.plugin.settings.highlightStyle = next;
+          },
+          requested
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save highlight style preference",
+            result.error
+          );
+          new import_obsidian14.Notice("Made Up Words: could not save the highlight style.");
+          this.rerender();
+        }
       });
     });
     new import_obsidian14.Setting(containerEl).setName("Highlight conlang words").setDesc(
       "Mark words that exist as dictionary entries (including inflected forms and phrases)."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightConlang).onChange(async (v) => {
-        this.plugin.settings.highlightConlang = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.highlightConlang,
+          (next) => {
+            this.plugin.settings.highlightConlang = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save conlang-highlighting preference",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the highlighting change."
+          );
+          this.rerender();
+        }
       })
     );
     new import_obsidian14.Setting(containerEl).setName("Highlight translatable English words").setDesc(
       "Mark English words the dictionary can translate. Handy for spotting coverage, but noisier in English-heavy notes."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightEnglish).onChange(async (v) => {
-        this.plugin.settings.highlightEnglish = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.highlightEnglish,
+          (next) => {
+            this.plugin.settings.highlightEnglish = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save English-highlighting preference",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the highlighting change."
+          );
+          this.rerender();
+        }
       })
     );
   }
@@ -5255,8 +5366,23 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       "Include an entry's hardcoded `forms:` (its declension or conjugation table) in the hover tooltip. The side panel always shows them. Turn this off to keep tooltips compact when your entries carry long form tables."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.showFormsInTooltip).onChange(async (v) => {
-        this.plugin.settings.showFormsInTooltip = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.showFormsInTooltip,
+          (next) => {
+            this.plugin.settings.showFormsInTooltip = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save tooltip-forms preference",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the tooltip forms change."
+          );
+          this.rerender();
+        }
       })
     );
   }
@@ -5270,8 +5396,24 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       dd.addOption("wikilink", "Wikilink to dictionary entry");
       dd.setValue(this.plugin.settings.commitWrapper);
       dd.onChange(async (value) => {
-        this.plugin.settings.commitWrapper = value;
-        await this.plugin.saveSettings();
+        const requested = value;
+        const result = await this.plugin.setPersistedSettingState(
+          () => this.plugin.settings.commitWrapper,
+          (next) => {
+            this.plugin.settings.commitWrapper = next;
+          },
+          requested
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save translation wrapper preference",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the translation wrapper."
+          );
+          this.rerender();
+        }
       });
     });
   }
@@ -5617,8 +5759,23 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     }
     new import_obsidian14.Setting(body).setName("Enable hover tooltips").setDesc("Show translation tooltips when hovering this language's words.").addToggle(
       (tg) => tg.setValue(lang.hoverEnabled).onChange(async (v) => {
-        lang.hoverEnabled = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setPersistedSettingState(
+          () => lang.hoverEnabled,
+          (next) => {
+            lang.hoverEnabled = next;
+          },
+          v
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            `Made Up Words: failed to save hover preference for "${lang.name}"`,
+            result.error
+          );
+          new import_obsidian14.Notice(
+            `Made Up Words: could not save hover settings for "${lang.name}".`
+          );
+          this.rerender();
+        }
       })
     );
     new import_obsidian14.Setting(body).addButton(
@@ -10471,6 +10628,22 @@ async function applyPrimaryLanguageState(request) {
   return { status: "applied" };
 }
 
+// persisted-setting-state.ts
+async function applyPersistedSettingState(request) {
+  const previous = request.read();
+  if (Object.is(previous, request.requested)) {
+    return { status: "unchanged" };
+  }
+  request.write(request.requested);
+  try {
+    await request.save();
+  } catch (error) {
+    request.write(previous);
+    return { status: "save-failed", error };
+  }
+  return { status: "applied" };
+}
+
 // case-sensitive-state.ts
 async function applyCaseSensitiveMatchingState(request) {
   const previousValue = request.state.caseSensitiveMatching;
@@ -11304,8 +11477,23 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
       id: "toggle-highlighting",
       name: "Toggle known-word highlighting",
       callback: async () => {
-        this.settings.highlightKnownWords = !this.settings.highlightKnownWords;
-        await this.saveSettings();
+        const requested = !this.settings.highlightKnownWords;
+        const result = await this.setPersistedSettingState(
+          () => this.settings.highlightKnownWords,
+          (value) => {
+            this.settings.highlightKnownWords = value;
+          },
+          requested
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to save highlighting preference",
+            result.error
+          );
+          new import_obsidian25.Notice("Made Up Words: could not save the highlighting change.");
+          return;
+        }
+        if (result.status === "unchanged") return;
         new import_obsidian25.Notice(
           `Made Up Words: highlighting ${this.settings.highlightKnownWords ? "on" : "off"}`
         );
@@ -11425,6 +11613,27 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     return applyPrimaryLanguageState({
       state: this.settings,
       primaryLanguage,
+      save: () => this.saveSettings()
+    });
+  }
+  /**
+   * Persist one ordinary settings preference without allowing a failed write
+   * to remain authoritative in the live settings object.
+   *
+   * These preferences are consumed directly from settings rather than through
+   * a rebuilt linguistic inventory. The requested value therefore needs only
+   * one authority boundary: successful persistence. The pure H12 transaction
+   * restores the previous live value when saveData() fails so runtime behavior
+   * and later whole-settings saves cannot inherit an unsuccessful request.
+   *
+   * read/write callbacks intentionally support both top-level settings and
+   * nested values such as LanguageConfig.hoverEnabled.
+   */
+  async setPersistedSettingState(read, write, requested) {
+    return applyPersistedSettingState({
+      read,
+      write,
+      requested,
       save: () => this.saveSettings()
     });
   }

@@ -1869,7 +1869,7 @@ sink was found. SEC-005-H1 is remediated and regression-tested.
 
 Review of command and mutation boundaries is in progress.
 
-The review has so far completed ten substantial authority boundaries:
+The review has so far completed twelve substantial authority boundaries:
 
 - dictionary-entry persistence
 - translation commit into existing creator-authored Markdown
@@ -1882,8 +1882,9 @@ The review has so far completed ten substantial authority boundaries:
 - case-sensitive-matching persistence/runtime authority
 - live cypher/inflection rule persistence authority
 - language-profile-path persistence/runtime authority
+- ordinary persisted-settings failed-save authority
 
-SEC-006-H1 through SEC-006-H11 are remediated and verified.
+SEC-006-H1 through SEC-006-H12 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
 review before this section can be marked Pass. Broader persisted-settings
@@ -3199,6 +3200,99 @@ settings mutation surfaces remain under §6 review.
 
 **Status:** Remediated and verified.
 
+#### SEC-006-H12 — Ordinary settings changes could retain runtime authority after persistence failure
+
+**Severity:** Hardening
+
+Several ordinary Settings controls and the command-palette highlighting toggle
+previously changed values directly in the plugin's live `settings` object and
+then called `saveSettings()`. If persistence rejected, the requested value
+remained in memory even though it had not been successfully persisted. Runtime
+consumers could therefore continue observing an unsuccessful request, and a
+later unrelated whole-settings save after that failed transaction settled could
+persist the stale mutation.
+
+The required invariant is:
+
+> An ordinary settings change becomes authoritative only when persistence
+> succeeds. If persistence fails, the previous in-memory value must be restored
+> so the failed request cannot influence runtime behavior or be incorporated
+> into a later unrelated whole-settings save.
+
+This invariant concerns the state after an individual persistence attempt has
+settled. It does not claim to serialize overlapping whole-settings saves or make
+their ordering safe; that broader concurrency boundary remains under §6 review.
+
+**Remediation:**
+
+`persisted-setting-state.ts` now provides a small generic persistence
+transaction for ordinary settings-backed values. The transaction:
+
+- reads the previously authoritative in-memory value before mutation;
+- skips persistence when `Object.is()` shows that the requested value is
+  unchanged;
+- temporarily installs the requested value because `saveSettings()` persists
+  the complete live settings object;
+- restores the previous in-memory value immediately when persistence rejects;
+- returns an explicit applied, unchanged, or save-failed result to the caller.
+
+`ConlangPlugin.setPersistedSettingState()` is the plugin-level H12 boundary and
+supports both top-level settings and nested settings-backed values through
+explicit read/write callbacks.
+
+The reviewed ordinary settings mutation surfaces now route through that
+boundary:
+
+- hover modifier;
+- conlang hover;
+- English hover;
+- hover fallback;
+- known-word highlighting, including the command-palette toggle;
+- highlight style;
+- conlang highlighting;
+- English highlighting;
+- tooltip form display;
+- translation commit wrapper;
+- per-language `hoverEnabled`.
+
+On failed persistence, callers report the failure and restore affected Settings
+UI where necessary. Successful ordinary preference changes do not trigger a
+linguistic-inventory reload; the existing successful `saveSettings()` path
+performs the normal hover, panel, and highlighting refreshes.
+
+The startup normalization/migration assignments are not interactive H12
+mutations. The welcome-state fire-and-forget `saveData(this.settings)` path is
+also not claimed as remediated by H12 and remains part of the broader persisted
+settings/concurrency review.
+
+**Verification:**
+
+`scripts/test-persisted-setting-state.mjs` exercises the production H12 helper
+through a bundled test and covers:
+
+- successful persistence with the requested value present while `save()` runs;
+- failed persistence restoring the previous live value;
+- a later whole-settings snapshot, after the failed transaction has settled,
+  excluding the rejected mutation;
+- rollback of a nested per-language setting;
+- unchanged values avoiding an unnecessary persistence call.
+
+The focused H12 regression passes. All 16 package-listed regression scripts
+pass, along with the neighboring active-language, language-source-preflight,
+language-source-state, language-rename-state, language-root-repair-state,
+primary-language, case-sensitive, linguistic-rule, language-profile-state, and
+language-profile regression suites.
+
+The production build succeeds and regenerates `main.js`. Lint reports zero
+errors with the established 14-warning baseline. H12 source and test files pass
+Prettier, and `git diff --check` passes.
+
+This finding does not close the broader whole-settings persistence/concurrency
+review. H12 does not serialize overlapping settings saves, and the
+fire-and-forget welcome-state persistence path remains to be reviewed.
+
+**Status:** Remediated and verified.
+
 ### Status
 
 **Reviewing**
@@ -3630,6 +3724,7 @@ audit section.
 | SEC-006-H9  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Case-sensitive matching could diverge between persisted/in-memory settings and dictionary/phrase runtime indexes after save failure or a preflight-blocked reload. | Code review; `scripts/test-case-sensitive-state.mjs`; neighboring active-language and source-state tests; full regression suite; production build; lint; `git diff --check`; staged generated-bundle verification; commit `dcde644` | Case-sensitive matching now uses a persistence/runtime transaction: save failure restores memory without reload; explicit preflight block restores and re-persists the previous policy; rollback-save failure is distinct; post-preflight reload exceptions are reported without claiming an unsafe rollback. |
 | SEC-006-H10 | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Live cypher/inflection configuration could become runtime-authoritative before persistence succeeded, while overlapping rule edits could make independent rollback ordering unsafe. | Code review; `scripts/test-linguistic-rule-state.mjs`; complete established regression suite; production build; lint; Prettier; `git diff --check` | Cypher and inflection edits now use detached candidates in one serialized H10 queue; save failure restores exact prior authority; stale targets fail closed by identity; successful persistence reconciles surviving object identities without resurrecting deleted state. The queue deliberately does not claim to serialize unrelated settings saves. |
 | SEC-006-H11 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Language profile-path changes could leave unpersisted live configuration after save failure or leave active profile-derived runtime identity established from a previous path. | Code review; `scripts/test-language-profile-state.mjs`; `scripts/test-language-profile.mjs`; complete established regression suite; neighboring authority regression suites; production build; lint; Prettier; `git diff --check` | Profile-path changes now validate before mutation and use a shared persistence/runtime transaction. Save failure restores memory; active changes reload runtime; preflight-blocked reload restores and re-persists the previous path; post-preflight reload exceptions do not claim unsafe rollback; inactive valid changes persist without unnecessary reload. |
+| SEC-006-H12 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Ordinary settings changes could remain live after persistence failure, allowing runtime behavior or a later whole-settings save after the failed transaction settled to inherit an unsuccessful request. | Code review; `scripts/test-persisted-setting-state.mjs`; all 16 package-listed regression scripts; neighboring authority regression suites; production build; lint; Prettier; `git diff --check` | Ordinary settings changes now use a shared failed-save rollback transaction. The previous live value is restored when persistence rejects, unchanged requests avoid redundant saves, and reviewed top-level and per-language ordinary settings controls share the boundary. Overlapping whole-settings save ordering remains outside H12 and under review. |
 
 ---
 

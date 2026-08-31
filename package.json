@@ -17,6 +17,7 @@
     "test:lookup-query": "node scripts/test-lookup-query.mjs",
     "test:word-scan": "node scripts/test-word-scan.mjs",
     "test:settings-validation": "node scripts/test-settings-validation.mjs",
+    "test:persisted-setting-state": "node scripts/test-persisted-setting-state.mjs",
     "test:dictionary-entry-writer": "node scripts/test-dictionary-entry-writer.mjs",
     "test:dictionary-language-scope": "node scripts/test-dictionary-language-scope.mjs",
     "test:inflection-language-scope": "node scripts/test-inflection-language-scope.mjs",
