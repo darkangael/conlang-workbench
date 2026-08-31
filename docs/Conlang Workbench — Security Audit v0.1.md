@@ -1881,8 +1881,9 @@ The review has so far completed ten substantial authority boundaries:
 - primary-language-only authority
 - case-sensitive-matching persistence/runtime authority
 - live cypher/inflection rule persistence authority
+- language-profile-path persistence/runtime authority
 
-SEC-006-H1 through SEC-006-H10 are remediated and verified.
+SEC-006-H1 through SEC-006-H11 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
 review before this section can be marked Pass. Broader persisted-settings
@@ -3087,6 +3088,117 @@ pass.
 
 **Status:** Remediated and verified.
 
+#### SEC-006-H11 — Language profile-path changes lacked persistence/runtime profile authority
+
+**Severity:** Hardening
+
+`profilePath` is optional configuration identifying a canonical Language Profile
+note. For an active language, that profile contributes runtime identity:
+morpheme, example, and phonology inventories may receive the loaded profile's
+stable `language_id`. Settings previously assigned `lang.profilePath` directly
+and then called `saveSettings()`. A failed save could therefore leave an
+unpersisted profile path in live configuration, while a successful save without
+runtime reload could leave profile-derived runtime identity established from
+the previous path.
+
+The required invariant is:
+
+> A requested language-profile path becomes authoritative only when the
+> requested path is valid for profile use, persistence succeeds, and—when the
+> language is active—the linguistic runtime is successfully rebuilt using the
+> resulting profile identity. A failed save restores the previous in-memory
+> path. A preflight-blocked reload restores and re-persists the previous path
+> because existing runtime state is proven untouched. A post-preflight reload
+> exception is reported without rollback because runtime replacement may
+> already have begun.
+
+**Remediation:**
+
+`language-profile.ts` now exposes `validateLanguageProfilePath()` and shares one
+frontmatter interpretation helper between validation and runtime loading.
+
+Profile-path validation:
+
+- treats an absent path as valid because Language Profiles are optional;
+- applies the existing vault-relative path-safety rules before resolving a
+  target;
+- requires the configured target to resolve to a Markdown `TFile`;
+- requires readable frontmatter with `type: language-profile`, a nonblank
+  `language_id`, and a nonblank `language`;
+- deliberately permits profiles outside the configured language root;
+- does not invent a requirement that the profile's creator-authored `language`
+  value equal `LanguageConfig.name`;
+- remains read-only with respect to creator-authored profile Markdown/YAML.
+
+`language-profile-state.ts` now owns the H11 persistence/runtime transaction.
+The transaction validates before mutation, captures the previous profile path,
+persists the requested path, and distinguishes active from inactive languages.
+
+For an inactive language, successful validation and persistence establish the
+new configuration without an unnecessary runtime reload because that language
+has no loaded profile-derived linguistic runtime to synchronize.
+
+For an active language, successful persistence is followed by
+`reloadActiveLanguage()`. An explicit source-preflight block occurs before H3
+runtime replacement, so H11 restores the previous in-memory path and performs a
+compensating save. If that compensating save fails, the previous in-memory path
+is retained and the rollback-persistence failure is reported distinctly.
+
+An unexpected reload exception after preflight is not treated as a safe
+rollback point. The requested persisted path remains in place and the failure
+is reported because runtime replacement may already have begun.
+
+`ConlangPlugin.setLanguageProfileState()` is now the plugin-level H11 authority
+boundary, and the Settings Language Profile control waits for the transaction
+to settle before rerendering from resulting authority.
+
+Active removal of a profile path also reloads runtime so previously loaded
+profile identity cannot remain authoritative after the configured profile is
+cleared.
+
+**Verification:**
+
+`scripts/test-language-profile-state.mjs` covers:
+
+- active profile change with save-before-reload ordering;
+- invalid-request refusal before mutation or persistence;
+- initial save failure restoring the previous in-memory path without reload;
+- preflight-blocked reload restoring and re-persisting the previous path;
+- compensating-save failure while retaining previous in-memory authority;
+- post-preflight reload exception without unsafe rollback;
+- inactive-language persistence without unnecessary reload;
+- active profile removal with runtime reload.
+
+`scripts/test-language-profile.mjs` exercises the real production validator and
+loader through a bundled Obsidian `TFile`/`TFolder` test double. It covers:
+
+- optional absent profile paths;
+- unsafe parent traversal;
+- missing targets and folder targets;
+- non-Markdown targets;
+- unavailable frontmatter;
+- wrong profile type and blank required profile identity fields;
+- valid profiles outside the language root;
+- shared validation/runtime frontmatter interpretation;
+- preservation of the existing distinction between creator-authored profile
+  `language` and configured `LanguageConfig.name`.
+
+Focused H11 transaction and profile-validation regression tests pass. All
+15 established package regression suites pass, along with the neighboring
+active-language, source-preflight, source-state, root-authority,
+root-repair-state, primary-language, case-sensitive, and linguistic-rule
+authority regression suites.
+
+The production build succeeds and regenerates `main.js`. Lint reports zero
+errors with the established 14-warning baseline. H11 source and test files pass
+Prettier verification, and `git diff --check` passes.
+
+This finding does not close the broader persisted-settings concurrency review.
+`saveSettings()` still persists the complete settings object, and unrelated
+settings mutation surfaces remain under §6 review.
+
+**Status:** Remediated and verified.
+
 ### Status
 
 **Reviewing**
@@ -3517,6 +3629,7 @@ audit section.
 | SEC-006-H8  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Primary-language-only controls could change runtime-observed primary authority before persistence succeeded, leaving an unpersisted in-memory primary after save failure. | Code review; `scripts/test-primary-language-state.mjs`; full regression suite; production build; lint; `git diff --check`; commit `92bf124` | Primary-only selection now uses a shared transaction that requires one uniquely configured already-active language, skips unchanged requests, restores the previous in-memory primary on save failure, and deliberately avoids unnecessary linguistic-inventory reload. |
 | SEC-006-H9  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Case-sensitive matching could diverge between persisted/in-memory settings and dictionary/phrase runtime indexes after save failure or a preflight-blocked reload. | Code review; `scripts/test-case-sensitive-state.mjs`; neighboring active-language and source-state tests; full regression suite; production build; lint; `git diff --check`; staged generated-bundle verification; commit `dcde644` | Case-sensitive matching now uses a persistence/runtime transaction: save failure restores memory without reload; explicit preflight block restores and re-persists the previous policy; rollback-save failure is distinct; post-preflight reload exceptions are reported without claiming an unsafe rollback. |
 | SEC-006-H10 | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Live cypher/inflection configuration could become runtime-authoritative before persistence succeeded, while overlapping rule edits could make independent rollback ordering unsafe. | Code review; `scripts/test-linguistic-rule-state.mjs`; complete established regression suite; production build; lint; Prettier; `git diff --check` | Cypher and inflection edits now use detached candidates in one serialized H10 queue; save failure restores exact prior authority; stale targets fail closed by identity; successful persistence reconciles surviving object identities without resurrecting deleted state. The queue deliberately does not claim to serialize unrelated settings saves. |
+| SEC-006-H11 | §6 Commands and Mutating Operations | Remediated and verified | Hardening | Language profile-path changes could leave unpersisted live configuration after save failure or leave active profile-derived runtime identity established from a previous path. | Code review; `scripts/test-language-profile-state.mjs`; `scripts/test-language-profile.mjs`; complete established regression suite; neighboring authority regression suites; production build; lint; Prettier; `git diff --check` | Profile-path changes now validate before mutation and use a shared persistence/runtime transaction. Save failure restores memory; active changes reload runtime; preflight-blocked reload restores and re-persists the previous path; post-preflight reload exceptions do not claim unsafe rollback; inactive valid changes persist without unnecessary reload. |
 
 ---
 

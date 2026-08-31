@@ -29,7 +29,10 @@ import {
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
-import { loadLanguageProfile } from "./language-profile";
+import {
+  loadLanguageProfile,
+  validateLanguageProfilePath,
+} from "./language-profile";
 import { isPathWithinFolder, validateVaultRelativePath } from "./vault-paths";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
@@ -92,6 +95,10 @@ import {
   type CanonicalFolderSetting,
   type LanguageSourceStateResult,
 } from "./language-source-state";
+import {
+  applyLanguageProfileState,
+  type LanguageProfileStateResult,
+} from "./language-profile-state";
 import {
   inferLegacyLanguageRoot,
   validateLanguageSourceChange,
@@ -587,6 +594,34 @@ export default class ConlangPlugin extends Plugin {
             return existing instanceof TFolder ? "folder" : "other";
           },
         }),
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage(),
+    });
+  }
+
+  /**
+   * Commit one optional canonical Language Profile path through the shared H11
+   * authority transaction.
+   *
+   * Profile identity participates in active linguistic runtime: morpheme,
+   * example, and phonology inventories may receive the loaded profile's stable
+   * language id. Persisting profilePath alone is therefore insufficient for an
+   * active language. The transaction validates the requested profile before
+   * mutation, persists it, and then requires active runtime to be re-established
+   * before reporting success.
+   *
+   * Inactive languages have no profile-derived runtime state to synchronize, so
+   * a valid persisted change can wait until normal activation performs the load.
+   */
+  async setLanguageProfileState(
+    language: LanguageConfig,
+    profilePath: string | undefined,
+  ): Promise<LanguageProfileStateResult> {
+    return applyLanguageProfileState({
+      language,
+      activeLanguages: this.settings.activeLanguages,
+      profilePath,
+      validate: () => validateLanguageProfilePath(this.app, profilePath),
       save: () => this.saveSettings(),
       reload: () => this.reloadActiveLanguage(),
     });

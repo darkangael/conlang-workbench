@@ -549,6 +549,78 @@ export class ConlangSettingTab extends PluginSettingTab {
   }
 
   /**
+   * Commit one optional Language Profile path through the H11 authority
+   * transaction instead of mutating LanguageConfig directly from this control.
+   *
+   * The helper deliberately mirrors the established H7 source-change reporting:
+   * a blocked reload is already explained by H3 diagnostics; known-safe failures
+   * restore the previous path; and a post-preflight reload exception does not
+   * claim rollback because runtime replacement may already have begun.
+   */
+  private async commitLanguageProfile(
+    lang: LanguageConfig,
+    profilePath: string | undefined,
+  ): Promise<boolean> {
+    const result = await this.plugin.setLanguageProfileState(lang, profilePath);
+
+    switch (result.status) {
+      case "applied":
+        return true;
+
+      case "blocked":
+        /*
+         * H3 preflight stopped the reload before profile/inventory replacement.
+         * The transaction has therefore safely restored and re-persisted the
+         * previous profile path.
+         */
+        return false;
+
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save language-profile change:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: could not save the language-profile change; the previous profile path was restored.",
+        );
+        return false;
+
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist language-profile rollback:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the profile change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+        );
+        return false;
+
+      case "reload-failed":
+        /*
+         * Once H3 preflight has passed, reloadActiveLanguage() may already have
+         * replaced the profile map or profile-derived inventories. Keep the
+         * requested persisted path rather than manufacturing an unsafe rollback.
+         */
+        console.error(
+          "Made Up Words: language-profile reload failed after preflight:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: language data failed to reload after profile validation. The requested profile path was kept because automatic rollback is no longer known to be safe. Check the developer console.",
+        );
+        return false;
+
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid language-profile request:",
+          result.error,
+        );
+        new Notice(`Made Up Words: ${result.error}`);
+        return false;
+    }
+  }
+
+  /**
    * Run an explicit structural repair for one language's already-established
    * root.
    *
@@ -1364,8 +1436,8 @@ export class ConlangSettingTab extends PluginSettingTab {
       )
       .addText((t) =>
         t.setValue(lang.profilePath ?? "").onChange(async (v) => {
-          lang.profilePath = v.trim() || undefined;
-          await this.plugin.saveSettings();
+          await this.commitLanguageProfile(lang, v.trim() || undefined);
+          this.rerender();
         }),
       );
 

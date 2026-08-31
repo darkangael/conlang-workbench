@@ -2695,16 +2695,8 @@ var PhonologyInventory = class {
 
 // language-profile.ts
 var import_obsidian7 = require("obsidian");
-function loadLanguageProfile(app, config) {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
-  const profilePath = (_a = config.profilePath) == null ? void 0 : _a.trim();
-  if (!profilePath) return null;
-  const abstractFile = app.vault.getAbstractFileByPath(profilePath);
-  if (!(abstractFile instanceof import_obsidian7.TFile)) return null;
-  if (abstractFile.extension !== "md") return null;
-  const cache = app.metadataCache.getFileCache(abstractFile);
-  if (!cache) return null;
-  const fm = (_b = cache.frontmatter) != null ? _b : {};
+function parseLanguageProfileFrontmatter(path, frontmatter) {
+  var _a, _b, _c, _d, _e, _f;
   const asString = (value) => {
     if (value === void 0 || value === null) return void 0;
     if (typeof value === "string") return value;
@@ -2713,22 +2705,74 @@ function loadLanguageProfile(app, config) {
     }
     return void 0;
   };
-  const type = (_c = asString(fm.type)) == null ? void 0 : _c.trim();
+  const type = (_a = asString(frontmatter.type)) == null ? void 0 : _a.trim();
   if (type !== "language-profile") return null;
-  const id = (_d = asString(fm.language_id)) == null ? void 0 : _d.trim();
-  const name = (_e = asString(fm.language)) == null ? void 0 : _e.trim();
+  const id = (_b = asString(frontmatter.language_id)) == null ? void 0 : _b.trim();
+  const name = (_c = asString(frontmatter.language)) == null ? void 0 : _c.trim();
   if (!id || !name) return null;
-  const modalityList = parseStringList(fm.modality);
+  const modalityList = parseStringList(frontmatter.modality);
   return {
     id,
     name,
-    path: abstractFile.path,
-    autonym: (_f = asString(fm.autonym)) == null ? void 0 : _f.trim(),
-    aliases: parseStringList(fm.aliases),
-    status: (_g = asString(fm.status)) == null ? void 0 : _g.trim(),
+    path,
+    autonym: (_d = asString(frontmatter.autonym)) == null ? void 0 : _d.trim(),
+    aliases: parseStringList(frontmatter.aliases),
+    status: (_e = asString(frontmatter.status)) == null ? void 0 : _e.trim(),
     modality: modalityList && modalityList.length > 1 ? modalityList : modalityList == null ? void 0 : modalityList[0],
-    documentationLanguage: (_h = asString(fm.documentation_language)) == null ? void 0 : _h.trim()
+    documentationLanguage: (_f = asString(frontmatter.documentation_language)) == null ? void 0 : _f.trim()
   };
+}
+function validateLanguageProfilePath(app, profilePath) {
+  if (profilePath === void 0) {
+    return { status: "valid" };
+  }
+  let safePath;
+  try {
+    safePath = validateVaultRelativePath(profilePath);
+  } catch (error) {
+    return {
+      status: "invalid",
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+  const abstractFile = app.vault.getAbstractFileByPath(safePath);
+  if (!(abstractFile instanceof import_obsidian7.TFile)) {
+    return {
+      status: "invalid",
+      error: `Language profile path "${safePath}" does not resolve to a file.`
+    };
+  }
+  if (abstractFile.extension !== "md") {
+    return {
+      status: "invalid",
+      error: `Language profile path "${safePath}" is not a Markdown file.`
+    };
+  }
+  const cache = app.metadataCache.getFileCache(abstractFile);
+  if (!(cache == null ? void 0 : cache.frontmatter)) {
+    return {
+      status: "invalid",
+      error: `Language profile "${safePath}" has no readable frontmatter.`
+    };
+  }
+  if (!parseLanguageProfileFrontmatter(safePath, cache.frontmatter)) {
+    return {
+      status: "invalid",
+      error: `Language profile "${safePath}" must have type "language-profile" and nonblank language_id and language fields.`
+    };
+  }
+  return { status: "valid" };
+}
+function loadLanguageProfile(app, config) {
+  var _a;
+  const profilePath = (_a = config.profilePath) == null ? void 0 : _a.trim();
+  if (!profilePath) return null;
+  const abstractFile = app.vault.getAbstractFileByPath(profilePath);
+  if (!(abstractFile instanceof import_obsidian7.TFile)) return null;
+  if (abstractFile.extension !== "md") return null;
+  const cache = app.metadataCache.getFileCache(abstractFile);
+  if (!(cache == null ? void 0 : cache.frontmatter)) return null;
+  return parseLanguageProfileFrontmatter(abstractFile.path, cache.frontmatter);
 }
 
 // inflection.ts
@@ -4935,6 +4979,58 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     }
   }
   /**
+   * Commit one optional Language Profile path through the H11 authority
+   * transaction instead of mutating LanguageConfig directly from this control.
+   *
+   * The helper deliberately mirrors the established H7 source-change reporting:
+   * a blocked reload is already explained by H3 diagnostics; known-safe failures
+   * restore the previous path; and a post-preflight reload exception does not
+   * claim rollback because runtime replacement may already have begun.
+   */
+  async commitLanguageProfile(lang, profilePath) {
+    const result = await this.plugin.setLanguageProfileState(lang, profilePath);
+    switch (result.status) {
+      case "applied":
+        return true;
+      case "blocked":
+        return false;
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save language-profile change:",
+          result.error
+        );
+        new import_obsidian14.Notice(
+          "Made Up Words: could not save the language-profile change; the previous profile path was restored."
+        );
+        return false;
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist language-profile rollback:",
+          result.error
+        );
+        new import_obsidian14.Notice(
+          "Made Up Words: the profile change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+        );
+        return false;
+      case "reload-failed":
+        console.error(
+          "Made Up Words: language-profile reload failed after preflight:",
+          result.error
+        );
+        new import_obsidian14.Notice(
+          "Made Up Words: language data failed to reload after profile validation. The requested profile path was kept because automatic rollback is no longer known to be safe. Check the developer console."
+        );
+        return false;
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid language-profile request:",
+          result.error
+        );
+        new import_obsidian14.Notice(`Made Up Words: ${result.error}`);
+        return false;
+    }
+  }
+  /**
    * Run an explicit structural repair for one language's already-established
    * root.
    *
@@ -5471,8 +5567,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       (t) => {
         var _a2;
         return t.setValue((_a2 = lang.profilePath) != null ? _a2 : "").onChange(async (v) => {
-          lang.profilePath = v.trim() || void 0;
-          await this.plugin.saveSettings();
+          await this.commitLanguageProfile(lang, v.trim() || void 0);
+          this.rerender();
         });
       }
     );
@@ -10468,6 +10564,48 @@ async function applyLanguageSourceState(request) {
   }
 }
 
+// language-profile-state.ts
+async function applyLanguageProfileState(request) {
+  const { language, activeLanguages, profilePath, validate, save, reload } = request;
+  const validation = validate();
+  if (validation.status === "invalid") {
+    return {
+      status: "invalid-request",
+      error: validation.error
+    };
+  }
+  const previousProfilePath = language.profilePath;
+  const isActive = activeLanguages.includes(language.name);
+  language.profilePath = profilePath;
+  try {
+    await save();
+  } catch (error) {
+    language.profilePath = previousProfilePath;
+    return { status: "save-failed", error };
+  }
+  if (!isActive) {
+    return { status: "applied" };
+  }
+  try {
+    const reloadResult = await reload();
+    if (reloadResult.status === "loaded") {
+      return {
+        status: "applied",
+        dictionaryCount: reloadResult.dictionaryCount
+      };
+    }
+    language.profilePath = previousProfilePath;
+    try {
+      await save();
+    } catch (error) {
+      return { status: "rollback-save-failed", error };
+    }
+    return { status: "blocked" };
+  } catch (error) {
+    return { status: "reload-failed", error };
+  }
+}
+
 // language-root-repair.ts
 function planLanguageRootRepair(request) {
   const { language, languages, rootFolder, pathState } = request;
@@ -11371,6 +11509,30 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
           return existing instanceof import_obsidian25.TFolder ? "folder" : "other";
         }
       }),
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage()
+    });
+  }
+  /**
+   * Commit one optional canonical Language Profile path through the shared H11
+   * authority transaction.
+   *
+   * Profile identity participates in active linguistic runtime: morpheme,
+   * example, and phonology inventories may receive the loaded profile's stable
+   * language id. Persisting profilePath alone is therefore insufficient for an
+   * active language. The transaction validates the requested profile before
+   * mutation, persists it, and then requires active runtime to be re-established
+   * before reporting success.
+   *
+   * Inactive languages have no profile-derived runtime state to synchronize, so
+   * a valid persisted change can wait until normal activation performs the load.
+   */
+  async setLanguageProfileState(language, profilePath) {
+    return applyLanguageProfileState({
+      language,
+      activeLanguages: this.settings.activeLanguages,
+      profilePath,
+      validate: () => validateLanguageProfilePath(this.app, profilePath),
       save: () => this.saveSettings(),
       reload: () => this.reloadActiveLanguage()
     });
