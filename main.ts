@@ -79,6 +79,10 @@ import {
   type PrimaryLanguageStateResult,
 } from "./primary-language-state";
 import {
+  applyCaseSensitiveMatchingState,
+  type CaseSensitiveMatchingStateResult,
+} from "./case-sensitive-state";
+import {
   applyLanguageSourceState,
   type CanonicalFolderSetting,
   type LanguageSourceStateResult,
@@ -468,6 +472,35 @@ export default class ConlangPlugin extends Plugin {
       state: this.settings,
       primaryLanguage,
       save: () => this.saveSettings(),
+    });
+  }
+
+  /**
+   * Establish the requested conlang case-matching policy as one authority
+   * transaction.
+   *
+   * Case sensitivity is not merely a display preference. Dictionary headword,
+   * declared-form, and phrase indexes are built using this setting, so changing
+   * it requires both successful persistence and a successful linguistic reload.
+   *
+   * The pure transaction owns the safe rollback boundaries:
+   *
+   * - an initial save failure can restore memory because runtime was untouched;
+   * - a preflight-blocked reload can restore and re-save the old setting because
+   *   reloadActiveLanguage() guarantees that "blocked" occurs before indexes are
+   *   replaced;
+   * - an arbitrary thrown reload error is NOT rolled back, because replacement
+   *   may already have started and restoring only the setting would falsely
+   *   claim that the old runtime had also been restored.
+   */
+  async setCaseSensitiveMatchingState(
+    caseSensitiveMatching: boolean,
+  ): Promise<CaseSensitiveMatchingStateResult> {
+    return applyCaseSensitiveMatchingState({
+      state: this.settings,
+      caseSensitiveMatching,
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage(),
     });
   }
 

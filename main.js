@@ -4964,9 +4964,43 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       "Treat capitalized and lowercase conlang words as different entries (e.g. a proper noun 'Sol' vs a common noun 'sol'). Affects dictionary headwords, aliases, and phrase matching. English-side lookups stay case-insensitive. Changing this reloads the dictionary."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.caseSensitiveMatching).onChange(async (v) => {
-        this.plugin.settings.caseSensitiveMatching = v;
-        await this.plugin.saveSettings();
-        await this.plugin.reloadActiveLanguage();
+        const result = await this.plugin.setCaseSensitiveMatchingState(v);
+        if (result.status === "applied") {
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+          return;
+        }
+        if (result.status === "unchanged") {
+          return;
+        }
+        if (result.status === "save-failed") {
+          new import_obsidian14.Notice(
+            "Conlang workbench: could not save the case-matching change."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "blocked") {
+          new import_obsidian14.Notice(
+            "Conlang workbench: case-matching change was blocked because the active language sources are not currently safe to reload."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "rollback-save-failed") {
+          new import_obsidian14.Notice(
+            "Conlang workbench: the case-matching change was blocked and restored in memory, but the rollback could not be saved."
+          );
+          this.rerender();
+          return;
+        }
+        console.error(
+          "[Conlang] Case-sensitive matching reload failed:",
+          result.error
+        );
+        new import_obsidian14.Notice(
+          "Conlang workbench: case-matching reload failed after it began. See the developer console."
+        );
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
       })
@@ -9776,6 +9810,41 @@ async function applyPrimaryLanguageState(request) {
   return { status: "applied" };
 }
 
+// case-sensitive-state.ts
+async function applyCaseSensitiveMatchingState(request) {
+  const previousValue = request.state.caseSensitiveMatching;
+  const requestedValue = request.caseSensitiveMatching;
+  if (requestedValue === previousValue) {
+    return { status: "unchanged" };
+  }
+  request.state.caseSensitiveMatching = requestedValue;
+  try {
+    await request.save();
+  } catch (error) {
+    request.state.caseSensitiveMatching = previousValue;
+    return { status: "save-failed", error };
+  }
+  let reload;
+  try {
+    reload = await request.reload();
+  } catch (error) {
+    return { status: "reload-failed", error };
+  }
+  if (reload.status === "loaded") {
+    return {
+      status: "applied",
+      dictionaryCount: reload.dictionaryCount
+    };
+  }
+  request.state.caseSensitiveMatching = previousValue;
+  try {
+    await request.save();
+  } catch (error) {
+    return { status: "rollback-save-failed", error };
+  }
+  return { status: "blocked" };
+}
+
 // language-source-state.ts
 function getSourceValue(language, setting) {
   return language[setting];
@@ -10642,6 +10711,32 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
       state: this.settings,
       primaryLanguage,
       save: () => this.saveSettings()
+    });
+  }
+  /**
+   * Establish the requested conlang case-matching policy as one authority
+   * transaction.
+   *
+   * Case sensitivity is not merely a display preference. Dictionary headword,
+   * declared-form, and phrase indexes are built using this setting, so changing
+   * it requires both successful persistence and a successful linguistic reload.
+   *
+   * The pure transaction owns the safe rollback boundaries:
+   *
+   * - an initial save failure can restore memory because runtime was untouched;
+   * - a preflight-blocked reload can restore and re-save the old setting because
+   *   reloadActiveLanguage() guarantees that "blocked" occurs before indexes are
+   *   replaced;
+   * - an arbitrary thrown reload error is NOT rolled back, because replacement
+   *   may already have started and restoring only the setting would falsely
+   *   claim that the old runtime had also been restored.
+   */
+  async setCaseSensitiveMatchingState(caseSensitiveMatching) {
+    return applyCaseSensitiveMatchingState({
+      state: this.settings,
+      caseSensitiveMatching,
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage()
     });
   }
   /**

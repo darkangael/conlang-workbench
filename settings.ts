@@ -831,9 +831,69 @@ export class ConlangSettingTab extends PluginSettingTab {
         tg
           .setValue(this.plugin.settings.caseSensitiveMatching)
           .onChange(async (v) => {
-            this.plugin.settings.caseSensitiveMatching = v;
-            await this.plugin.saveSettings();
-            await this.plugin.reloadActiveLanguage();
+            /*
+             * Case sensitivity controls how the dictionary and phrase indexes
+             * are built, so this cannot be treated like an ordinary persisted
+             * display preference. The plugin-level authority transaction keeps
+             * persistence and runtime-index establishment synchronized.
+             */
+            const result = await this.plugin.setCaseSensitiveMatchingState(v);
+
+            if (result.status === "applied") {
+              /*
+               * The replacement dictionary is now established under the new
+               * policy. Refresh consumers only after that authority succeeds.
+               */
+              this.plugin.refreshPanel();
+              this.plugin.refreshHighlights();
+              return;
+            }
+
+            if (result.status === "unchanged") {
+              return;
+            }
+
+            if (result.status === "save-failed") {
+              new Notice(
+                "Conlang workbench: could not save the case-matching change.",
+              );
+              this.rerender();
+              return;
+            }
+
+            if (result.status === "blocked") {
+              new Notice(
+                "Conlang workbench: case-matching change was blocked because " +
+                  "the active language sources are not currently safe to reload.",
+              );
+              this.rerender();
+              return;
+            }
+
+            if (result.status === "rollback-save-failed") {
+              new Notice(
+                "Conlang workbench: the case-matching change was blocked and " +
+                  "restored in memory, but the rollback could not be saved.",
+              );
+              this.rerender();
+              return;
+            }
+
+            /*
+             * A thrown reload may occur after dictionary replacement has begun.
+             * The transaction therefore leaves the requested persisted setting
+             * in place rather than pretending that restoring one boolean could
+             * restore the previous runtime indexes. Refresh visible consumers
+             * to avoid leaving stale UI around an uncertain runtime state.
+             */
+            console.error(
+              "[Conlang] Case-sensitive matching reload failed:",
+              result.error,
+            );
+            new Notice(
+              "Conlang workbench: case-matching reload failed after it began. " +
+                "See the developer console.",
+            );
             this.plugin.refreshPanel();
             this.plugin.refreshHighlights();
           }),
