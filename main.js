@@ -3950,9 +3950,20 @@ var ConlangSettingTab = class extends import_obsidian12.PluginSettingTab {
   display() {
     this.rerender();
   }
-  /** Build (or rebuild) the whole settings pane. */
+  /**
+   * Build (or rebuild) the whole settings pane while preserving its position.
+   *
+   * Most settings changes redraw this entire container. `empty()` removes the
+   * previous contents and would otherwise leave the user back at the top of a
+   * long settings page after adding, deleting, reordering, or editing an item.
+   *
+   * Preserve the current pixel position across the rebuild. If the new page is
+   * shorter (for example after deleting a large section), clamp the old value
+   * to the highest scroll position that still exists.
+   */
   rerender() {
     const { containerEl } = this;
+    const previousScrollTop = containerEl.scrollTop;
     containerEl.empty();
     containerEl.addClass("conlang-settings");
     this.renderLanguageOverview(containerEl);
@@ -3968,6 +3979,11 @@ var ConlangSettingTab = class extends import_obsidian12.PluginSettingTab {
     for (let i = 0; i < this.plugin.settings.languages.length; i++) {
       this.renderLanguageCard(containerEl, this.plugin.settings.languages[i]);
     }
+    const maximumScrollTop = Math.max(
+      0,
+      containerEl.scrollHeight - containerEl.clientHeight
+    );
+    containerEl.scrollTop = Math.min(previousScrollTop, maximumScrollTop);
   }
   // ===== Top overview =====
   renderLanguageOverview(containerEl) {
