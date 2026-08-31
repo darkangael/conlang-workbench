@@ -1,12 +1,10 @@
-import { App, TFile, TFolder } from "obsidian";
+import { App, TFile } from "obsidian";
 import {
   classifyDictionarySourceAuthority,
   compareDictionaryDefinition,
 } from "./dictionary-source";
-import {
-  joinVaultPath,
-  validateVaultRelativePath,
-} from "./vault-paths";
+import { joinVaultPath } from "./vault-paths";
+import { ensureVaultFolderStrict } from "./vault-folder-writer";
 
 /**
  * Information supplied to the entry-specific Markdown builder.
@@ -95,41 +93,6 @@ export type DictionaryEntryWriteResult =
  */
 function safeFilenamePart(value: string): string {
   return value.replace(/[\\/:*?"<>|]/g, "_");
-}
-
-/**
- * Establish a configured dictionary folder before a persistent write.
- *
- * Existing non-folder objects are a hard stop. Folder-creation errors are only
- * ignored when another operation actually created the expected folder between
- * our existence check and createFolder(), which is the concurrent-creation
- * race this function is designed to tolerate.
- */
-async function ensureFolderStrict(app: App, path: string): Promise<void> {
-  const safePath = validateVaultRelativePath(path);
-  const parts = safePath.split("/");
-  let current = "";
-
-  for (const part of parts) {
-    current = current ? `${current}/${part}` : part;
-
-    const existing = app.vault.getAbstractFileByPath(current);
-    if (existing instanceof TFolder) continue;
-
-    if (existing) {
-      throw new Error(`"${current}" exists but is not a folder`);
-    }
-
-    try {
-      await app.vault.createFolder(current);
-    } catch (error) {
-      // Only the known race is recoverable. Any other failure means the writer
-      // has not established authority to continue toward the final file write.
-      if (!(app.vault.getAbstractFileByPath(current) instanceof TFolder)) {
-        throw error;
-      }
-    }
-  }
 }
 
 /**
@@ -432,7 +395,7 @@ export async function writeDictionaryEntry(
   try {
     // Folder creation is delayed until every read-only authority decision and
     // content-generation step has succeeded.
-    await ensureFolderStrict(request.app, request.dictionaryFolder);
+    await ensureVaultFolderStrict(request.app, request.dictionaryFolder);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 

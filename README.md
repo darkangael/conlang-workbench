@@ -141,7 +141,25 @@ If the plugin doesn't appear, restart Obsidian.
 
 ## First-time setup
 
-The plugin ships with one pre-configured example language at folder `Made Up Words/Example`. You can either edit this in Settings → Made Up Words to point at a folder you actually use, or add a new language. The dictionary folder doesn't need to exist yet.
+The plugin ships with one pre-configured example language at folder `Made Up Words/Example`. You can edit an existing language in Settings → Made Up Words to use your own configured source paths, or add a new language.
+
+Languages newly created through **Add language** use the standard structure:
+
+```text
+Languages/<LanguageName>/
+├── Lexicon/
+├── Morphemes/
+├── Inflections/
+├── Cyphers/
+├── Examples/
+└── Phonology/
+```
+
+`Lexicon`, `Morphemes`, `Examples`, and `Phonology` are the canonical source roots currently wired into the language configuration. Workbench scans Markdown recursively beneath each configured source root, so you remain free to organize those sources into your own subfolders.
+
+`Inflections` and `Cyphers` are created as durable homes for those language resources, but current inflection rules and cypher sheets are still stored in plugin settings rather than loaded from those folders.
+
+The standard structure is a default for newly created languages, not a forced migration rule. Existing languages may continue using custom configured source paths. Workbench does not move, rename, flatten, or reorganize an existing dictionary when a language is created.
 
 1. Open the panel (book-open icon in the left ribbon).
 2. The panel header shows your active language and entry count.
@@ -150,7 +168,7 @@ The plugin ships with one pre-configured example language at folder `Made Up Wor
 5. Click **Save to dictionary** to commit a word. You'll be prompted for the part of speech.
 6. Click **+ Name** in the panel header to create proper nouns.
 
-To customise: open Settings → Made Up Words. Cypher rules in sheets, inflection rules with presets, per-language dictionary folder paths.
+To customise: open Settings → Made Up Words. Existing languages can use custom per-language source paths. Cypher sheets and inflection rules remain configurable in settings.
 
 ---
 

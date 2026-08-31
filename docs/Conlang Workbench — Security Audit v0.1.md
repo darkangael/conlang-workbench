@@ -1869,14 +1869,15 @@ sink was found. SEC-005-H1 is remediated and regression-tested.
 
 Review of command and mutation boundaries is in progress.
 
-The review has so far completed four substantial authority boundaries:
+The review has so far completed five substantial authority boundaries:
 
 - dictionary-entry persistence
 - translation commit into existing creator-authored Markdown
 - language identity, membership, rename, and canonical source authority
 - plugin-initiated settings/configuration deletion
+- new-language canonical source onboarding
 
-SEC-006-H1 through SEC-006-H4 are remediated and verified.
+SEC-006-H1 through SEC-006-H5 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
 review before this section can be marked Pass. The remaining settings/path
@@ -2427,6 +2428,135 @@ preflight regression suites pass. Lint reports zero errors with the established
 
 **Status:** Remediated and verified.
 
+#### SEC-006-H5 — New-language registration could persist canonical source claims before establishing their folder authority
+
+**Severity:** Hardening
+
+The §6 runtime review exposed an authority mismatch between language creation and
+the canonical-source preflight introduced by SEC-006-H3.
+
+The **Add language** control previously registered a new `LanguageConfig` whose
+dictionary path was derived from the generated language name and then persisted
+that configuration without establishing the corresponding canonical source
+folder first.
+
+H3 correctly requires an active language's configured canonical source paths to
+resolve to valid folders before runtime inventories are cleared and rebuilt.
+Consequently, a newly added language could be successfully persisted by the
+settings UI and then be refused when the user later attempted to activate it.
+
+The source-authority gate was behaving correctly. The incomplete operation was
+new-language onboarding: configuration registration claimed filesystem authority
+that Workbench had not yet established.
+
+The required invariant is:
+
+> A newly registered language must not point at canonical source folders that
+> Workbench has not first established as valid folder destinations.
+
+**Remediation:**
+
+Strict vault-folder establishment has been extracted into
+`vault-folder-writer.ts` so dictionary persistence and language onboarding share
+the same fail-closed folder mutation primitive.
+
+`inspectVaultFolderPaths()` provides a separate read-only preflight. It validates
+the requested vault-relative paths and rejects an existing non-folder object at
+any required path component before folder creation begins.
+
+`ensureVaultFolderStrict()` then establishes missing folders additively. Existing
+folders are reused unchanged. Existing files or other non-folder objects are
+never replaced, renamed, deleted, or reinterpreted. A `createFolder()` failure
+is tolerated only for the narrow concurrent-creation race where the expected
+path actually resolves to a `TFolder` on the immediate re-check.
+
+`language-creator.ts` now owns the standard new-language filesystem boundary. A
+language created through the modern onboarding flow receives:
+
+```text
+Languages/<LanguageName>/
+├── Lexicon/
+├── Morphemes/
+├── Inflections/
+├── Cyphers/
+├── Examples/
+└── Phonology/
+```
+
+The currently wired `LanguageConfig` source roots are:
+
+- `Lexicon` for dictionary entries;
+- `Morphemes` for canonical morpheme notes;
+- `Examples` for standalone linguistic examples;
+- `Phonology` for canonical phonological sources.
+
+All four inventories recursively scan Markdown beneath their configured source
+roots, so these folders establish authority boundaries without imposing an
+internal organization or flattening creator-authored subfolders.
+
+`Inflections` and `Cyphers` are established now as reserved durable homes, but
+the current inflection rules and cypher sheets remain settings-backed. Their
+creation does not claim that Workbench already loads Markdown definitions from
+those folders.
+
+Before any folder mutation, new-language creation:
+
+- builds and validates the complete intended path structure;
+- checks the proposed wired source paths against all existing configured
+  languages;
+- rejects exact or ancestor/descendant overlap for the same canonical inventory
+  kind;
+- permits different inventory kinds to remain independently configurable;
+- performs a read-only inspection of the entire intended folder hierarchy.
+
+Only after that complete preflight succeeds are missing folders established.
+
+Existing valid folders may be reused unchanged. This allows a creator, for
+example, to retain an existing dictionary and its own nested organization below
+the configured `Lexicon` root without Workbench moving or renaming it.
+
+A failure after additive folder creation has begun does not authorize rollback
+deletion. Successfully established folders are preserved because creator or
+concurrent data may have appeared inside them during awaited vault operations.
+
+The settings UI registers the returned `LanguageConfig` only after the complete
+folder-creation operation succeeds. If persistence of that configuration then
+fails, the exact newly added in-memory configuration object is removed by
+identity, while the newly established folders are deliberately left intact.
+
+Adding a language does not automatically activate it or make it primary.
+
+**Verification:**
+
+`scripts/test-language-creator.mjs` exercises:
+
+- fresh creation of the standard six-folder language structure;
+- correct wiring of the four currently supported canonical source roots;
+- reuse of existing valid folders without replacing them;
+- preservation of an existing nested dictionary beneath `Lexicon`;
+- non-collision between a sibling `Morphemes.md` note and `Morphemes/`;
+- exact non-folder collisions before any mutation;
+- a non-folder object at the language root;
+- unsafe/traversal-like generated destinations;
+- exact same-inventory authority already claimed by another configured language;
+- ancestor/descendant same-inventory authority overlap;
+- preservation of successfully created folders after a later creation failure;
+- the narrow concurrent-folder-creation race.
+
+The existing dictionary-entry-writer security regression suite also passes after
+moving strict folder establishment into the shared module.
+
+Manual Obsidian runtime verification confirmed that **Add language** created
+`Language 3` with all six standard folders, persisted the four wired canonical
+source paths, left the language inactive and non-primary initially, and then
+allowed explicit activation through the H3 canonical-source preflight without
+the previous missing-folder block.
+
+The production build succeeds. Lint remains at zero errors with the established
+14-warning baseline, and `git diff --check` passes.
+
+**Status:** Remediated and verified.
+
 ### Status
 
 **Reviewing**
@@ -2851,6 +2981,7 @@ audit section.
 | SEC-006-H2  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Translation commit could replace creator-authored selected text without previewing and explicitly authorizing the exact final replacement; related review exposed fallback, ambiguity, and cross-language lexical-authority hazards.                                  | Code review; `test:translation-commit-plan`; `test:translation-vocabulary-repair`; `test:dictionary-language-scope`; `test:inflection-language-scope`; `test:gloss-rendering`; production build; focused runtime verification                        | Translation commit now uses language-scoped lexical resolution, a fail-closed pure planner, sequential explicitly authorized vocabulary repair, reload/re-plan against captured source and target context, exact replacement preview, explicit Replace authorization, target/file/path/text stale-state guards, and exact non-regenerated replacement. Vocabulary creation has no editor-mutation authority and cancellation leaves creator-authored note text untouched.                         |
 | SEC-006-H3  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Name-based language identity and canonical source configuration could become ambiguous through blank/duplicate identities, stale active-language references, conflicting membership authority, overlapping same-inventory source trees, or unguarded rename mutation. | Code review; `test-language-membership.mjs`; `test-language-source-preflight.mjs`; production build; lint; commit `bcd4c83`                                                                                                                          | Runtime membership policy is explicit; source reload preflights identity, paths, folder existence/type, stale active references, and same-inventory overlaps before clearing state; creator metadata is preserved; rename requires confirmation and rollback protection; blocked authority state fails closed without guessing or rerouting creator data.                                                                                                                                         |
 | SEC-006-H4  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Plugin-initiated language, cypher-sheet, cypher-rule, and inflection-rule configuration deletion lacked a shared explicit confirmation boundary, and a rendered array index could become stale authority for a different object.                                      | Code review; `scripts/test-delete-confirmation.mjs`; `scripts/test-language-source-preflight.mjs`; production build; lint; manual Obsidian Cancel/Confirm runtime verification for language, cypher sheet, cypher rule, and inflection rule deletion | Deletion now requires fail-closed explicit confirmation; callers capture and revalidate the exact object by identity before mutation; save failure restores removed in-memory configuration; blocked language reload restores the previous persisted language configuration; language removal has no vault-file or vault-folder deletion authority.                                                                                                                                               |
+| SEC-006-H5  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | New-language registration could persist canonical source claims before establishing the folder authority required by runtime source preflight.                                                                                                                        | Code review; `scripts/test-language-creator.mjs`; `scripts/test-dictionary-entry-writer.mjs`; production build; lint; manual Obsidian Add Language and subsequent activation runtime verification                                                    | New-language onboarding now preflights the complete standard folder structure and same-inventory claims before mutation, establishes folders through a shared strict additive writer, registers settings only after folder creation succeeds, preserves folders on later failure, and creates the standard Lexicon/Morphemes/Inflections/Cyphers/Examples/Phonology structure without forcing migration of existing custom layouts.                                                               |
 
 ---
 

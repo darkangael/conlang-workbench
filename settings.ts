@@ -19,6 +19,7 @@ import { INFLECTION_PRESETS, findPreset } from "./presets";
 import { validateLanguageRename } from "./language-identity";
 import { confirmLanguageRename } from "./language-rename-modal";
 import { confirmDeletion } from "./delete-confirm-modal";
+import { createStandardLanguage } from "./language-creator";
 
 export class ConlangSettingTab extends PluginSettingTab {
   plugin: ConlangPlugin;
@@ -246,14 +247,64 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             const newName = this.uniqueLanguageName();
-            this.plugin.settings.languages.push({
-              name: newName,
-              dictionaryFolder: `Made Up Words/${newName}`,
-              hoverEnabled: true,
-              sheets: [],
-            });
+
+            /*
+             * New-language registration is intentionally a two-stage operation.
+             *
+             * First, the creator performs a read-only authority preflight over
+             * the complete standard folder structure and then establishes any
+             * missing folders additively. Settings are not changed unless that
+             * entire filesystem step succeeds.
+             */
+            const creation = await createStandardLanguage(
+              this.app,
+              newName,
+              this.plugin.settings.languages,
+            );
+
+            if (creation.status !== "created") {
+              new Notice(`Could not add "${newName}": ${creation.error}`);
+              return;
+            }
+
+            const language = creation.language;
+            this.plugin.settings.languages.push(language);
+
+            try {
+              await this.plugin.saveSettings();
+            } catch (error) {
+              /*
+               * Folder creation has already succeeded, but a settings-save
+               * failure does not authorize deleting those folders. Creator or
+               * concurrent data could already exist inside them.
+               *
+               * Roll back only the unsaved in-memory configuration, locating
+               * the exact object by identity rather than trusting a stale array
+               * index after an awaited operation.
+               */
+              const currentIndex =
+                this.plugin.settings.languages.indexOf(language);
+
+              if (currentIndex !== -1) {
+                this.plugin.settings.languages.splice(currentIndex, 1);
+              }
+
+              const message =
+                error instanceof Error ? error.message : String(error);
+
+              new Notice(
+                `Created folders for "${newName}", but could not save ` +
+                  `the language configuration: ${message}`,
+              );
+              return;
+            }
+
+            /*
+             * Preserve the existing UI behavior: a newly added language card
+             * opens after successful persistence, but the language is not
+             * automatically activated or made primary.
+             */
             this.openCards.add(newName);
-            await this.plugin.saveSettings();
             this.rerender();
           }),
       )
