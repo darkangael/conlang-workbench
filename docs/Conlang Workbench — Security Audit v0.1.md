@@ -1869,20 +1869,24 @@ sink was found. SEC-005-H1 is remediated and regression-tested.
 
 Review of command and mutation boundaries is in progress.
 
-The review has so far completed six substantial authority boundaries:
+The review has so far completed nine substantial authority boundaries:
 
 - dictionary-entry persistence
 - translation commit into existing creator-authored Markdown
-- language identity, membership, rename, and canonical source authority
+- language identity and membership authority
 - plugin-initiated settings/configuration deletion
 - new-language canonical source onboarding
-- active/primary-language runtime-state authority
+- active-language runtime-state authority
+- language source-path, root-ownership, rename, and repair authority
+- primary-language-only authority
+- case-sensitive-matching persistence/runtime authority
 
-SEC-006-H1 through SEC-006-H6 are remediated and verified.
+SEC-006-H1 through SEC-006-H9 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
-review before this section can be marked Pass. The remaining settings/path
-mutation surfaces still require review.
+review before this section can be marked Pass. Remaining persisted
+configuration mutation surfaces, including cypher and inflection configuration,
+still require review.
 
 ### Command Inventory
 
@@ -2693,6 +2697,284 @@ into a broader `saveSettings()` redesign within this finding.
 
 **Status:** Remediated and verified.
 
+#### SEC-006-H7 — Language source-path and root mutations lacked one complete structural authority transaction
+
+**Severity:** Hardening
+
+The continuing §6 review found that canonical language-source mutation could not
+be treated as only a string-settings edit. Changing a configured source path,
+renaming a language, repairing its standard folders, or moving its language root
+can change both persisted configuration and the physical vault structure from
+which Workbench derives runtime language authority.
+
+The existing source preflight protected runtime loading, but these mutation
+surfaces still required a shared model for determining which configured language
+owned a root, whether another configured or unconfigured root already reserved a
+destination, and when rollback was actually safe.
+
+Without that structural boundary, a settings operation could claim a source or
+root that Workbench had not safely established, adopt unrelated existing
+content, or leave persisted configuration disagreeing with the physical root
+after a failed operation.
+
+The required invariant is:
+
+> A language source or root mutation becomes authoritative only when the exact
+> configured language has established the requested structural authority,
+> persistence succeeds, and any required runtime reload accepts the resulting
+> source state. Existing unrelated vault content is never silently adopted,
+> merged, deleted, or rewritten to make the request succeed.
+
+**Remediation:**
+
+The language source/root authority work now separates structural inspection,
+filesystem mutation, persisted-state transition, and runtime establishment into
+explicit modules.
+
+`language-root-authority.ts` establishes the structural ownership model for the
+shared `Languages/` container:
+
+- immediate children of `Languages/` are language roots;
+- each configured language owns one exact root and its recursive subtree;
+- configured language roots must be siblings rather than descendants of one
+  another;
+- malformed configuration does not silently surrender an already established
+  structural claim;
+- inactive configured languages retain their root ownership;
+- an existing unconfigured immediate child reserves that root and is not
+  automatically adopted by Add or Repair;
+- arbitrary existing content is therefore not converted into Workbench-owned
+  language data merely because its path matches a requested name.
+
+`language-source-state.ts` provides transactional authority for canonical source
+path changes. Requested source configuration is validated before it becomes
+authoritative. If initial persistence fails, the previous in-memory source
+configuration is restored. If persistence succeeds but source preflight blocks
+the corresponding reload, the previous source configuration is restored and
+re-persisted because the blocked preflight guarantees that the old runtime was
+left untouched.
+
+As with the H6 transaction, an arbitrary exception after source preflight is not
+treated as a proven rollback point. Runtime inventory replacement may already
+have begun, so the operation reports failure rather than restoring settings in a
+way that could create a second authority mismatch.
+
+Language root rename now uses dedicated structural and transaction helpers,
+including `language-rename.ts` and `language-rename-state.ts`. The operation:
+
+- validates the requested identity and destination;
+- establishes that the source root belongs to the exact configured language;
+- requires the destination root to be absent rather than merging with or
+  adopting an existing root;
+- renames the owned root through Obsidian's `FileManager.renameFile`;
+- prefix-rewrites configured paths that physically moved with that root while
+  preserving custom descendants;
+- rewrites `profilePath` only when that file is physically inside the moved
+  root;
+- preserves an external `profilePath`;
+- does not rewrite creator-authored Markdown or YAML merely because the
+  Workbench language identity or folder path changed.
+
+Root repair is likewise additive and authority-bound. It may establish missing
+standard children only beneath the same configured language's already claimed
+root. It does not provide a general mechanism for adopting arbitrary existing
+roots.
+
+The standard source-path definitions are centralized in
+`language-standard-paths.ts`, and new-language creation now participates in the
+same root-authority model rather than maintaining a separate weaker
+interpretation.
+
+**Verification:**
+
+Focused regression coverage includes:
+
+- `scripts/test-language-source-state.mjs`;
+- `scripts/test-language-root-authority.mjs`;
+- `scripts/test-language-rename.mjs`;
+- `scripts/test-language-rename-state.mjs`;
+- `scripts/test-language-root-repair.mjs`;
+- `scripts/test-language-root-repair-state.mjs`;
+- the updated `scripts/test-language-creator.mjs`.
+
+The tests exercise active and inactive language ownership, sibling-root
+requirements, existing unconfigured-root reservation, source-state persistence
+and blocked-preflight rollback, root rename destination collisions, configured
+path prefix rewriting, external profile preservation, additive repair, and
+failure handling.
+
+Manual runtime verification also covered successful and blocked rename/repair
+behavior, persistence across restart, duplicate/blank language-name rejection,
+and refusal to adopt an existing unconfigured language root.
+
+The full regression suite passes. The production build succeeds. Lint remains at
+zero errors with the established 14-warning baseline, and `git diff --check`
+passes.
+
+The remediation was committed and pushed as `bf1f00f`
+(`Harden language source and root authority`).
+
+**Status:** Remediated and verified.
+
+#### SEC-006-H8 — Primary-language-only changes could become runtime-authoritative even when persistence failed
+
+**Severity:** Hardening
+
+After active-language mutation was hardened under H6, the §6 inventory retained
+separate controls that changed only `primaryLanguage` for a language that was
+already active.
+
+Those controls directly assigned the requested primary language before awaiting
+settings persistence. Runtime callers such as `getPrimaryLanguage()` read the
+settings object directly, so a failed save could leave the new primary language
+authoritative in memory for the running plugin while persisted configuration
+still named the previous primary language.
+
+Primary-only selection does not require rebuilding linguistic inventories when
+the requested language is already part of the successfully established active
+set. Its authority boundary is therefore narrower than H6 and should not acquire
+reload authority merely to repair a persistence problem.
+
+The required invariant is:
+
+> A primary-language-only change may select only one uniquely configured
+> language that is already active. The requested primary becomes authoritative
+> only when persistence succeeds. If persistence fails, the previous in-memory
+> primary is restored. No linguistic-inventory reload is required merely to
+> select among already established active languages.
+
+**Remediation:**
+
+`primary-language-state.ts` now owns the pure primary-only transaction.
+
+`applyPrimaryLanguageState()`:
+
+- trims and validates the requested language identity;
+- rejects a blank request;
+- requires exactly one configured language with that identity;
+- requires the requested primary to already belong to the active-language set;
+- treats an unchanged request as a no-op without persistence;
+- snapshots the previous primary language;
+- installs the requested primary before persistence so the save callback
+  serializes the requested state;
+- restores the previous in-memory primary if persistence fails;
+- does not reload dictionary, morphology, examples, phonology, or other
+  linguistic inventories.
+
+`ConlangPlugin.setPrimaryLanguageState()` exposes this shared authority to UI
+callers.
+
+The Settings and side-panel primary-only controls now submit requests through
+that transaction rather than assigning `primaryLanguage` directly.
+
+This remains distinct from an activate-then-select-primary operation: activation
+must first succeed through H6 before the H8 primary-only transaction may select
+that language.
+
+**Verification:**
+
+`scripts/test-primary-language-state.mjs` covers:
+
+- successful primary selection;
+- observation of the requested value during the persistence callback;
+- persistence failure with restoration of the previous in-memory primary;
+- blank, unknown, duplicate, and inactive requested identities;
+- unchanged selection without unnecessary persistence.
+
+The full regression suite passes. The production build succeeds. Lint remains at
+zero errors with the established 14-warning baseline, and `git diff --check`
+passes.
+
+The remediation was committed and pushed as `92bf124`
+(`Harden primary language authority`).
+
+**Status:** Remediated and verified.
+
+#### SEC-006-H9 — Case-sensitive matching lacked transactional persistence/runtime authority
+
+**Severity:** Hardening
+
+The Settings control for case-sensitive matching previously changed
+`caseSensitiveMatching` directly, persisted settings, and then reloaded the
+active linguistic runtime.
+
+This setting affects dictionary and phrase comparison/index behavior. A failed
+initial save could therefore leave runtime consumers observing an unpersisted
+case policy. Conversely, a successfully persisted setting followed by a
+canonical-source-preflight-blocked reload could leave the new settings-derived
+case policy disagreeing with dictionary indexes that deliberately remained
+untouched under the previous policy.
+
+The required invariant is:
+
+> A case-sensitive-matching change becomes successfully authoritative only after
+> the requested policy is persisted and the active linguistic runtime is
+> successfully rebuilt under that policy. Rollback is performed only at failure
+> boundaries where the implementation can prove which runtime remains
+> authoritative.
+
+**Remediation:**
+
+`case-sensitive-state.ts` now owns the pure settings/runtime transaction.
+
+The transaction:
+
+- treats an unchanged request as a no-op;
+- snapshots the previous case-sensitive policy;
+- installs the requested policy in memory before persistence;
+- restores the previous in-memory policy without attempting reload if the
+  initial save fails;
+- invokes the normal active-language reload only after persistence succeeds;
+- treats an explicit source-preflight `blocked` result as a safe rollback point,
+  because preflight occurs before dictionary case policy or linguistic runtime
+  inventories are replaced;
+- restores the previous in-memory policy and performs a compensating save after
+  such a blocked reload;
+- reports compensating-save failure separately while retaining the previous
+  in-memory policy that still matches the untouched runtime;
+- does not claim rollback after an arbitrary reload exception once preflight has
+  passed, because dictionary or other runtime replacement may already have
+  begun.
+
+The Settings toggle now calls
+`ConlangPlugin.setCaseSensitiveMatchingState()` rather than directly mutating,
+saving, and reloading the setting.
+
+Successful changes refresh the relevant panel and highlighting presentation.
+Blocked or persistence-failed changes return the settings UI to the
+authoritative prior value. A post-preflight reload exception is surfaced as a
+failure without asserting that the old runtime can safely be restored.
+
+This finding does not claim that the broader sequential
+`reloadActiveLanguage()` implementation is fully atomic after source preflight.
+That runtime-replacement boundary remains a separate review concern.
+
+**Verification:**
+
+`scripts/test-case-sensitive-state.mjs` covers:
+
+- successful false-to-true persistence followed by reload;
+- initial persistence failure with in-memory restoration and no reload;
+- preflight-blocked reload with restoration and compensating persistence;
+- compensating-save failure while retaining the old in-memory policy;
+- post-preflight reload exception without an unjustified rollback;
+- unchanged policy without save or reload.
+
+The focused case-sensitive-state test, neighboring active-language and
+language-source transaction tests, and the complete established regression suite
+pass.
+
+The production build succeeds. Lint reports zero errors with the established
+14-warning baseline, and `git diff --check` passes.
+
+The generated production bundle was rebuilt after the final source-level Notice
+text cleanup and verified from the staged index before commit.
+
+The remediation was committed and pushed as `dcde644`
+(`Harden case-sensitive matching authority`).
+
+**Status:** Remediated and verified.
+
 ### Status
 
 **Reviewing**
@@ -3119,6 +3401,9 @@ audit section.
 | SEC-006-H4  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Plugin-initiated language, cypher-sheet, cypher-rule, and inflection-rule configuration deletion lacked a shared explicit confirmation boundary, and a rendered array index could become stale authority for a different object.                                      | Code review; `scripts/test-delete-confirmation.mjs`; `scripts/test-language-source-preflight.mjs`; production build; lint; manual Obsidian Cancel/Confirm runtime verification for language, cypher sheet, cypher rule, and inflection rule deletion | Deletion now requires fail-closed explicit confirmation; callers capture and revalidate the exact object by identity before mutation; save failure restores removed in-memory configuration; blocked language reload restores the previous persisted language configuration; language removal has no vault-file or vault-folder deletion authority.                                                                                                                                               |
 | SEC-006-H5  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | New-language registration could persist canonical source claims before establishing the folder authority required by runtime source preflight.                                                                                                                        | Code review; `scripts/test-language-creator.mjs`; `scripts/test-dictionary-entry-writer.mjs`; production build; lint; manual Obsidian Add Language and subsequent activation runtime verification                                                    | New-language onboarding now preflights the complete standard folder structure and same-inventory claims before mutation, establishes folders through a shared strict additive writer, registers settings only after folder creation succeeds, preserves folders on later failure, and creates the standard Lexicon/Morphemes/Inflections/Cyphers/Examples/Phonology structure without forcing migration of existing custom layouts.                                                               |
 | SEC-006-H6  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Active/primary-language settings could remain persisted after canonical source preflight rejected the requested runtime state, and the Settings overview star could continue into a primary-language mutation after blocked activation.                               | Code review; `scripts/test-active-language-state.mjs`; production build; lint; `git diff --check`; manual Obsidian checkbox, overview-star, side-panel blocked-activation, restored-source activation, and primary-selection runtime verification    | Active-language membership changes now use one shared transactional authority. Invalid requests fail before persistence; initial save failure restores memory; explicit preflight-blocked reload restores and persists the previous active/primary configuration; arbitrary post-preflight reload exceptions are not falsely treated as safe rollback points; combined activate-then-primary UI flow stops unless activation succeeds.                                                            |
+| SEC-006-H7  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Language source-path, root rename, and repair mutations lacked one complete structural authority model tying configured ownership, physical vault roots, persistence, and runtime source establishment together. | Code review; `test-language-source-state.mjs`; `test-language-root-authority.mjs`; rename/rename-state and repair/repair-state regression suites; updated language-creator coverage; production build; lint; `git diff --check`; commit `bf1f00f` | Language roots now have explicit structural ownership; unconfigured existing roots are reserved rather than silently adopted; source changes and root operations use guarded transactions; rename moves only the exact owned root, rewrites moved configured paths without rewriting creator Markdown/YAML, and refuses destination merge/adoption; repair is additive beneath the already claimed root. |
+| SEC-006-H8  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Primary-language-only controls could change runtime-observed primary authority before persistence succeeded, leaving an unpersisted in-memory primary after save failure. | Code review; `scripts/test-primary-language-state.mjs`; full regression suite; production build; lint; `git diff --check`; commit `92bf124` | Primary-only selection now uses a shared transaction that requires one uniquely configured already-active language, skips unchanged requests, restores the previous in-memory primary on save failure, and deliberately avoids unnecessary linguistic-inventory reload. |
+| SEC-006-H9  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Case-sensitive matching could diverge between persisted/in-memory settings and dictionary/phrase runtime indexes after save failure or a preflight-blocked reload. | Code review; `scripts/test-case-sensitive-state.mjs`; neighboring active-language and source-state tests; full regression suite; production build; lint; `git diff --check`; staged generated-bundle verification; commit `dcde644` | Case-sensitive matching now uses a persistence/runtime transaction: save failure restores memory without reload; explicit preflight block restores and re-persists the previous policy; rollback-save failure is distinct; post-preflight reload exceptions are reported without claiming an unsafe rollback. |
 
 ---
 
