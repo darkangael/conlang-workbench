@@ -1938,7 +1938,7 @@ For translation commit, this currently includes:
   regenerating or reinterpreting it
 
 The target-language validity/staleness boundary and the vocabulary-repair queue
-remain part of the continuing H2 review.
+were subsequently resolved as part of SEC-006-H2, documented below.
 
 ### User Intent
 
@@ -2009,9 +2009,9 @@ The planner is pure and produces either:
 This prevents repeated or partial command execution from turning unresolved
 translation material into a partially authorized note mutation.
 
-The vocabulary-repair queue still requires explicit review for cancellation,
-re-planning, repeated/existing entries, target-language stability, and stale
-originating-note state before H2 can be closed.
+The subsequent SEC-006-H2 remediation explicitly covers cancellation,
+re-planning after vocabulary repair, repeated/existing-entry handling,
+target-language stability, and stale originating-note state.
 
 ### Findings
 
