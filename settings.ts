@@ -24,6 +24,7 @@ import {
 import { confirmDeletion } from "./delete-confirm-modal";
 import { createStandardLanguage } from "./language-creator";
 import type { CanonicalFolderSetting } from "./language-source-state";
+import { LinguisticRuleTargetMissingError } from "./linguistic-rule-state";
 
 export class ConlangSettingTab extends PluginSettingTab {
   plugin: ConlangPlugin;
@@ -1510,24 +1511,53 @@ export class ConlangSettingTab extends PluginSettingTab {
         .setButtonText("Add sheet")
         .setCta()
         .onClick(async () => {
-          lang.sheets.push({
-            name: `Sheet ${lang.sheets.length + 1}`,
-            enabled: true,
-            rules: [],
-          });
+          const result = await this.plugin.setLinguisticRuleState(
+            lang,
+            (candidate) => {
+              candidate.sheets.push({
+                name: `Sheet ${candidate.sheets.length + 1}`,
+                enabled: true,
+                rules: [],
+              });
+            },
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              "Made Up Words: failed to add cypher sheet:",
+              result.error,
+            );
+            new Notice(
+              "Made Up Words: could not save the new cypher sheet; it was not added.",
+            );
+            this.rerender();
+            return;
+          }
+
+          /*
+           * Add-sheet has no pre-existing object that can disappear while the
+           * request waits in the queue, so target-missing is not expected here.
+           * Still fail closed if a future transaction change ever produces it.
+           */
+          if (result.status === "target-missing") {
+            new Notice(
+              "Made Up Words: the cypher-sheet change could not be applied because its target changed.",
+            );
+            this.rerender();
+            return;
+          }
+
           this.openSheets.add(lang.name);
-          await this.plugin.saveSettings();
           this.rerender();
         }),
     );
 
     // --- Inflection rules (nested collapsible) ---
-    if (!lang.inflections) lang.inflections = [];
     const inflBody = this.collapsible(body, {
       title: "Inflection rules",
       key: lang.name,
       store: this.openInflections,
-      badge: String(lang.inflections.length),
+      badge: String(lang.inflections?.length ?? 0),
     });
     inflBody.createEl("p", {
       cls: "conlang-help",
@@ -1566,12 +1596,68 @@ export class ConlangSettingTab extends PluginSettingTab {
             }
             const preset = findPreset(pendingPresetId);
             if (!preset) return;
-            const existingCount = lang.inflections?.length ?? 0;
+            const approvedRules = lang.inflections
+              ? [...lang.inflections]
+              : undefined;
+            const existingCount = approvedRules?.length ?? 0;
             const confirmed = await this.confirmPreset(preset, existingCount);
             if (!confirmed) return;
-            lang.inflections = preset.rules.map((r) => ({ ...r }));
+
+            const result = await this.plugin.setLinguisticRuleState(
+              lang,
+              (candidate) => {
+                const currentRules = lang.inflections;
+
+                /*
+                 * Preserve the distinction between an absent inflection array
+                 * and an explicitly present empty array. If that authority
+                 * changed while confirmation was open, the old confirmation no
+                 * longer authorizes replacing the new state.
+                 */
+                if (approvedRules === undefined) {
+                  if (currentRules !== undefined) {
+                    throw new LinguisticRuleTargetMissingError();
+                  }
+                } else {
+                  if (
+                    currentRules === undefined ||
+                    currentRules.length !== approvedRules.length ||
+                    currentRules.some(
+                      (currentRule, index) =>
+                        currentRule !== approvedRules[index],
+                    )
+                  ) {
+                    throw new LinguisticRuleTargetMissingError();
+                  }
+                }
+
+                candidate.inflections = preset.rules.map((rule) => ({
+                  ...rule,
+                }));
+              },
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to apply inflection preset:",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the inflection preset; the previous rules were restored.",
+              );
+              this.rerender();
+              return;
+            }
+
+            if (result.status === "target-missing") {
+              new Notice(
+                "Made Up Words: the inflection rules changed while preset replacement was pending; the preset was not applied.",
+              );
+              this.rerender();
+              return;
+            }
+
             this.openInflections.add(lang.name);
-            await this.plugin.saveSettings();
             this.rerender();
             new Notice(`Made Up Words: applied preset "${preset.name}"`);
           }),
@@ -1581,16 +1667,47 @@ export class ConlangSettingTab extends PluginSettingTab {
 
     new Setting(inflBody).addButton((b) =>
       b.setButtonText("Add inflection rule").onClick(async () => {
-        (lang.inflections ??= []).push({
-          label: "plural",
-          pattern: "",
-          position: "suffix",
-          strip: "",
-          add: "",
-          enabled: true,
-        });
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            candidate.inflections ??= [];
+            candidate.inflections.push({
+              label: "plural",
+              pattern: "",
+              position: "suffix",
+              strip: "",
+              add: "",
+              enabled: true,
+            });
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to add inflection rule:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the new inflection rule; it was not added.",
+          );
+          this.rerender();
+          return;
+        }
+
+        /*
+         * Add-rule has no existing rule target, so target-missing is defensive.
+         * Keeping the branch fail-closed makes this caller safe if the queue's
+         * transaction contract grows stricter in the future.
+         */
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: the inflection-rule change could not be applied because its target changed.",
+          );
+          this.rerender();
+          return;
+        }
+
         this.openInflections.add(lang.name);
-        await this.plugin.saveSettings();
         this.rerender();
       }),
     );
@@ -1768,8 +1885,38 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setTooltip("Move sheet up")
           .setDisabled(sheetIndex === 0)
           .onClick(async () => {
-            this.moveItem(lang.sheets, sheetIndex, sheetIndex - 1);
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setLinguisticRuleState(
+              lang,
+              (candidate) => {
+                const currentIndex = lang.sheets.indexOf(sheet);
+                if (currentIndex < 0) {
+                  throw new LinguisticRuleTargetMissingError();
+                }
+
+                this.moveItem(candidate.sheets, currentIndex, currentIndex - 1);
+              },
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to move cypher sheet:",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the cypher-sheet reorder; the previous order was restored.",
+              );
+              this.rerender();
+              return;
+            }
+
+            if (result.status === "target-missing") {
+              new Notice(
+                "Made Up Words: that cypher sheet no longer exists; it was not moved.",
+              );
+              this.rerender();
+              return;
+            }
+
             rebuildSheets();
           }),
       )
@@ -1779,8 +1926,38 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setTooltip("Move sheet down")
           .setDisabled(sheetIndex === lang.sheets.length - 1)
           .onClick(async () => {
-            this.moveItem(lang.sheets, sheetIndex, sheetIndex + 1);
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setLinguisticRuleState(
+              lang,
+              (candidate) => {
+                const currentIndex = lang.sheets.indexOf(sheet);
+                if (currentIndex < 0) {
+                  throw new LinguisticRuleTargetMissingError();
+                }
+
+                this.moveItem(candidate.sheets, currentIndex, currentIndex + 1);
+              },
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to move cypher sheet:",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the cypher-sheet reorder; the previous order was restored.",
+              );
+              this.rerender();
+              return;
+            }
+
+            if (result.status === "target-missing") {
+              new Notice(
+                "Made Up Words: that cypher sheet no longer exists; it was not moved.",
+              );
+              this.rerender();
+              return;
+            }
+
             rebuildSheets();
           }),
       )
@@ -1789,8 +1966,36 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setTooltip("Enable sheet")
           .setValue(sheet.enabled)
           .onChange(async (v) => {
-            sheet.enabled = v;
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setLinguisticRuleState(
+              lang,
+              (candidate) => {
+                const currentIndex = lang.sheets.indexOf(sheet);
+                if (currentIndex < 0) {
+                  throw new LinguisticRuleTargetMissingError();
+                }
+
+                candidate.sheets[currentIndex].enabled = v;
+              },
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to change cypher-sheet enabled state:",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the cypher-sheet setting; the previous setting was restored.",
+              );
+              this.rerender();
+              return;
+            }
+
+            if (result.status === "target-missing") {
+              new Notice(
+                "Made Up Words: that cypher sheet no longer exists; the setting was not changed.",
+              );
+              this.rerender();
+            }
           }),
       )
       .addButton((b) =>
@@ -1809,30 +2014,41 @@ export class ConlangSettingTab extends PluginSettingTab {
 
             if (!confirmed) return;
 
-            // Re-find the exact object approved by the user. A stale rendered
-            // index must never authorize deletion of a different sheet.
-            const currentIndex = lang.sheets.indexOf(sheet);
-            if (currentIndex < 0) {
+            const result = await this.plugin.setLinguisticRuleState(
+              lang,
+              (candidate) => {
+                /*
+                 * Re-find the exact object approved by the user only when this
+                 * queued edit begins. A stale rendered index must never
+                 * authorize deletion of whichever sheet later occupies it.
+                 */
+                const currentIndex = lang.sheets.indexOf(sheet);
+                if (currentIndex < 0) {
+                  throw new LinguisticRuleTargetMissingError();
+                }
+
+                candidate.sheets.splice(currentIndex, 1);
+              },
+            );
+
+            if (result.status === "save-failed") {
+              console.error(
+                "Made Up Words: failed to delete cypher sheet:",
+                result.error,
+              );
               new Notice(
-                "Made Up Words: that cypher sheet no longer exists; nothing was deleted.",
+                "Made Up Words: could not save the cypher-sheet deletion; the sheet was not deleted.",
               );
               this.rerender();
               return;
             }
 
-            lang.sheets.splice(currentIndex, 1);
-
-            try {
-              await this.plugin.saveSettings();
-            } catch (error) {
-              lang.sheets.splice(currentIndex, 0, sheet);
-              console.error(
-                "Made Up Words: failed to delete cypher sheet:",
-                error,
-              );
+            if (result.status === "target-missing") {
               new Notice(
-                "Made Up Words: could not save the cypher-sheet deletion; the sheet was restored.",
+                "Made Up Words: that cypher sheet no longer exists; nothing was deleted.",
               );
+              this.rerender();
+              return;
             }
 
             this.rerender();
@@ -1841,8 +2057,36 @@ export class ConlangSettingTab extends PluginSettingTab {
 
     new Setting(box).setName("Sheet name").addText((t) =>
       t.setValue(sheet.name).onChange(async (v) => {
-        sheet.name = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentIndex].name = v;
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to rename cypher sheet:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the cypher-sheet name; the previous name was restored.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that cypher sheet no longer exists; its name was not changed.",
+          );
+          this.rerender();
+        }
       }),
     );
 
@@ -1854,18 +2098,48 @@ export class ConlangSettingTab extends PluginSettingTab {
     );
     const tbody = table.createEl("tbody");
     for (let r = 0; r < sheet.rules.length; r++) {
-      this.renderRuleRow(tbody, sheet, r);
+      this.renderRuleRow(tbody, lang, sheet, r);
     }
 
     new Setting(box).addButton((b) =>
       b.setButtonText("Add rule").onClick(async () => {
-        sheet.rules.push({
-          input: "",
-          output: "",
-          type: "default",
-          enabled: true,
-        });
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentSheetIndex].rules.push({
+              input: "",
+              output: "",
+              type: "default",
+              enabled: true,
+            });
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to add cypher rule:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the new cypher rule; it was not added.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that cypher sheet no longer exists; no rule was added.",
+          );
+          this.rerender();
+          return;
+        }
+
         this.rerender();
       }),
     );
@@ -1873,6 +2147,7 @@ export class ConlangSettingTab extends PluginSettingTab {
 
   private renderRuleRow(
     tbody: HTMLElement,
+    lang: LanguageConfig,
     sheet: CypherSheet,
     ruleIndex: number,
   ): void {
@@ -1885,8 +2160,45 @@ export class ConlangSettingTab extends PluginSettingTab {
       value: rule.input,
     });
     inputEl.addEventListener("change", () => {
-      rule.input = inputEl.value;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedInput = inputEl.value;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].input =
+              requestedInput;
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule input:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the cypher-rule input; the previous value was restored.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that cypher rule no longer exists; its input was not changed.",
+          );
+          this.rerender();
+        }
+      })();
     });
 
     const outputTd = tr.createEl("td");
@@ -1895,8 +2207,45 @@ export class ConlangSettingTab extends PluginSettingTab {
       value: rule.output,
     });
     outputEl.addEventListener("change", () => {
-      rule.output = outputEl.value;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedOutput = outputEl.value;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].output =
+              requestedOutput;
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule output:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the cypher-rule output; the previous value was restored.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that cypher rule no longer exists; its output was not changed.",
+          );
+          this.rerender();
+        }
+      })();
     });
 
     const typeTd = tr.createEl("td");
@@ -1906,16 +2255,91 @@ export class ConlangSettingTab extends PluginSettingTab {
       if (t === rule.type) opt.selected = true;
     });
     typeEl.addEventListener("change", () => {
-      rule.type = typeEl.value as HashType;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedType = typeEl.value as HashType;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].type =
+              requestedType;
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule type:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the cypher-rule type; the previous value was restored.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that cypher rule no longer exists; its type was not changed.",
+          );
+          this.rerender();
+        }
+      })();
     });
 
     const enabledTd = tr.createEl("td");
     const enabledEl = enabledTd.createEl("input", { type: "checkbox" });
     enabledEl.checked = rule.enabled;
     enabledEl.addEventListener("change", () => {
-      rule.enabled = enabledEl.checked;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedEnabled = enabledEl.checked;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentSheetIndex].rules[
+              currentRuleIndex
+            ].enabled = requestedEnabled;
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule enabled state:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the cypher-rule setting; the previous setting was restored.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that cypher rule no longer exists; the setting was not changed.",
+          );
+          this.rerender();
+        }
+      })();
     });
 
     const deleteTd = tr.createEl("td");
@@ -1935,25 +2359,44 @@ export class ConlangSettingTab extends PluginSettingTab {
 
         if (!confirmed) return;
 
-        const currentIndex = sheet.rules.indexOf(rule);
-        if (currentIndex < 0) {
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidate.sheets[currentSheetIndex].rules.splice(
+              currentRuleIndex,
+              1,
+            );
+          },
+        );
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to delete cypher rule:",
+            result.error,
+          );
           new Notice(
-            "Made Up Words: that cypher rule no longer exists; nothing was deleted.",
+            "Made Up Words: could not save the cypher-rule deletion; the rule was not deleted.",
           );
           this.rerender();
           return;
         }
 
-        sheet.rules.splice(currentIndex, 1);
-
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          sheet.rules.splice(currentIndex, 0, rule);
-          console.error("Made Up Words: failed to delete cypher rule:", error);
+        if (result.status === "target-missing") {
           new Notice(
-            "Made Up Words: could not save the cypher-rule deletion; the rule was restored.",
+            "Made Up Words: that cypher rule no longer exists; nothing was deleted.",
           );
+          this.rerender();
+          return;
         }
 
         this.rerender();
@@ -2014,9 +2457,20 @@ export class ConlangSettingTab extends PluginSettingTab {
     });
     upBtn.disabled = ruleIndex === 0;
     upBtn.addEventListener("click", () => {
-      this.moveItem(rules, ruleIndex, ruleIndex - 1);
-      void this.plugin.saveSettings();
-      rebuild();
+      void (async () => {
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          this.moveItem(candidateRules, currentIndex, currentIndex - 1);
+        }, "reorder inflection rule");
+
+        /*
+         * Rebuild from authoritative state whether persistence succeeded or
+         * failed. This updates button positions after success and restores the
+         * displayed order after rollback.
+         */
+        rebuild();
+
+        if (!applied) return;
+      })();
     });
     const downBtn = orderWrap.createEl("button", {
       cls: "conlang-reorder-btn",
@@ -2025,21 +2479,95 @@ export class ConlangSettingTab extends PluginSettingTab {
     });
     downBtn.disabled = ruleIndex === rules.length - 1;
     downBtn.addEventListener("click", () => {
-      this.moveItem(rules, ruleIndex, ruleIndex + 1);
-      void this.plugin.saveSettings();
-      rebuild();
+      void (async () => {
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          this.moveItem(candidateRules, currentIndex, currentIndex + 1);
+        }, "reorder inflection rule");
+
+        rebuild();
+
+        if (!applied) return;
+      })();
     });
 
-    const mkText = (value: string, onChange: (v: string) => void) => {
+    const applyRuleEdit = async (
+      edit: (
+        candidateRules: NonNullable<LanguageConfig["inflections"]>,
+        currentIndex: number,
+      ) => void,
+      description: string,
+    ): Promise<boolean> => {
+      const result = await this.plugin.setLinguisticRuleState(
+        lang,
+        (candidate) => {
+          const currentRules = lang.inflections;
+          if (!currentRules) {
+            throw new LinguisticRuleTargetMissingError();
+          }
+
+          const currentIndex = currentRules.indexOf(rule);
+          if (currentIndex < 0) {
+            throw new LinguisticRuleTargetMissingError();
+          }
+
+          const candidateRules = candidate.inflections;
+          if (!candidateRules || !candidateRules[currentIndex]) {
+            throw new LinguisticRuleTargetMissingError();
+          }
+
+          edit(candidateRules, currentIndex);
+        },
+      );
+
+      if (result.status === "save-failed") {
+        console.error(`Made Up Words: failed to ${description}:`, result.error);
+        new Notice(
+          "Made Up Words: could not save the inflection-rule change; the previous value was restored.",
+        );
+        return false;
+      }
+
+      if (result.status === "target-missing") {
+        new Notice(
+          "Made Up Words: that inflection rule no longer exists; the change was not applied.",
+        );
+        return false;
+      }
+
+      return true;
+    };
+
+    const mkText = (
+      value: string,
+      applyValue: (
+        candidateRule: NonNullable<LanguageConfig["inflections"]>[number],
+        value: string,
+      ) => void,
+    ) => {
       const td = tr.createEl("td");
       const el = td.createEl("input", { type: "text", value });
       el.addEventListener("change", () => {
-        onChange(el.value);
-        void this.plugin.saveSettings();
+        void (async () => {
+          /*
+           * Capture the DOM value before awaiting the queue. A later edit may
+           * change this same input while this request is waiting its turn.
+           */
+          const requestedValue = el.value;
+          const applied = await applyRuleEdit(
+            (candidateRules, currentIndex) => {
+              applyValue(candidateRules[currentIndex], requestedValue);
+            },
+            "change inflection rule",
+          );
+
+          if (!applied) rebuild();
+        })();
       });
     };
 
-    mkText(rule.label, (v) => (rule.label = v));
+    mkText(rule.label, (candidateRule, value) => {
+      candidateRule.label = value;
+    });
 
     const posTd = tr.createEl("td");
     const posEl = posTd.createEl("select");
@@ -2048,28 +2576,52 @@ export class ConlangSettingTab extends PluginSettingTab {
       if (p === rule.position) opt.selected = true;
     });
     posEl.addEventListener("change", () => {
-      rule.position = posEl.value as "suffix" | "prefix";
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedPosition = posEl.value as "suffix" | "prefix";
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          candidateRules[currentIndex].position = requestedPosition;
+        }, "change inflection-rule position");
+
+        if (!applied) rebuild();
+      })();
     });
 
-    mkText(rule.pattern, (v) => {
-      rule.pattern = v;
-      if (!rule.strip) rule.strip = v;
+    mkText(rule.pattern, (candidateRule, value) => {
+      candidateRule.pattern = value;
+
+      /*
+       * Preserve the existing convenience behavior: when Strip is still empty,
+       * a newly entered Pattern also initializes Strip. The decision is now made
+       * against the latest queued candidate rather than prematurely mutating the
+       * live authoritative rule.
+       */
+      if (!candidateRule.strip) candidateRule.strip = value;
     });
-    mkText(rule.strip, (v) => (rule.strip = v));
-    mkText(rule.add, (v) => (rule.add = v));
-    mkText(rule.pos ?? "", (v) => (rule.pos = v.trim() === "" ? undefined : v));
-    mkText(
-      rule.description ?? "",
-      (v) => (rule.description = v.trim() === "" ? undefined : v),
-    );
+    mkText(rule.strip, (candidateRule, value) => {
+      candidateRule.strip = value;
+    });
+    mkText(rule.add, (candidateRule, value) => {
+      candidateRule.add = value;
+    });
+    mkText(rule.pos ?? "", (candidateRule, value) => {
+      candidateRule.pos = value.trim() === "" ? undefined : value;
+    });
+    mkText(rule.description ?? "", (candidateRule, value) => {
+      candidateRule.description = value.trim() === "" ? undefined : value;
+    });
 
     const enabledTd = tr.createEl("td");
     const enabledEl = enabledTd.createEl("input", { type: "checkbox" });
     enabledEl.checked = rule.enabled;
     enabledEl.addEventListener("change", () => {
-      rule.enabled = enabledEl.checked;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedEnabled = enabledEl.checked;
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          candidateRules[currentIndex].enabled = requestedEnabled;
+        }, "change inflection-rule enabled state");
+
+        if (!applied) rebuild();
+      })();
     });
 
     const deleteTd = tr.createEl("td");
@@ -2089,28 +2641,13 @@ export class ConlangSettingTab extends PluginSettingTab {
 
         if (!confirmed) return;
 
-        const currentIndex = rules.indexOf(rule);
-        if (currentIndex < 0) {
-          new Notice(
-            "Made Up Words: that inflection rule no longer exists; nothing was deleted.",
-          );
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          candidateRules.splice(currentIndex, 1);
+        }, "delete inflection rule");
+
+        if (!applied) {
           this.rerender();
           return;
-        }
-
-        rules.splice(currentIndex, 1);
-
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          rules.splice(currentIndex, 0, rule);
-          console.error(
-            "Made Up Words: failed to delete inflection rule:",
-            error,
-          );
-          new Notice(
-            "Made Up Words: could not save the inflection-rule deletion; the rule was restored.",
-          );
         }
 
         this.rerender();

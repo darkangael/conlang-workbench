@@ -1869,7 +1869,7 @@ sink was found. SEC-005-H1 is remediated and regression-tested.
 
 Review of command and mutation boundaries is in progress.
 
-The review has so far completed nine substantial authority boundaries:
+The review has so far completed ten substantial authority boundaries:
 
 - dictionary-entry persistence
 - translation commit into existing creator-authored Markdown
@@ -1880,13 +1880,14 @@ The review has so far completed nine substantial authority boundaries:
 - language source-path, root-ownership, rename, and repair authority
 - primary-language-only authority
 - case-sensitive-matching persistence/runtime authority
+- live cypher/inflection rule persistence authority
 
-SEC-006-H1 through SEC-006-H9 are remediated and verified.
+SEC-006-H1 through SEC-006-H10 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
-review before this section can be marked Pass. Remaining persisted
-configuration mutation surfaces, including cypher and inflection configuration,
-still require review.
+review before this section can be marked Pass. Broader persisted-settings
+authority and concurrency boundaries, along with any remaining mutation
+surfaces, still require review.
 
 ### Command Inventory
 
@@ -2975,6 +2976,117 @@ The remediation was committed and pushed as `dcde644`
 
 **Status:** Remediated and verified.
 
+#### SEC-006-H10 — Live linguistic-rule configuration could become runtime-authoritative before persistence succeeded
+
+**Severity:** Hardening
+
+Cypher sheets, nested cypher rules, and inflection rules are consumed directly
+from each language's live `LanguageConfig`. Settings controls previously mutated
+those live objects and then called `saveSettings()`. A persistence failure could
+therefore leave unpersisted linguistic-rule values active for the remainder of
+the Obsidian session.
+
+This boundary also required concurrency review. Multiple cypher or inflection
+controls can initiate saves close together. Independent optimistic mutations
+with independent rollback snapshots would be unsafe: an older failed save could
+restore stale state over a newer edit, while constructing a later whole-state
+candidate before an earlier save settled could accidentally carry forward
+unpersisted values.
+
+The required invariant is:
+
+> A requested cypher-sheet or inflection-rule change is not treated as
+> successfully authoritative unless persistence succeeds. Failed persistence
+> restores the previous in-memory linguistic-rule authority, stale UI targets
+> fail closed, and overlapping H10 transactions are serialized so each
+> candidate is constructed from the latest settled H10 authority.
+
+**Remediation:**
+
+`linguistic-rule-state.ts` now owns the pure persistence transaction and the
+serialized H10 transaction queue.
+
+The implementation:
+
+- deep-clones cypher sheets, nested cypher rules, and inflection rules before
+  allowing UI edits to construct a candidate;
+- preserves the distinction between an absent inflection collection and an
+  explicitly configured empty collection;
+- installs the detached candidate only for the persistence attempt, so
+  `saveSettings()` serializes the requested values without first contaminating
+  the previous live rule objects;
+- restores the exact previous sheets and inflections array references if
+  persistence fails;
+- serializes H10 requests through one plugin-wide queue because
+  `saveSettings()` persists the complete settings object;
+- constructs each queued candidate only after earlier H10 work has settled,
+  preventing later edits from cloning an earlier transaction's unpersisted
+  candidate;
+- revalidates existing sheet and rule targets by exact object identity when the
+  queued edit reaches authority, rather than trusting rendered array indexes;
+- treats a missing exact target as a fail-closed `target-missing` result without
+  invoking persistence;
+- records clone provenance so, after successful persistence, surviving sheets
+  and rules are reconciled into their exact previous object identities while
+  deleted objects remain deleted and newly added objects become new authority;
+- preserves surviving outer and nested array identities where an authoritative
+  collection already existed, preventing successful edits from unnecessarily
+  invalidating rendered Settings controls;
+- keeps the H10 queue usable after both ordinary save failures and unexpected
+  rejected edit callbacks.
+
+`ConlangPlugin.setLinguisticRuleState()` is now the plugin-level authority
+boundary for these edits. Cypher-sheet creation, naming, enabling, reordering,
+and deletion; nested cypher-rule creation, field editing, enabling, and
+deletion; and inflection preset application, creation, field editing,
+reordering, and deletion now construct detached queued candidates rather than
+directly mutating live linguistic-rule configuration.
+
+No linguistic-inventory reload is required for this finding because runtime
+cypher and inflection consumers read these `LanguageConfig` rule arrays
+directly. Successful persistence followed by reconciliation therefore
+establishes the requested runtime authority.
+
+This finding deliberately does not claim that the H10 queue serializes
+unrelated plugin settings saves. `saveSettings()` persists the broader settings
+object, so concurrency between H10 and unrelated settings transactions remains
+a separate persisted-settings authority question for subsequent review.
+
+**Verification:**
+
+`scripts/test-linguistic-rule-state.mjs` covers:
+
+- detached cloning of sheets, nested cypher rules, and inflection rules;
+- successful persistence of the detached requested state;
+- save failure with restoration of exact previous authority references;
+- absent-versus-empty optional inflection-state handling;
+- serialized queued edits constructed from settled authority;
+- failed first queued persistence followed by a valid later edit;
+- unexpected edit-callback rejection without poisoning later queued work;
+- successful reconciliation preserving surviving sheet, nested-rule, and
+  inflection-rule object identities;
+- sheet reordering while preserving exact surviving identities;
+- sheet deletion and addition without reusing deleted identity;
+- persistence observing the detached candidate before reconciliation;
+- inflection reordering with exact surviving identities;
+- inflection deletion and addition without resurrecting deleted identity;
+- preset-style complete inflection replacement using entirely new authority;
+- transition from absent inflections to a successfully persisted populated
+  collection;
+- stale-target failure without persistence followed by a valid later queued
+  edit.
+
+Code review found no remaining direct live cypher/inflection field-assignment
+candidates in the reviewed Settings mutation surfaces, and all identified H10
+controls route through `setLinguisticRuleState()`.
+
+The complete established regression suite plus the H10 linguistic-rule-state
+suite pass. The production build succeeds. Lint reports zero errors with the
+established 14-warning baseline. Prettier verification and `git diff --check`
+pass.
+
+**Status:** Remediated and verified.
+
 ### Status
 
 **Reviewing**
@@ -3404,6 +3516,7 @@ audit section.
 | SEC-006-H7  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Language source-path, root rename, and repair mutations lacked one complete structural authority model tying configured ownership, physical vault roots, persistence, and runtime source establishment together. | Code review; `test-language-source-state.mjs`; `test-language-root-authority.mjs`; rename/rename-state and repair/repair-state regression suites; updated language-creator coverage; production build; lint; `git diff --check`; commit `bf1f00f` | Language roots now have explicit structural ownership; unconfigured existing roots are reserved rather than silently adopted; source changes and root operations use guarded transactions; rename moves only the exact owned root, rewrites moved configured paths without rewriting creator Markdown/YAML, and refuses destination merge/adoption; repair is additive beneath the already claimed root. |
 | SEC-006-H8  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Primary-language-only controls could change runtime-observed primary authority before persistence succeeded, leaving an unpersisted in-memory primary after save failure. | Code review; `scripts/test-primary-language-state.mjs`; full regression suite; production build; lint; `git diff --check`; commit `92bf124` | Primary-only selection now uses a shared transaction that requires one uniquely configured already-active language, skips unchanged requests, restores the previous in-memory primary on save failure, and deliberately avoids unnecessary linguistic-inventory reload. |
 | SEC-006-H9  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Case-sensitive matching could diverge between persisted/in-memory settings and dictionary/phrase runtime indexes after save failure or a preflight-blocked reload. | Code review; `scripts/test-case-sensitive-state.mjs`; neighboring active-language and source-state tests; full regression suite; production build; lint; `git diff --check`; staged generated-bundle verification; commit `dcde644` | Case-sensitive matching now uses a persistence/runtime transaction: save failure restores memory without reload; explicit preflight block restores and re-persists the previous policy; rollback-save failure is distinct; post-preflight reload exceptions are reported without claiming an unsafe rollback. |
+| SEC-006-H10 | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Live cypher/inflection configuration could become runtime-authoritative before persistence succeeded, while overlapping rule edits could make independent rollback ordering unsafe. | Code review; `scripts/test-linguistic-rule-state.mjs`; complete established regression suite; production build; lint; Prettier; `git diff --check` | Cypher and inflection edits now use detached candidates in one serialized H10 queue; save failure restores exact prior authority; stale targets fail closed by identity; successful persistence reconciles surviving object identities without resurrecting deleted state. The queue deliberately does not claim to serialize unrelated settings saves. |
 
 ---
 

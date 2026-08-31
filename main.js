@@ -4416,6 +4416,156 @@ async function createStandardLanguage(app, languageName, existingLanguages) {
   };
 }
 
+// linguistic-rule-state.ts
+var LinguisticRuleTargetMissingError = class extends Error {
+  constructor() {
+    super("linguistic-rule authority target no longer exists");
+    this.name = "LinguisticRuleTargetMissingError";
+  }
+};
+function cloneLinguisticRuleStateWithProvenance(state) {
+  var _a;
+  const provenance = {
+    sheets: /* @__PURE__ */ new Map(),
+    rules: /* @__PURE__ */ new Map(),
+    inflections: /* @__PURE__ */ new Map()
+  };
+  const sheets = state.sheets.map((sheet) => {
+    const candidateSheet = {
+      ...sheet,
+      rules: sheet.rules.map((rule) => {
+        const candidateRule = { ...rule };
+        provenance.rules.set(candidateRule, rule);
+        return candidateRule;
+      })
+    };
+    provenance.sheets.set(candidateSheet, sheet);
+    return candidateSheet;
+  });
+  const inflections = (_a = state.inflections) == null ? void 0 : _a.map((rule) => {
+    const candidateRule = { ...rule };
+    provenance.inflections.set(candidateRule, rule);
+    return candidateRule;
+  });
+  return {
+    candidate: {
+      sheets,
+      inflections
+    },
+    provenance
+  };
+}
+function reconcileSuccessfulCandidate(state, previousSheets, previousInflections, candidate, provenance) {
+  const reconciledSheets = candidate.sheets.map((candidateSheet) => {
+    var _a;
+    const authoritativeSheet = (_a = provenance.sheets.get(candidateSheet)) != null ? _a : candidateSheet;
+    const reconciledRules = candidateSheet.rules.map((candidateRule) => {
+      var _a2;
+      const authoritativeRule = (_a2 = provenance.rules.get(candidateRule)) != null ? _a2 : candidateRule;
+      if (authoritativeRule !== candidateRule) {
+        Object.assign(authoritativeRule, candidateRule);
+      }
+      return authoritativeRule;
+    });
+    if (authoritativeSheet !== candidateSheet) {
+      authoritativeSheet.name = candidateSheet.name;
+      authoritativeSheet.enabled = candidateSheet.enabled;
+      authoritativeSheet.rules.splice(
+        0,
+        authoritativeSheet.rules.length,
+        ...reconciledRules
+      );
+    }
+    return authoritativeSheet;
+  });
+  previousSheets.splice(0, previousSheets.length, ...reconciledSheets);
+  state.sheets = previousSheets;
+  if (candidate.inflections === void 0) {
+    state.inflections = void 0;
+    return;
+  }
+  const reconciledInflections = candidate.inflections.map((candidateRule) => {
+    var _a;
+    const authoritativeRule = (_a = provenance.inflections.get(candidateRule)) != null ? _a : candidateRule;
+    if (authoritativeRule !== candidateRule) {
+      Object.assign(authoritativeRule, candidateRule);
+    }
+    return authoritativeRule;
+  });
+  if (previousInflections !== void 0) {
+    previousInflections.splice(
+      0,
+      previousInflections.length,
+      ...reconciledInflections
+    );
+    state.inflections = previousInflections;
+  } else {
+    state.inflections = reconciledInflections;
+  }
+}
+async function applyLinguisticRuleState(request) {
+  const previousSheets = request.state.sheets;
+  const previousInflections = request.state.inflections;
+  request.state.sheets = request.requested.sheets;
+  request.state.inflections = request.requested.inflections;
+  try {
+    await request.save();
+  } catch (error) {
+    request.state.sheets = previousSheets;
+    request.state.inflections = previousInflections;
+    return {
+      status: "save-failed",
+      error
+    };
+  }
+  return { status: "applied" };
+}
+var LinguisticRuleStateQueue = class {
+  constructor() {
+    /*
+     * The tail represents completion of the most recently queued H10 request.
+     * Starting with an already-resolved Promise means the first request can run
+     * immediately.
+     */
+    this.tail = Promise.resolve();
+  }
+  apply(request) {
+    const result = this.tail.then(async () => {
+      const previousSheets = request.state.sheets;
+      const previousInflections = request.state.inflections;
+      const { candidate: requested, provenance } = cloneLinguisticRuleStateWithProvenance(request.state);
+      try {
+        request.edit(requested);
+      } catch (error) {
+        if (error instanceof LinguisticRuleTargetMissingError) {
+          return { status: "target-missing" };
+        }
+        throw error;
+      }
+      const transaction = await applyLinguisticRuleState({
+        state: request.state,
+        requested,
+        save: request.save
+      });
+      if (transaction.status === "applied") {
+        reconcileSuccessfulCandidate(
+          request.state,
+          previousSheets,
+          previousInflections,
+          requested,
+          provenance
+        );
+      }
+      return transaction;
+    });
+    this.tail = result.then(
+      () => void 0,
+      () => void 0
+    );
+    return result;
+  }
+};
+
 // settings.ts
 var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
   constructor(app, plugin) {
@@ -5060,6 +5210,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
   }
   // ===== Per-language card =====
   renderLanguageCard(parent, lang) {
+    var _a, _b;
     const isActive = this.plugin.settings.activeLanguages.includes(lang.name);
     const isPrimary = this.plugin.settings.primaryLanguage === lang.name;
     const card = parent.createEl("details", { cls: "conlang-card" });
@@ -5285,8 +5436,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       morphemeSetting,
       "morphemeFolder",
       () => {
-        var _a;
-        return (_a = lang.morphemeFolder) != null ? _a : "";
+        var _a2;
+        return (_a2 = lang.morphemeFolder) != null ? _a2 : "";
       },
       true
     );
@@ -5297,8 +5448,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       exampleSetting,
       "exampleFolder",
       () => {
-        var _a;
-        return (_a = lang.exampleFolder) != null ? _a : "";
+        var _a2;
+        return (_a2 = lang.exampleFolder) != null ? _a2 : "";
       },
       true
     );
@@ -5309,8 +5460,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       phonologySetting,
       "phonologyFolder",
       () => {
-        var _a;
-        return (_a = lang.phonologyFolder) != null ? _a : "";
+        var _a2;
+        return (_a2 = lang.phonologyFolder) != null ? _a2 : "";
       },
       true
     );
@@ -5318,8 +5469,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       "Optional vault path to this language's canonical language profile note."
     ).addText(
       (t) => {
-        var _a;
-        return t.setValue((_a = lang.profilePath) != null ? _a : "").onChange(async (v) => {
+        var _a2;
+        return t.setValue((_a2 = lang.profilePath) != null ? _a2 : "").onChange(async (v) => {
           lang.profilePath = v.trim() || void 0;
           await this.plugin.saveSettings();
         });
@@ -5391,12 +5542,12 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
         await this.repairLanguageRoot(lang);
       })
     ).addButton((b) => {
-      var _a;
+      var _a2;
       b.setButtonText("Remove language").onClick(async () => {
         await this.removeLanguage(lang);
       });
       const destructive = b;
-      const applyStyle = (_a = destructive.setDestructive) != null ? _a : destructive.setWarning;
+      const applyStyle = (_a2 = destructive.setDestructive) != null ? _a2 : destructive.setWarning;
       applyStyle == null ? void 0 : applyStyle.call(destructive);
     });
     const sheetsBody = this.collapsible(body, {
@@ -5419,22 +5570,43 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     rebuildSheets();
     new import_obsidian14.Setting(sheetsBody).addButton(
       (b) => b.setButtonText("Add sheet").setCta().onClick(async () => {
-        lang.sheets.push({
-          name: `Sheet ${lang.sheets.length + 1}`,
-          enabled: true,
-          rules: []
-        });
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            candidate.sheets.push({
+              name: `Sheet ${candidate.sheets.length + 1}`,
+              enabled: true,
+              rules: []
+            });
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to add cypher sheet:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the new cypher sheet; it was not added."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: the cypher-sheet change could not be applied because its target changed."
+          );
+          this.rerender();
+          return;
+        }
         this.openSheets.add(lang.name);
-        await this.plugin.saveSettings();
         this.rerender();
       })
     );
-    if (!lang.inflections) lang.inflections = [];
     const inflBody = this.collapsible(body, {
       title: "Inflection rules",
       key: lang.name,
       store: this.openInflections,
-      badge: String(lang.inflections.length)
+      badge: String((_b = (_a = lang.inflections) == null ? void 0 : _a.length) != null ? _b : 0)
     });
     inflBody.createEl("p", {
       cls: "conlang-help",
@@ -5453,19 +5625,56 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       });
     }).addButton(
       (b) => b.setButtonText("Apply").setCta().onClick(async () => {
-        var _a, _b;
+        var _a2;
         if (!pendingPresetId) {
           new import_obsidian14.Notice("Made Up Words: pick a preset first");
           return;
         }
         const preset = findPreset(pendingPresetId);
         if (!preset) return;
-        const existingCount = (_b = (_a = lang.inflections) == null ? void 0 : _a.length) != null ? _b : 0;
+        const approvedRules = lang.inflections ? [...lang.inflections] : void 0;
+        const existingCount = (_a2 = approvedRules == null ? void 0 : approvedRules.length) != null ? _a2 : 0;
         const confirmed = await this.confirmPreset(preset, existingCount);
         if (!confirmed) return;
-        lang.inflections = preset.rules.map((r) => ({ ...r }));
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentRules = lang.inflections;
+            if (approvedRules === void 0) {
+              if (currentRules !== void 0) {
+                throw new LinguisticRuleTargetMissingError();
+              }
+            } else {
+              if (currentRules === void 0 || currentRules.length !== approvedRules.length || currentRules.some(
+                (currentRule, index) => currentRule !== approvedRules[index]
+              )) {
+                throw new LinguisticRuleTargetMissingError();
+              }
+            }
+            candidate.inflections = preset.rules.map((rule) => ({
+              ...rule
+            }));
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to apply inflection preset:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the inflection preset; the previous rules were restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: the inflection rules changed while preset replacement was pending; the preset was not applied."
+          );
+          this.rerender();
+          return;
+        }
         this.openInflections.add(lang.name);
-        await this.plugin.saveSettings();
         this.rerender();
         new import_obsidian14.Notice(`Made Up Words: applied preset "${preset.name}"`);
       })
@@ -5473,17 +5682,40 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     this.renderInflectionTable(inflBody, lang);
     new import_obsidian14.Setting(inflBody).addButton(
       (b) => b.setButtonText("Add inflection rule").onClick(async () => {
-        var _a;
-        ((_a = lang.inflections) != null ? _a : lang.inflections = []).push({
-          label: "plural",
-          pattern: "",
-          position: "suffix",
-          strip: "",
-          add: "",
-          enabled: true
-        });
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            var _a2;
+            (_a2 = candidate.inflections) != null ? _a2 : candidate.inflections = [];
+            candidate.inflections.push({
+              label: "plural",
+              pattern: "",
+              position: "suffix",
+              strip: "",
+              add: "",
+              enabled: true
+            });
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to add inflection rule:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the new inflection rule; it was not added."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: the inflection-rule change could not be applied because its target changed."
+          );
+          this.rerender();
+          return;
+        }
         this.openInflections.add(lang.name);
-        await this.plugin.saveSettings();
         this.rerender();
       })
     );
@@ -5604,20 +5836,97 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     const box = parent.createDiv({ cls: "conlang-sheet" });
     new import_obsidian14.Setting(box).setName(sheet.name).addExtraButton(
       (b) => b.setIcon("arrow-up").setTooltip("Move sheet up").setDisabled(sheetIndex === 0).onClick(async () => {
-        this.moveItem(lang.sheets, sheetIndex, sheetIndex - 1);
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            this.moveItem(candidate.sheets, currentIndex, currentIndex - 1);
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to move cypher sheet:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-sheet reorder; the previous order was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher sheet no longer exists; it was not moved."
+          );
+          this.rerender();
+          return;
+        }
         rebuildSheets();
       })
     ).addExtraButton(
       (b) => b.setIcon("arrow-down").setTooltip("Move sheet down").setDisabled(sheetIndex === lang.sheets.length - 1).onClick(async () => {
-        this.moveItem(lang.sheets, sheetIndex, sheetIndex + 1);
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            this.moveItem(candidate.sheets, currentIndex, currentIndex + 1);
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to move cypher sheet:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-sheet reorder; the previous order was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher sheet no longer exists; it was not moved."
+          );
+          this.rerender();
+          return;
+        }
         rebuildSheets();
       })
     ).addToggle(
       (t) => t.setTooltip("Enable sheet").setValue(sheet.enabled).onChange(async (v) => {
-        sheet.enabled = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentIndex].enabled = v;
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-sheet enabled state:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-sheet setting; the previous setting was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher sheet no longer exists; the setting was not changed."
+          );
+          this.rerender();
+        }
       })
     ).addButton(
       (b) => b.setIcon("trash").setTooltip("Delete sheet").onClick(async () => {
@@ -5628,34 +5937,66 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           confirmText: "Delete sheet"
         });
         if (!confirmed) return;
-        const currentIndex = lang.sheets.indexOf(sheet);
-        if (currentIndex < 0) {
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets.splice(currentIndex, 1);
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to delete cypher sheet:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-sheet deletion; the sheet was not deleted."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
           new import_obsidian14.Notice(
             "Made Up Words: that cypher sheet no longer exists; nothing was deleted."
           );
           this.rerender();
           return;
         }
-        lang.sheets.splice(currentIndex, 1);
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          lang.sheets.splice(currentIndex, 0, sheet);
-          console.error(
-            "Made Up Words: failed to delete cypher sheet:",
-            error
-          );
-          new import_obsidian14.Notice(
-            "Made Up Words: could not save the cypher-sheet deletion; the sheet was restored."
-          );
-        }
         this.rerender();
       })
     );
     new import_obsidian14.Setting(box).setName("Sheet name").addText(
       (t) => t.setValue(sheet.name).onChange(async (v) => {
-        sheet.name = v;
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentIndex].name = v;
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to rename cypher sheet:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-sheet name; the previous name was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher sheet no longer exists; its name was not changed."
+          );
+          this.rerender();
+        }
       })
     );
     const tableWrap = box.createDiv({ cls: "conlang-rules-wrap" });
@@ -5666,22 +6007,48 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     );
     const tbody = table.createEl("tbody");
     for (let r = 0; r < sheet.rules.length; r++) {
-      this.renderRuleRow(tbody, sheet, r);
+      this.renderRuleRow(tbody, lang, sheet, r);
     }
     new import_obsidian14.Setting(box).addButton(
       (b) => b.setButtonText("Add rule").onClick(async () => {
-        sheet.rules.push({
-          input: "",
-          output: "",
-          type: "default",
-          enabled: true
-        });
-        await this.plugin.saveSettings();
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentSheetIndex].rules.push({
+              input: "",
+              output: "",
+              type: "default",
+              enabled: true
+            });
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to add cypher rule:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the new cypher rule; it was not added."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher sheet no longer exists; no rule was added."
+          );
+          this.rerender();
+          return;
+        }
         this.rerender();
       })
     );
   }
-  renderRuleRow(tbody, sheet, ruleIndex) {
+  renderRuleRow(tbody, lang, sheet, ruleIndex) {
     const rule = sheet.rules[ruleIndex];
     const tr = tbody.createEl("tr");
     const inputTd = tr.createEl("td");
@@ -5690,8 +6057,40 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       value: rule.input
     });
     inputEl.addEventListener("change", () => {
-      rule.input = inputEl.value;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedInput = inputEl.value;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].input = requestedInput;
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule input:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-rule input; the previous value was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher rule no longer exists; its input was not changed."
+          );
+          this.rerender();
+        }
+      })();
     });
     const outputTd = tr.createEl("td");
     const outputEl = outputTd.createEl("input", {
@@ -5699,8 +6098,40 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       value: rule.output
     });
     outputEl.addEventListener("change", () => {
-      rule.output = outputEl.value;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedOutput = outputEl.value;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].output = requestedOutput;
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule output:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-rule output; the previous value was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher rule no longer exists; its output was not changed."
+          );
+          this.rerender();
+        }
+      })();
     });
     const typeTd = tr.createEl("td");
     const typeEl = typeTd.createEl("select");
@@ -5709,15 +6140,79 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       if (t === rule.type) opt.selected = true;
     });
     typeEl.addEventListener("change", () => {
-      rule.type = typeEl.value;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedType = typeEl.value;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].type = requestedType;
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule type:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-rule type; the previous value was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher rule no longer exists; its type was not changed."
+          );
+          this.rerender();
+        }
+      })();
     });
     const enabledTd = tr.createEl("td");
     const enabledEl = enabledTd.createEl("input", { type: "checkbox" });
     enabledEl.checked = rule.enabled;
     enabledEl.addEventListener("change", () => {
-      rule.enabled = enabledEl.checked;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedEnabled = enabledEl.checked;
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentSheetIndex].rules[currentRuleIndex].enabled = requestedEnabled;
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to change cypher-rule enabled state:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-rule setting; the previous setting was restored."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian14.Notice(
+            "Made Up Words: that cypher rule no longer exists; the setting was not changed."
+          );
+          this.rerender();
+        }
+      })();
     });
     const deleteTd = tr.createEl("td");
     const deleteBtn = deleteTd.createEl("button", { text: "\xD7" });
@@ -5730,23 +6225,40 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           confirmText: "Delete rule"
         });
         if (!confirmed) return;
-        const currentIndex = sheet.rules.indexOf(rule);
-        if (currentIndex < 0) {
+        const result = await this.plugin.setLinguisticRuleState(
+          lang,
+          (candidate) => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidate.sheets[currentSheetIndex].rules.splice(
+              currentRuleIndex,
+              1
+            );
+          }
+        );
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to delete cypher rule:",
+            result.error
+          );
+          new import_obsidian14.Notice(
+            "Made Up Words: could not save the cypher-rule deletion; the rule was not deleted."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
           new import_obsidian14.Notice(
             "Made Up Words: that cypher rule no longer exists; nothing was deleted."
           );
           this.rerender();
           return;
-        }
-        sheet.rules.splice(currentIndex, 1);
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          sheet.rules.splice(currentIndex, 0, rule);
-          console.error("Made Up Words: failed to delete cypher rule:", error);
-          new import_obsidian14.Notice(
-            "Made Up Words: could not save the cypher-rule deletion; the rule was restored."
-          );
         }
         this.rerender();
       })();
@@ -5793,9 +6305,13 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     });
     upBtn.disabled = ruleIndex === 0;
     upBtn.addEventListener("click", () => {
-      this.moveItem(rules, ruleIndex, ruleIndex - 1);
-      void this.plugin.saveSettings();
-      rebuild();
+      void (async () => {
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          this.moveItem(candidateRules, currentIndex, currentIndex - 1);
+        }, "reorder inflection rule");
+        rebuild();
+        if (!applied) return;
+      })();
     });
     const downBtn = orderWrap.createEl("button", {
       cls: "conlang-reorder-btn",
@@ -5804,19 +6320,67 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     });
     downBtn.disabled = ruleIndex === rules.length - 1;
     downBtn.addEventListener("click", () => {
-      this.moveItem(rules, ruleIndex, ruleIndex + 1);
-      void this.plugin.saveSettings();
-      rebuild();
+      void (async () => {
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          this.moveItem(candidateRules, currentIndex, currentIndex + 1);
+        }, "reorder inflection rule");
+        rebuild();
+        if (!applied) return;
+      })();
     });
-    const mkText = (value, onChange) => {
+    const applyRuleEdit = async (edit, description) => {
+      const result = await this.plugin.setLinguisticRuleState(
+        lang,
+        (candidate) => {
+          const currentRules = lang.inflections;
+          if (!currentRules) {
+            throw new LinguisticRuleTargetMissingError();
+          }
+          const currentIndex = currentRules.indexOf(rule);
+          if (currentIndex < 0) {
+            throw new LinguisticRuleTargetMissingError();
+          }
+          const candidateRules = candidate.inflections;
+          if (!candidateRules || !candidateRules[currentIndex]) {
+            throw new LinguisticRuleTargetMissingError();
+          }
+          edit(candidateRules, currentIndex);
+        }
+      );
+      if (result.status === "save-failed") {
+        console.error(`Made Up Words: failed to ${description}:`, result.error);
+        new import_obsidian14.Notice(
+          "Made Up Words: could not save the inflection-rule change; the previous value was restored."
+        );
+        return false;
+      }
+      if (result.status === "target-missing") {
+        new import_obsidian14.Notice(
+          "Made Up Words: that inflection rule no longer exists; the change was not applied."
+        );
+        return false;
+      }
+      return true;
+    };
+    const mkText = (value, applyValue) => {
       const td = tr.createEl("td");
       const el = td.createEl("input", { type: "text", value });
       el.addEventListener("change", () => {
-        onChange(el.value);
-        void this.plugin.saveSettings();
+        void (async () => {
+          const requestedValue = el.value;
+          const applied = await applyRuleEdit(
+            (candidateRules, currentIndex) => {
+              applyValue(candidateRules[currentIndex], requestedValue);
+            },
+            "change inflection rule"
+          );
+          if (!applied) rebuild();
+        })();
       });
     };
-    mkText(rule.label, (v) => rule.label = v);
+    mkText(rule.label, (candidateRule, value) => {
+      candidateRule.label = value;
+    });
     const posTd = tr.createEl("td");
     const posEl = posTd.createEl("select");
     ["suffix", "prefix"].forEach((p) => {
@@ -5824,26 +6388,41 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       if (p === rule.position) opt.selected = true;
     });
     posEl.addEventListener("change", () => {
-      rule.position = posEl.value;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedPosition = posEl.value;
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          candidateRules[currentIndex].position = requestedPosition;
+        }, "change inflection-rule position");
+        if (!applied) rebuild();
+      })();
     });
-    mkText(rule.pattern, (v) => {
-      rule.pattern = v;
-      if (!rule.strip) rule.strip = v;
+    mkText(rule.pattern, (candidateRule, value) => {
+      candidateRule.pattern = value;
+      if (!candidateRule.strip) candidateRule.strip = value;
     });
-    mkText(rule.strip, (v) => rule.strip = v);
-    mkText(rule.add, (v) => rule.add = v);
-    mkText((_a = rule.pos) != null ? _a : "", (v) => rule.pos = v.trim() === "" ? void 0 : v);
-    mkText(
-      (_b = rule.description) != null ? _b : "",
-      (v) => rule.description = v.trim() === "" ? void 0 : v
-    );
+    mkText(rule.strip, (candidateRule, value) => {
+      candidateRule.strip = value;
+    });
+    mkText(rule.add, (candidateRule, value) => {
+      candidateRule.add = value;
+    });
+    mkText((_a = rule.pos) != null ? _a : "", (candidateRule, value) => {
+      candidateRule.pos = value.trim() === "" ? void 0 : value;
+    });
+    mkText((_b = rule.description) != null ? _b : "", (candidateRule, value) => {
+      candidateRule.description = value.trim() === "" ? void 0 : value;
+    });
     const enabledTd = tr.createEl("td");
     const enabledEl = enabledTd.createEl("input", { type: "checkbox" });
     enabledEl.checked = rule.enabled;
     enabledEl.addEventListener("change", () => {
-      rule.enabled = enabledEl.checked;
-      void this.plugin.saveSettings();
+      void (async () => {
+        const requestedEnabled = enabledEl.checked;
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          candidateRules[currentIndex].enabled = requestedEnabled;
+        }, "change inflection-rule enabled state");
+        if (!applied) rebuild();
+      })();
     });
     const deleteTd = tr.createEl("td");
     const deleteBtn = deleteTd.createEl("button", { text: "\xD7" });
@@ -5857,26 +6436,12 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           confirmText: "Delete rule"
         });
         if (!confirmed) return;
-        const currentIndex = rules.indexOf(rule);
-        if (currentIndex < 0) {
-          new import_obsidian14.Notice(
-            "Made Up Words: that inflection rule no longer exists; nothing was deleted."
-          );
+        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
+          candidateRules.splice(currentIndex, 1);
+        }, "delete inflection rule");
+        if (!applied) {
           this.rerender();
           return;
-        }
-        rules.splice(currentIndex, 1);
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          rules.splice(currentIndex, 0, rule);
-          console.error(
-            "Made Up Words: failed to delete inflection rule:",
-            error
-          );
-          new import_obsidian14.Notice(
-            "Made Up Words: could not save the inflection-rule deletion; the rule was restored."
-          );
         }
         this.rerender();
       })();
@@ -10470,6 +11035,18 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     // highlight-core.ts). Cleared whenever the dictionary reloads or settings
     // change, since either can alter what a word resolves to.
     this.classifyCache = /* @__PURE__ */ new Map();
+    /**
+     * Serialize all H10 cypher/inflection authority changes across languages.
+     *
+     * saveSettings() persists the complete settings object, so allowing two
+     * linguistic-rule transactions to overlap would make rollback ordering unsafe
+     * even when the edits target different languages. The pure queue constructs
+     * each candidate only after the preceding H10 transaction has settled.
+     *
+     * This queue deliberately does not claim to serialize unrelated settings
+     * saves. That broader persistence boundary is reviewed separately.
+     */
+    this.linguisticRuleStateQueue = new LinguisticRuleStateQueue();
     this.tooltipEl = null;
     this.tooltipHideTimer = null;
     this.lastHoverWord = null;
@@ -10710,6 +11287,31 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     return applyPrimaryLanguageState({
       state: this.settings,
       primaryLanguage,
+      save: () => this.saveSettings()
+    });
+  }
+  /**
+   * Establish one requested cypher/inflection edit as persisted runtime
+   * authority.
+   *
+   * Runtime cypher and inflection consumers read these LanguageConfig arrays
+   * directly, so no linguistic inventory reload is needed. Persistence is the
+   * authority boundary: a failed save restores the exact previously
+   * authoritative arrays.
+   *
+   * The queue also prevents rapid H10 edits from racing each other. Crucially,
+   * the edit callback is not applied until its queued turn begins, so its
+   * detached candidate is cloned from the latest successfully settled state
+   * rather than from potentially stale state captured while another save was
+   * pending.
+   *
+   * UI callers must modify only the supplied candidate. They must not mutate
+   * the captured live LanguageConfig before calling this method.
+   */
+  async setLinguisticRuleState(language, edit) {
+    return this.linguisticRuleStateQueue.apply({
+      state: language,
+      edit,
       save: () => this.saveSettings()
     });
   }

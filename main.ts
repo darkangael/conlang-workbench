@@ -83,6 +83,11 @@ import {
   type CaseSensitiveMatchingStateResult,
 } from "./case-sensitive-state";
 import {
+  LinguisticRuleStateQueue,
+  type LinguisticRuleCandidate,
+  type LinguisticRuleStateResult,
+} from "./linguistic-rule-state";
+import {
   applyLanguageSourceState,
   type CanonicalFolderSetting,
   type LanguageSourceStateResult,
@@ -133,6 +138,19 @@ export default class ConlangPlugin extends Plugin {
   // highlight-core.ts). Cleared whenever the dictionary reloads or settings
   // change, since either can alter what a word resolves to.
   readonly classifyCache: Map<string, HighlightKind | null> = new Map();
+
+  /**
+   * Serialize all H10 cypher/inflection authority changes across languages.
+   *
+   * saveSettings() persists the complete settings object, so allowing two
+   * linguistic-rule transactions to overlap would make rollback ordering unsafe
+   * even when the edits target different languages. The pure queue constructs
+   * each candidate only after the preceding H10 transaction has settled.
+   *
+   * This queue deliberately does not claim to serialize unrelated settings
+   * saves. That broader persistence boundary is reviewed separately.
+   */
+  private readonly linguisticRuleStateQueue = new LinguisticRuleStateQueue();
 
   private tooltipEl: HTMLDivElement | null = null;
   private tooltipHideTimer: number | null = null;
@@ -471,6 +489,35 @@ export default class ConlangPlugin extends Plugin {
     return applyPrimaryLanguageState({
       state: this.settings,
       primaryLanguage,
+      save: () => this.saveSettings(),
+    });
+  }
+
+  /**
+   * Establish one requested cypher/inflection edit as persisted runtime
+   * authority.
+   *
+   * Runtime cypher and inflection consumers read these LanguageConfig arrays
+   * directly, so no linguistic inventory reload is needed. Persistence is the
+   * authority boundary: a failed save restores the exact previously
+   * authoritative arrays.
+   *
+   * The queue also prevents rapid H10 edits from racing each other. Crucially,
+   * the edit callback is not applied until its queued turn begins, so its
+   * detached candidate is cloned from the latest successfully settled state
+   * rather than from potentially stale state captured while another save was
+   * pending.
+   *
+   * UI callers must modify only the supplied candidate. They must not mutate
+   * the captured live LanguageConfig before calling this method.
+   */
+  async setLinguisticRuleState(
+    language: LanguageConfig,
+    edit: (candidate: LinguisticRuleCandidate) => void,
+  ): Promise<LinguisticRuleStateResult> {
+    return this.linguisticRuleStateQueue.apply({
+      state: language,
+      edit,
       save: () => this.saveSettings(),
     });
   }
