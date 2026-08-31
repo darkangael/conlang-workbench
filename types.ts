@@ -217,6 +217,23 @@ export interface LanguageProfile {
 export interface LanguageConfig {
   // Display name of the language
   name: string;
+
+  /**
+   * Structural ownership boundary for this configured language.
+   *
+   * Everything beneath this folder belongs to this language's vault tree.
+   * This authority is deliberately separate from `name`: a display-name
+   * mismatch must not make migration or recovery reinterpret some differently
+   * named vault folder as this language's data. An explicit authorized rename
+   * may deliberately rename this already-owned root and update this field.
+   *
+   * Optional during the compatibility period because configurations created
+   * before structural root authority was introduced do not yet contain this
+   * field. Migration must establish a root only when Workbench can do so
+   * without guessing.
+   */
+  rootFolder?: string;
+
   // Folder containing dictionary entries (one .md file per word)
   dictionaryFolder: string;
 

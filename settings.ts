@@ -17,9 +17,13 @@ import {
 } from "./types";
 import { INFLECTION_PRESETS, findPreset } from "./presets";
 import { validateLanguageRename } from "./language-identity";
-import { confirmLanguageRename } from "./language-rename-modal";
+import {
+  confirmLanguageRename,
+  showLanguageRenameBlocked,
+} from "./language-rename-modal";
 import { confirmDeletion } from "./delete-confirm-modal";
 import { createStandardLanguage } from "./language-creator";
+import type { CanonicalFolderSetting } from "./language-source-state";
 
 export class ConlangSettingTab extends PluginSettingTab {
   plugin: ConlangPlugin;
@@ -435,6 +439,214 @@ export class ConlangSettingTab extends PluginSettingTab {
     }
   }
 
+  /**
+   * Commit one canonical language-source setting through the shared H7
+   * transaction rather than mutating LanguageConfig directly from the UI.
+   *
+   * Returning true means the requested source configuration was established.
+   * Returning false means the caller should refresh its displayed value from
+   * the LanguageConfig object, because the transaction may have restored the
+   * previous source or may have retained the requested source after a reload
+   * exception where rollback is no longer known to be safe.
+   */
+  private async commitLanguageSource(
+    lang: LanguageConfig,
+    setting: CanonicalFolderSetting,
+    value: string | undefined,
+  ): Promise<boolean> {
+    const result = await this.plugin.setLanguageSourceState(
+      lang,
+      setting,
+      value,
+    );
+
+    switch (result.status) {
+      case "applied":
+        return true;
+
+      case "blocked":
+        /*
+         * H3 source preflight already displayed detailed diagnostics. Because
+         * that gate runs before runtime replacement begins, the transaction has
+         * safely restored and persisted the previous source configuration.
+         */
+        return false;
+
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save language-source change:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: could not save the language-source change; the previous source was restored.",
+        );
+        return false;
+
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist language-source rollback:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the source change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+        );
+        return false;
+
+      case "reload-failed":
+        /*
+         * Do not claim the previous source was restored here. Once H3 preflight
+         * has passed, reloadActiveLanguage() may already have replaced part of
+         * the runtime state before another loader throws. Automatically rolling
+         * the setting back could therefore make persisted configuration disagree
+         * with the partially established runtime even more severely.
+         */
+        console.error(
+          "Made Up Words: language-source reload failed after preflight:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: language data failed to reload after source validation. The requested source was kept because automatic rollback is no longer known to be safe. Check the developer console.",
+        );
+        return false;
+
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid language-source request:",
+          result.error,
+        );
+        new Notice(`Made Up Words: ${result.error}.`);
+        return false;
+    }
+  }
+
+  /**
+   * Run an explicit structural repair for one language's already-established
+   * root.
+   *
+   * Repair is deliberately not a folder picker. It may restore the standard
+   * direct-child folders and canonical source configuration inside a root this
+   * exact language already owns, but it may not adopt an unrelated existing
+   * Languages/<root> folder. Adoption belongs to the separate future Import
+   * Language authority path.
+   *
+   * The transaction reports whether additive folder work, persistence, and
+   * active runtime establishment succeeded. Created folders are never deleted
+   * merely because a later save or reload step failed.
+   */
+  private async repairLanguageRoot(lang: LanguageConfig): Promise<void> {
+    const rootFolder = lang.rootFolder;
+
+    if (!rootFolder) {
+      new Notice(
+        "Made Up Words: this language has no established Languages/<root> ownership boundary. It cannot be repaired automatically.",
+      );
+      return;
+    }
+
+    const wasActive = this.plugin.settings.activeLanguages.includes(lang.name);
+    const result = await this.plugin.repairLanguageRoot(lang, rootFolder);
+
+    switch (result.status) {
+      case "applied":
+        /*
+         * An active repair has also established the corresponding runtime data.
+         * Inactive repairs stop after persistence; their data will be loaded
+         * through the normal H3 preflight if the language is later activated.
+         */
+        if (wasActive) {
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+        }
+
+        this.rerender();
+
+        new Notice(
+          wasActive
+            ? `Made Up Words: repaired "${lang.name}" and reloaded ${result.dictionaryCount ?? 0} dictionary entries across active languages.`
+            : `Made Up Words: repaired "${lang.name}". It remains inactive.`,
+        );
+        return;
+
+      case "blocked":
+        /*
+         * Planner rejection happens before folder or configuration mutation.
+         * Surface its exact fail-closed reason rather than replacing it with a
+         * generic repair error.
+         */
+        new Notice(`Made Up Words: ${result.detail}`);
+        return;
+
+      case "folder-creation-failed":
+        /*
+         * Configuration is still unchanged here. Folder creation is additive,
+         * however, so folders successfully established before the failure may
+         * remain in the vault and must not be deleted automatically.
+         */
+        console.error(
+          "Made Up Words: language-root folder establishment failed:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: language-root repair could not establish all required folders. Configuration was not changed; any folders already created were preserved. Check the developer console.",
+        );
+        this.rerender();
+        return;
+
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save language-root repair:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the repaired configuration could not be saved and was restored in memory. Additively created folders were preserved.",
+        );
+        this.rerender();
+        return;
+
+      case "reload-blocked":
+        /*
+         * H3 blocked before runtime replacement began, so the transaction could
+         * safely restore and persist the previous configuration. Additive folder
+         * creation remains intentionally preserved.
+         *
+         * reloadActiveLanguage() already displayed the detailed H3 diagnostic.
+         */
+        new Notice(
+          "Made Up Words: language-root repair was cancelled because the repaired sources could not be safely loaded. The previous configuration was restored; any created folders were preserved.",
+        );
+        this.rerender();
+        return;
+
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist language-root repair rollback:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: repair was blocked and restored in memory, but the rollback could not be saved. Created folders were preserved. Review settings before restarting the app.",
+        );
+        this.rerender();
+        return;
+
+      case "reload-failed":
+        /*
+         * Once H3 preflight has passed, a thrown loader error may occur after
+         * runtime replacement has begun. The transaction therefore keeps the
+         * repaired persisted configuration instead of claiming that restoring
+         * old settings would also restore old runtime authority.
+         */
+        console.error(
+          "Made Up Words: language-root reload failed after preflight:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the repaired configuration was saved, but language data failed to reload after validation. Automatic rollback is no longer known to be safe. Created folders and the repaired configuration were kept. Check the developer console.",
+        );
+        this.rerender();
+        return;
+    }
+  }
+
   // ===== Behaviour sections =====
 
   private renderHoverSection(containerEl: HTMLElement): void {
@@ -715,8 +927,9 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(body)
       .setName("Name")
       .setDesc(
-        "Language names must be unique. Renaming keeps the configured canonical " +
-          "folders and files in place and does not rewrite creator-authored metadata.",
+        "Language names must be unique. Renaming also renames this language's " +
+          "existing owned root folder and updates configured paths beneath it. " +
+          "Workbench does not rewrite creator-authored Markdown or YAML metadata.",
       )
       .addText((text) => {
         text.setValue(lang.name);
@@ -734,10 +947,14 @@ export class ConlangSettingTab extends PluginSettingTab {
             text.setValue(oldName);
 
             if (validation.reason === "blank") {
-              new Notice("Made Up Words: a language name cannot be blank.");
+              showLanguageRenameBlocked(
+                this.app,
+                "A language name cannot be blank.",
+              );
             } else if (validation.reason === "duplicate") {
-              new Notice(
-                "Made Up Words: every configured language must have a unique name.",
+              showLanguageRenameBlocked(
+                this.app,
+                "Every configured language must have a unique name.",
               );
             }
 
@@ -763,137 +980,168 @@ export class ConlangSettingTab extends PluginSettingTab {
             return;
           }
 
-          // Confirmation is asynchronous. Re-check both the source identity and
-          // destination availability before mutating settings so stale approval
-          // cannot authorize a different rename.
+          /*
+           * Confirmation is asynchronous. Ensure it still applies to this exact
+           * source identity before handing authority to the plugin transaction.
+           *
+           * Destination/name/root validation is deliberately NOT repeated in
+           * the UI. renameLanguage() recalculates the complete pure plan
+           * immediately before mutation, so that fresh planner is the single
+           * authoritative validation boundary.
+           */
           if (lang.name !== oldName) {
             text.setValue(lang.name);
-            new Notice(
-              "Made Up Words: the language changed while rename confirmation was open.",
-            );
-            return;
-          }
-
-          const freshValidation = validateLanguageRename(
-            this.plugin.settings.languages,
-            lang,
-            newName,
-          );
-
-          if (!freshValidation.ok) {
-            text.setValue(lang.name);
-            new Notice(
-              "Made Up Words: the requested language name is no longer available.",
+            showLanguageRenameBlocked(
+              this.app,
+              "The language changed while rename confirmation was open. No rename was performed.",
             );
             return;
           }
 
           /*
-           * Snapshot every name-keyed setting/UI value before changing anything.
-           * LanguageConfig.name is still the alpha runtime identity, so a failed
-           * persistence or blocked reload must restore the whole logical rename.
+           * Expansion state is UI-only, so it stays outside the persistence
+           * transaction. Capture whether this language's sections were open,
+           * then key them to whichever identity the authority transaction
+           * actually leaves in memory.
+           *
+           * That distinction matters for unusual failure states. A safe
+           * rollback restores oldName, while a failed compensating filesystem
+           * rename deliberately leaves newName in memory so configured paths
+           * remain aligned with the root's actual physical location.
            */
-          const previousActiveLanguages = [
-            ...this.plugin.settings.activeLanguages,
-          ];
-          const previousPrimaryLanguage = this.plugin.settings.primaryLanguage;
           const cardWasOpen = this.openCards.has(oldName);
           const sheetsWereOpen = this.openSheets.has(oldName);
           const inflectionsWereOpen = this.openInflections.has(oldName);
 
-          const restoreRenameState = () => {
-            lang.name = oldName;
-            this.plugin.settings.activeLanguages = [...previousActiveLanguages];
-            this.plugin.settings.primaryLanguage = previousPrimaryLanguage;
+          const result = await this.plugin.renameLanguage(lang, newName);
+          const authoritativeName = lang.name;
 
-            this.openCards.delete(newName);
-            this.openSheets.delete(newName);
-            this.openInflections.delete(newName);
+          this.openCards.delete(oldName);
+          this.openCards.delete(newName);
+          this.openSheets.delete(oldName);
+          this.openSheets.delete(newName);
+          this.openInflections.delete(oldName);
+          this.openInflections.delete(newName);
 
-            if (cardWasOpen) this.openCards.add(oldName);
-            if (sheetsWereOpen) this.openSheets.add(oldName);
-            if (inflectionsWereOpen) {
-              this.openInflections.add(oldName);
-            }
-
-            text.setValue(oldName);
-          };
-
-          lang.name = newName;
-
-          // LanguageConfig.name remains the inherited alpha runtime identity.
-          // Migrate every settings reference as one logical operation.
-          this.plugin.settings.activeLanguages =
-            this.plugin.settings.activeLanguages.map((name) =>
-              name === oldName ? newName : name,
-            );
-
-          if (this.plugin.settings.primaryLanguage === oldName) {
-            this.plugin.settings.primaryLanguage = newName;
+          if (cardWasOpen) this.openCards.add(authoritativeName);
+          if (sheetsWereOpen) this.openSheets.add(authoritativeName);
+          if (inflectionsWereOpen) {
+            this.openInflections.add(authoritativeName);
           }
 
-          // These sets only preserve settings-card expansion state, but they
-          // are also keyed by the inherited language name.
-          if (this.openCards.delete(oldName)) this.openCards.add(newName);
-          if (this.openSheets.delete(oldName)) this.openSheets.add(newName);
+          // Reflect the transaction's actual final in-memory authority rather
+          // than assuming that success means newName or failure means oldName.
+          text.setValue(authoritativeName);
 
-          if (this.openInflections.delete(oldName)) {
-            this.openInflections.add(newName);
-          }
-
-          try {
-            await this.plugin.saveSettings();
-          } catch (error) {
+          if (result.status === "blocked") {
             /*
-             * saveData rejected, so the new identity was not established
-             * reliably. Restore all in-memory name references immediately.
+             * Planner-level rejection is just as actionable as the earlier
+             * duplicate/blank-name checks. Keep the explanation visible until
+             * the creator acknowledges it instead of losing an authority
+             * failure in a short-lived Notice.
              */
-            restoreRenameState();
+            showLanguageRenameBlocked(this.app, result.detail);
+            this.rerender();
+            return;
+          }
 
+          if (result.status === "rename-failed") {
+            console.error(
+              "Made Up Words: failed to rename language root",
+              result.error,
+            );
+            new Notice(
+              "Made Up Words: the language root could not be renamed. No settings were changed.",
+            );
+            this.rerender();
+            return;
+          }
+
+          if (result.status === "save-failed") {
             console.error(
               "Made Up Words: failed to save language rename",
-              error,
+              result.error,
             );
             new Notice(
-              "Made Up Words: the language rename could not be saved and was restored.",
+              "Made Up Words: the rename could not be saved, so the language root and settings were restored.",
             );
             this.rerender();
             return;
           }
 
-          // Parsed inventories carry runtime language labels. Reload immediately
-          // so the old identity cannot survive in memory after the saved rename.
-          const reload = await this.plugin.reloadActiveLanguage();
-
-          if (reload.status === "blocked") {
-            /*
-             * The preflight gate guarantees that a blocked reload left the old
-             * runtime data untouched. Roll settings back to that same identity.
-             */
-            restoreRenameState();
-
-            try {
-              await this.plugin.saveSettings();
-            } catch (error) {
-              console.error(
-                "Made Up Words: failed to persist language rename rollback",
-                error,
-              );
-              new Notice(
-                "Made Up Words: reload was blocked and the previous language " +
-                  "name could not be saved. Review settings before restarting Obsidian.",
-              );
-              this.rerender();
-              return;
-            }
-
+          if (result.status === "save-failed-rollback-rename-failed") {
+            console.error(
+              "Made Up Words: language rename save and filesystem rollback failed",
+              result.error,
+              result.rollbackError,
+            );
             new Notice(
-              "Made Up Words: the language rename was restored because reload was blocked.",
+              "Made Up Words: settings could not be saved and the renamed root could not be moved back. " +
+                "The current session kept the new paths to match the vault, but persisted settings may still be old. " +
+                "Review the language configuration before restarting Obsidian.",
+              12000,
             );
             this.rerender();
             return;
           }
 
+          if (result.status === "reload-blocked") {
+            new Notice(
+              "Made Up Words: the language rename was restored because runtime source validation blocked the renamed configuration.",
+            );
+            this.rerender();
+            return;
+          }
+
+          if (result.status === "reload-blocked-rollback-rename-failed") {
+            console.error(
+              "Made Up Words: blocked language reload and filesystem rollback failed",
+              result.rollbackError,
+            );
+            new Notice(
+              "Made Up Words: runtime reload was blocked and the renamed root could not be moved back. " +
+                "The new root and settings remain in place, while the previous runtime data is still loaded. " +
+                "Review the language configuration before continuing.",
+              12000,
+            );
+            this.rerender();
+            return;
+          }
+
+          if (result.status === "rollback-save-failed") {
+            console.error(
+              "Made Up Words: failed to save restored language rename state",
+              result.error,
+            );
+            new Notice(
+              "Made Up Words: the language root and in-memory settings were restored, but that rollback could not be saved. " +
+                "Persisted settings may still contain the renamed paths. Review settings before restarting Obsidian.",
+              12000,
+            );
+            this.rerender();
+            return;
+          }
+
+          if (result.status === "reload-failed") {
+            console.error(
+              "Made Up Words: language rename reload failed after preflight",
+              result.error,
+            );
+            new Notice(
+              "Made Up Words: the language rename was saved, but runtime reload failed after validation began. " +
+                "The renamed root and settings were kept because automatic rollback is no longer known to be safe.",
+              12000,
+            );
+            this.rerender();
+            return;
+          }
+
+          /*
+           * Applied means the root/configuration transaction succeeded. For an
+           * active language, runtime inventories were also re-established under
+           * the new identity; for an inactive language there was intentionally
+           * no reload.
+           */
           this.plugin.refreshPanel();
           this.plugin.refreshHighlights();
           this.rerender();
@@ -915,61 +1163,110 @@ export class ConlangSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(body)
+    /*
+     * Canonical source paths are authority-bearing configuration, not ordinary
+     * cosmetic settings. Let the creator type freely, but commit only when the
+     * field itself is committed rather than saving and reloading on every
+     * keystroke.
+     *
+     * After every transaction, read the displayed value back from LanguageConfig
+     * instead of assuming whether rollback happened. A blocked preflight restores
+     * the previous path, while a post-preflight reload exception deliberately
+     * retains the requested path because automatic rollback is no longer known
+     * to be safe.
+     */
+    const addSourceFolderText = (
+      row: Setting,
+      sourceSetting: CanonicalFolderSetting,
+      currentValue: () => string,
+      optional: boolean,
+    ): void => {
+      row.addText((text) => {
+        text.setValue(currentValue());
+
+        const commit = async (): Promise<void> => {
+          const trimmed = text.getValue().trim();
+          const requested = optional ? trimmed || undefined : trimmed;
+
+          await this.commitLanguageSource(lang, sourceSetting, requested);
+
+          // The transaction, not the UI, decides which source value is now
+          // authoritative. Reflect that decision even when the commit failed.
+          text.setValue(currentValue());
+        };
+
+        // TextComponent.onChange fires for each keystroke. Native "change"
+        // waits until the edit is committed, normally by leaving the field.
+        text.inputEl.addEventListener("change", () => {
+          void commit();
+        });
+
+        // Enter provides an explicit keyboard commit by moving focus out of the
+        // field. That blur then produces the same native change event.
+        text.inputEl.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter") return;
+
+          event.preventDefault();
+          text.inputEl.blur();
+        });
+      });
+    };
+
+    const dictionarySetting = new Setting(body)
       .setName("Dictionary folder")
       .setDesc(
         "Folder of one .md file per word, each with frontmatter `definition:` set.",
-      )
-      .addText((t) =>
-        t.setValue(lang.dictionaryFolder).onChange(async (v) => {
-          lang.dictionaryFolder = v;
-          await this.plugin.saveSettings();
-        }),
       );
+    addSourceFolderText(
+      dictionarySetting,
+      "dictionaryFolder",
+      () => lang.dictionaryFolder,
+      false,
+    );
 
-    new Setting(body)
+    const morphemeSetting = new Setting(body)
       .setName("Morpheme folder")
       .setDesc(
         "Optional folder of canonical morpheme notes. Morphemes are loaded separately from dictionary entries and do not automatically become translation candidates.",
-      )
-      .addText((t) =>
-        t.setValue(lang.morphemeFolder ?? "").onChange(async (v) => {
-          lang.morphemeFolder = v.trim() || undefined;
-          await this.plugin.saveSettings();
-        }),
       );
+    addSourceFolderText(
+      morphemeSetting,
+      "morphemeFolder",
+      () => lang.morphemeFolder ?? "",
+      true,
+    );
 
     // Standalone linguistic examples have their own optional canonical folder.
     // Keeping this separate from the dictionary and morpheme folders lets the
     // examples feature load documented language use without treating every note
     // that happens to contain an example as a standalone example.
-    new Setting(body)
+    const exampleSetting = new Setting(body)
       .setName("Examples folder")
       .setDesc(
         "Optional folder of standalone linguistic example notes. Only notes explicitly marked as linguistic examples are loaded.",
-      )
-      .addText((t) =>
-        t.setValue(lang.exampleFolder ?? "").onChange(async (v) => {
-          lang.exampleFolder = v.trim() || undefined;
-          await this.plugin.saveSettings();
-        }),
       );
+    addSourceFolderText(
+      exampleSetting,
+      "exampleFolder",
+      () => lang.exampleFolder ?? "",
+      true,
+    );
 
     // Canonical phonological units have their own source folder rather than
     // sharing the dictionary or morphology folders. Keeping this boundary
     // explicit lets later phonology features build on the same inventory
     // without treating every language-documentation note as a phonological unit.
-    new Setting(body)
+    const phonologySetting = new Setting(body)
       .setName("Phonology folder")
       .setDesc(
         "Optional folder of canonical phonological-unit notes. Only notes explicitly marked as phonological units are loaded.",
-      )
-      .addText((t) =>
-        t.setValue(lang.phonologyFolder ?? "").onChange(async (v) => {
-          lang.phonologyFolder = v.trim() || undefined;
-          await this.plugin.saveSettings();
-        }),
       );
+    addSourceFolderText(
+      phonologySetting,
+      "phonologyFolder",
+      () => lang.phonologyFolder ?? "",
+      true,
+    );
 
     new Setting(body)
       .setName("Language profile")
@@ -1048,6 +1345,16 @@ export class ConlangSettingTab extends PluginSettingTab {
               : `${lang.name} is inactive; activate it to load its language data.`,
           );
         }),
+      )
+      .addButton((b) =>
+        b
+          .setButtonText("Repair language root")
+          .setTooltip(
+            "Restore this language's standard folders and canonical source paths inside its existing owned root.",
+          )
+          .onClick(async () => {
+            await this.repairLanguageRoot(lang);
+          }),
       )
       .addButton((b) => {
         b.setButtonText("Remove language").onClick(async () => {

@@ -74,6 +74,26 @@ import {
   applyActiveLanguageState,
   type ActiveLanguageStateResult,
 } from "./active-language-state";
+import {
+  applyLanguageSourceState,
+  type CanonicalFolderSetting,
+  type LanguageSourceStateResult,
+} from "./language-source-state";
+import {
+  inferLegacyLanguageRoot,
+  validateLanguageSourceChange,
+} from "./language-root-authority";
+import { planLanguageRootRepair } from "./language-root-repair";
+import {
+  applyLanguageRootRepairState,
+  type LanguageRootRepairStateResult,
+} from "./language-root-repair-state";
+import { planLanguageRename } from "./language-rename";
+import {
+  applyLanguageRenameState,
+  type LanguageRenameStateResult,
+} from "./language-rename-state";
+import { ensureVaultFolderStrict } from "./vault-folder-writer";
 import { EditorView } from "@codemirror/view";
 
 export default class ConlangPlugin extends Plugin {
@@ -319,6 +339,36 @@ export default class ConlangPlugin extends Plugin {
    * is empty or doesn't contain a valid name.
    */
   private migrateSettings() {
+    /*
+     * Configurations created before structural language-root authority was
+     * introduced may not yet have rootFolder.
+     *
+     * Recover it only when the already-configured canonical source paths
+     * clearly identify one immediate child beneath Languages/. The inference
+     * deliberately ignores the renameable language display name.
+     *
+     * Examples:
+     *
+     *   Languages/Mer/Lexicon
+     *     -> Languages/Mer
+     *
+     *   Made Up Words/Example
+     *     -> unresolved
+     *
+     * An unresolved configuration is left untouched. Workbench must require an
+     * explicit repair rather than guessing which vault subtree the creator
+     * intended to authorize.
+     */
+    for (const language of this.settings.languages) {
+      if (!language.rootFolder) {
+        const inferred = inferLegacyLanguageRoot(language);
+
+        if (inferred.status === "inferred") {
+          language.rootFolder = inferred.root;
+        }
+      }
+    }
+
     const known = new Set(this.settings.languages.map((l) => l.name));
 
     // If we have legacy activeLanguage but no activeLanguages, migrate.
@@ -390,6 +440,202 @@ export default class ConlangPlugin extends Plugin {
       state: this.settings,
       activeLanguages,
       primaryLanguage,
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage(),
+    });
+  }
+
+  /**
+   * Establish a requested canonical source-folder change as one authority
+   * transaction.
+   *
+   * Settings owns only the UI decision about which source path the creator is
+   * requesting. The shared transaction owns persistence, active-runtime
+   * establishment, and the limited rollback that is safe when H3 source
+   * preflight blocks before any runtime data is replaced.
+   *
+   * Keeping this wrapper beside setActiveLanguageState() gives UI callers one
+   * plugin-level entry point while leaving the security-sensitive transaction
+   * independently testable without importing Obsidian.
+   */
+  async setLanguageSourceState(
+    language: LanguageConfig,
+    setting: CanonicalFolderSetting,
+    value: string | undefined,
+  ): Promise<LanguageSourceStateResult> {
+    return applyLanguageSourceState({
+      language,
+      activeLanguages: this.settings.activeLanguages,
+      setting,
+      value,
+      validate: () =>
+        validateLanguageSourceChange({
+          language,
+          languages: this.settings.languages,
+          setting,
+          value,
+          pathState: (path) => {
+            const existing = this.app.vault.getAbstractFileByPath(path);
+
+            if (!existing) return "missing";
+            return existing instanceof TFolder ? "folder" : "other";
+          },
+        }),
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage(),
+    });
+  }
+
+  /**
+   * Repair one language's configured structural root and canonical source
+   * folders through the shared H7 authority transaction.
+   *
+   * The pure planner is recalculated inside the transaction immediately before
+   * mutation so a UI cannot authorize repair from stale vault information.
+   * Planning also proves that this exact LanguageConfig already owns the root;
+   * adopting an existing unconfigured root belongs to the separate future
+   * Import Language authority path.
+   *
+   * Folder establishment is strictly additive. Only standard folders listed by
+   * the fresh plan as missing may be created, and the shared folder writer
+   * refuses to replace non-folder creator data. Transactional persistence,
+   * active-language reload, and the limited safe rollback boundary remain in
+   * language-root-repair-state.ts rather than being duplicated here.
+   */
+  async repairLanguageRoot(
+    language: LanguageConfig,
+    rootFolder: string,
+  ): Promise<LanguageRootRepairStateResult> {
+    const pathState = (path: string) => {
+      const existing = this.app.vault.getAbstractFileByPath(path);
+
+      if (!existing) return "missing" as const;
+      return existing instanceof TFolder
+        ? ("folder" as const)
+        : ("other" as const);
+    };
+
+    return applyLanguageRootRepairState({
+      language,
+      activeLanguages: this.settings.activeLanguages,
+
+      // plan() is intentionally called by the transaction itself immediately
+      // before any folder or configuration mutation.
+      plan: () =>
+        planLanguageRootRepair({
+          language,
+          languages: this.settings.languages,
+          rootFolder,
+          pathState,
+        }),
+
+      createMissingFolders: async (plan) => {
+        /*
+         * Do not create the root itself or infer additional paths here.
+         * The planner requires the selected root to exist already and returns
+         * the complete, preflighted set of missing direct standard children.
+         *
+         * ensureVaultFolderStrict() re-checks each path during mutation, so a
+         * concurrent folder creation is safely reused while a newly appearing
+         * non-folder collision still fails closed.
+         */
+        for (const folder of plan.foldersToCreate) {
+          await ensureVaultFolderStrict(this.app, folder);
+        }
+      },
+
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage(),
+    });
+  }
+
+  /**
+   * Rename one configured language and its already-owned structural root as one
+   * authority transaction.
+   *
+   * This is deliberately stronger than merely changing LanguageConfig.name.
+   * An explicit creator-approved rename keeps the human-readable language name
+   * and its established Languages/<root> ownership boundary synchronized by
+   * renaming that exact root in place.
+   *
+   * The pure planner runs inside the transaction immediately before mutation.
+   * It proves that the current root is this language's existing authority,
+   * verifies that the requested destination is safe and unoccupied, and
+   * prefix-rewrites configured descendant paths without resetting custom
+   * creator organization.
+   *
+   * The filesystem callback performs another narrow check immediately before
+   * each forward or compensating rename. That closes the gap between read-only
+   * planning and mutation if vault state changes asynchronously.
+   *
+   * Creator-authored Markdown/YAML is not parsed or rewritten here. Obsidian's
+   * FileManager performs the physical folder rename and may update links
+   * according to the creator's normal Obsidian link-update preference.
+   */
+  async renameLanguage(
+    language: LanguageConfig,
+    proposedName: string,
+  ): Promise<LanguageRenameStateResult> {
+    const pathState = (path: string) => {
+      const existing = this.app.vault.getAbstractFileByPath(path);
+
+      if (!existing) return "missing" as const;
+      return existing instanceof TFolder
+        ? ("folder" as const)
+        : ("other" as const);
+    };
+
+    return applyLanguageRenameState({
+      language,
+
+      /*
+       * LanguageConfig.name is still the inherited alpha identity used by
+       * activeLanguages and primaryLanguage. The shared transaction migrates
+       * these settings together rather than allowing the settings UI to update
+       * them independently.
+       */
+      settings: this.settings,
+
+      // Recalculate complete rename authority immediately before any mutation.
+      plan: () =>
+        planLanguageRename({
+          language,
+          languages: this.settings.languages,
+          proposedName,
+          pathState,
+        }),
+
+      renameRoot: async (from, to) => {
+        /*
+         * The planner has already authorized these exact paths, but vault state
+         * can change between planning and mutation. Resolve both paths again at
+         * the last responsible moment instead of trusting stale TFolder
+         * references.
+         */
+        const source = this.app.vault.getAbstractFileByPath(from);
+
+        if (!(source instanceof TFolder)) {
+          throw new Error(
+            `Cannot rename language root "${from}": it is no longer a folder.`,
+          );
+        }
+
+        const destination = this.app.vault.getAbstractFileByPath(to);
+
+        if (destination !== null) {
+          throw new Error(
+            `Cannot rename language root to "${to}": the destination is now occupied.`,
+          );
+        }
+
+        /*
+         * FileManager.renameFile() is preferred over Vault.rename() because it
+         * performs Obsidian's normal safe rename/move behavior, including link
+         * updates when the creator has enabled that Obsidian preference.
+         */
+        await this.app.fileManager.renameFile(source, to);
+      },
+
       save: () => this.saveSettings(),
       reload: () => this.reloadActiveLanguage(),
     });

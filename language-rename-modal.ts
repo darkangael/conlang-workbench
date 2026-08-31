@@ -2,10 +2,11 @@ import { App, Modal, Setting } from "obsidian";
 
 /**
  * Require explicit authorization before changing a configured language's
- * runtime identity.
+ * runtime identity and renaming its already-owned structural root.
  *
- * Rename keeps the existing canonical folder paths and files. It does not
- * rewrite creator-authored Markdown or YAML metadata.
+ * Workbench itself does not rewrite creator-authored Markdown or YAML metadata.
+ * The physical folder move uses Obsidian's normal safe rename behavior, so
+ * Obsidian may update links according to the creator's link-update preference.
  */
 class LanguageRenameConfirmModal extends Modal {
   private resolved = false;
@@ -28,9 +29,10 @@ class LanguageRenameConfirmModal extends Modal {
 
     this.contentEl.createEl("p", {
       text:
-        "This changes the configured language identity while keeping its " +
-        "existing canonical folder paths and files. Creator-authored language " +
-        "metadata inside those files is not rewritten.",
+        "This renames the language's existing owned root folder and updates " +
+        "configured paths beneath that root. Workbench does not rewrite " +
+        "creator-authored Markdown or YAML metadata. Obsidian may update links " +
+        "according to your normal link-update preference.",
     });
 
     new Setting(this.contentEl)
@@ -72,4 +74,46 @@ export function confirmLanguageRename(
   return new Promise<boolean>((resolve) => {
     new LanguageRenameConfirmModal(app, oldName, newName, resolve).open();
   });
+}
+
+/**
+ * Keep an actionable rename rejection visible until the creator acknowledges it.
+ *
+ * Notices are useful for transient status, but rename validation failures stop
+ * an explicit requested operation and may contain information the creator needs
+ * to read before correcting the request. A small acknowledgement modal avoids
+ * losing that explanation after only a few seconds.
+ */
+class LanguageRenameBlockedModal extends Modal {
+  constructor(
+    app: App,
+    private readonly message: string,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.setTitle("Rename blocked");
+
+    this.contentEl.createEl("p", {
+      text: this.message,
+    });
+
+    new Setting(this.contentEl).addButton((button) =>
+      button
+        .setButtonText("OK")
+        .setCta()
+        .onClick(() => {
+          this.close();
+        }),
+    );
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+export function showLanguageRenameBlocked(app: App, message: string): void {
+  new LanguageRenameBlockedModal(app, message).open();
 }

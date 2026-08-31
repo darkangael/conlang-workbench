@@ -1,29 +1,18 @@
-import { App } from "obsidian";
+import { App, TFolder } from "obsidian";
 import type { LanguageConfig } from "./types";
 import {
   ensureVaultFolderStrict,
   inspectVaultFolderPaths,
 } from "./vault-folder-writer";
-import { isPathWithinFolder, joinVaultPath } from "./vault-paths";
-
-/**
- * Canonical folder paths established for every language created through the
- * modern Workbench onboarding flow.
- *
- * Cyphers and Inflections are created now even though their current runtime
- * configuration still lives in plugin settings. Establishing those durable
- * homes early prevents Workbench from later claiming folder names that a
- * creator may already have begun using for something else.
- */
-export interface StandardLanguagePaths {
-  root: string;
-  lexicon: string;
-  morphemes: string;
-  inflections: string;
-  cyphers: string;
-  examples: string;
-  phonology: string;
-}
+import { isPathWithinFolder } from "./vault-paths";
+import {
+  buildStandardLanguagePaths,
+  type StandardLanguagePaths,
+} from "./language-standard-paths";
+import {
+  configuredLanguageRootClaims,
+  languageRootsOverlap,
+} from "./language-root-authority";
 
 /**
  * Creation deliberately distinguishes an authority refusal from an operational
@@ -47,29 +36,6 @@ export type StandardLanguageCreationResult =
 interface ConfiguredInventoryPath {
   inventory: "lexicon" | "morphemes" | "examples" | "phonology";
   path: string;
-}
-
-/**
- * Construct the standard folder tree without touching the vault.
- *
- * `joinVaultPath()` treats the language name as one child path component. It
- * therefore rejects names containing slash/backslash traversal rather than
- * silently sanitizing them into a different creator-visible name.
- */
-export function buildStandardLanguagePaths(
-  languageName: string,
-): StandardLanguagePaths {
-  const root = joinVaultPath("Languages", languageName);
-
-  return {
-    root,
-    lexicon: joinVaultPath(root, "Lexicon"),
-    morphemes: joinVaultPath(root, "Morphemes"),
-    inflections: joinVaultPath(root, "Inflections"),
-    cyphers: joinVaultPath(root, "Cyphers"),
-    examples: joinVaultPath(root, "Examples"),
-    phonology: joinVaultPath(root, "Phonology"),
-  };
 }
 
 /**
@@ -168,14 +134,22 @@ function findCanonicalClaimConflict(
  * Security/data-safety order:
  *
  * 1. Build every intended path without mutation.
- * 2. Ensure no configured language already owns overlapping same-inventory
- *    authority.
- * 3. Inspect the ENTIRE six-folder structure before creating anything.
- * 4. Only after preflight succeeds, establish missing folders additively.
- * 5. Return the configuration to the caller; this module never persists it.
+ * 2. Ensure no configured language already owns the proposed structural root
+ *    or overlapping same-inventory authority.
+ * 3. Ensure the proposed root does not already exist independently in the
+ *    vault. Existing unconfigured language roots belong to Import Language,
+ *    not Add Language.
+ * 4. Inspect the ENTIRE six-folder structure before creating anything.
+ * 5. Only after preflight succeeds, establish missing folders additively.
+ * 6. Return the configuration to the caller; this module never persists it.
  *
- * Existing valid folders are reused unchanged. Existing files are never moved,
- * renamed, deleted, or replaced.
+ * Add Language creates a new structural root. It never adopts an existing
+ * Languages/<root> folder. Existing creator-authored language roots are
+ * preserved for the separate explicit Import Language authority path.
+ *
+ * Existing folders created during the additive operation are reused when an
+ * awaited concurrent operation creates them first. Existing files are never
+ * moved, renamed, deleted, or replaced.
  *
  * If an external failure occurs after creation begins, already-created folders
  * are deliberately preserved. Rollback deletion would be unsafe because
@@ -207,6 +181,14 @@ export async function createStandardLanguage(
    */
   const language: LanguageConfig = {
     name: languageName,
+
+    /*
+     * Record the structural ownership boundary independently from the display
+     * name. A later settings-controlled language rename therefore does not
+     * silently move authority to a different vault subtree.
+     */
+    rootFolder: paths.root,
+
     dictionaryFolder: paths.lexicon,
     morphemeFolder: paths.morphemes,
     exampleFolder: paths.examples,
@@ -215,11 +197,64 @@ export async function createStandardLanguage(
     sheets: [],
   };
 
+  /*
+   * A configured language owns its complete Languages/<root> subtree.
+   *
+   * Activation does not affect that ownership. Older configurations that do
+   * not yet have rootFolder still reserve any Languages/<root> tree that can
+   * be proven from their canonical source paths.
+   *
+   * Check this before creating anything so onboarding can never take another
+   * configured language's root or create a language beneath somebody else's
+   * structural territory.
+   */
+  for (const existingLanguage of existingLanguages) {
+    for (const claimedRoot of configuredLanguageRootClaims(existingLanguage)) {
+      if (languageRootsOverlap(paths.root, claimedRoot)) {
+        return {
+          status: "blocked",
+          error:
+            `language root "${paths.root}" conflicts with "${claimedRoot}", ` +
+            `already reserved by "${existingLanguage.name}"`,
+        };
+      }
+    }
+  }
+
   const conflict = findCanonicalClaimConflict(language, existingLanguages);
   if (conflict) {
     return {
       status: "blocked",
       error: conflict,
+    };
+  }
+
+  /*
+   * Folder existence itself carries structural ownership beneath Languages/.
+   *
+   * Add Language is authorized to create a NEW language root; it is not
+   * authorized to adopt an existing unconfigured root merely because no
+   * LanguageConfig currently claims it. Explicit adoption belongs to the
+   * separate Import Language authority path.
+   *
+   * A non-folder collision is also refused here. The later hierarchy preflight
+   * remains defense in depth for descendants and races.
+   */
+  const existingRoot = app.vault.getAbstractFileByPath(paths.root);
+
+  if (existingRoot instanceof TFolder) {
+    return {
+      status: "blocked",
+      error:
+        `language root "${paths.root}" already exists but is not configured. ` +
+        "Use Import Language to explicitly adopt an existing language root.",
+    };
+  }
+
+  if (existingRoot) {
+    return {
+      status: "blocked",
+      error: `language root "${paths.root}" exists but is not a folder`,
     };
   }
 

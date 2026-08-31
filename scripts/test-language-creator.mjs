@@ -39,10 +39,8 @@ const obsidianMockPlugin = {
 const buildResult = await build({
   stdin: {
     contents: `
-      export {
-        buildStandardLanguagePaths,
-        createStandardLanguage,
-      } from "./language-creator";
+      export { buildStandardLanguagePaths } from "./language-standard-paths";
+      export { createStandardLanguage } from "./language-creator";
       export { TFile, TFolder } from "obsidian";
     `,
     resolveDir: process.cwd(),
@@ -138,6 +136,7 @@ assert.deepEqual(
 
   assert.deepEqual(result.language, {
     name: "Language 1",
+    rootFolder: expected.root,
     dictionaryFolder: expected.lexicon,
     morphemeFolder: expected.morphemes,
     exampleFolder: expected.examples,
@@ -148,42 +147,66 @@ assert.deepEqual(
 }
 
 /*
- * Existing valid folders are reused. Workbench may establish missing siblings,
- * but it must not replace the canonical root or disturb creator organization
- * already nested beneath Lexicon.
+ * An existing immediate child beneath Languages/ is already an occupied
+ * language root even when Workbench has no configuration for it yet.
+ *
+ * Add Language must not silently adopt that creator-authored root or populate
+ * missing standard siblings inside it. Explicit adoption belongs to the
+ * separate Import Language authority path.
  */
 {
   const nestedDictionary =
     "Languages/Language 1/Lexicon/My Existing Dictionary";
 
-  const { app, objects } = makeApp({
+  const { app, objects, created } = makeApp({
     folders: ["Languages", expected.root, expected.lexicon, nestedDictionary],
   });
 
+  const originalRoot = objects.get(expected.root);
   const originalLexicon = objects.get(expected.lexicon);
 
   const result = await createStandardLanguage(app, "Language 1", []);
 
-  assert.equal(result.status, "created");
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /Import Language/);
+
+  /*
+   * Refusal is read-only. Existing creator structure remains exactly where it
+   * was, and Add Language does not create even one missing standard folder.
+   */
+  assert.equal(objects.get(expected.root), originalRoot);
   assert.equal(objects.get(expected.lexicon), originalLexicon);
   assert.ok(objects.get(nestedDictionary) instanceof TFolder);
+  assert.deepEqual(created, []);
+  assert.equal(objects.has(expected.morphemes), false);
+  assert.equal(objects.has(expected.inflections), false);
+  assert.equal(objects.has(expected.cyphers), false);
+  assert.equal(objects.has(expected.examples), false);
+  assert.equal(objects.has(expected.phonology), false);
 }
 
 /*
- * A Markdown note whose filename resembles a standard folder name is merely a
- * sibling. `Morphemes.md` must not be mistaken for the `Morphemes/` directory.
+ * A Markdown note whose filename resembles the proposed language root is only
+ * a sibling of that root. `Language 1.md` must not be mistaken for the
+ * `Language 1/` directory that Add Language is authorized to create.
+ *
+ * The older Morphemes.md case required an already-existing language root.
+ * Under structural root ownership, Add Language must refuse that root before
+ * inspecting its descendants, so that descendant distinction belongs at the
+ * lower-level folder/repair authority rather than this onboarding boundary.
  */
 {
-  const morphemeNote = "Languages/Language 1/Morphemes.md";
+  const languageNote = "Languages/Language 1.md";
   const { app, objects } = makeApp({
-    folders: ["Languages", expected.root],
-    files: [morphemeNote],
+    folders: ["Languages"],
+    files: [languageNote],
   });
 
   const result = await createStandardLanguage(app, "Language 1", []);
 
   assert.equal(result.status, "created");
-  assert.ok(objects.get(morphemeNote) instanceof TFile);
+  assert.ok(objects.get(languageNote) instanceof TFile);
+  assert.ok(objects.get(expected.root) instanceof TFolder);
   assert.ok(objects.get(expected.morphemes) instanceof TFolder);
 }
 
@@ -249,13 +272,25 @@ assert.deepEqual(
   ]);
 
   assert.equal(result.status, "blocked");
-  assert.match(result.error, /already configured for "Existing Language"/);
+  /*
+   * Structural root ownership is checked before the older same-inventory
+   * overlap rule. The stronger authority boundary should therefore explain
+   * that this root is already reserved by the configured language.
+   */
+  assert.match(result.error, /language root/i);
+  assert.match(result.error, /already reserved by "Existing Language"/);
   assert.deepEqual(created, []);
 }
 
 /*
  * Because source inventories are recursively scanned, ancestor/descendant
  * overlap is also a same-inventory authority collision.
+ *
+ * Give the existing language a different explicit structural root so the
+ * stronger root-ownership check does not intercept this test first. Its
+ * deliberately malformed dictionary configuration still points inside the new
+ * language's proposed lexicon, allowing this regression to exercise the
+ * lower-level recursive inventory-overlap defense independently.
  */
 {
   const { app, created } = makeApp();
@@ -263,6 +298,7 @@ assert.deepEqual(
   const result = await createStandardLanguage(app, "Language 1", [
     {
       name: "Existing Language",
+      rootFolder: "Languages/Existing Language",
       dictionaryFolder: `${expected.lexicon}/Historical Dictionary`,
       hoverEnabled: true,
       sheets: [],
@@ -271,6 +307,32 @@ assert.deepEqual(
 
   assert.equal(result.status, "blocked");
   assert.match(result.error, /lexicon folder/);
+  assert.deepEqual(created, []);
+}
+
+/*
+ * Structural ownership survives inactivity and malformed source configuration.
+ *
+ * This older configuration has no rootFolder and its dictionary folder is
+ * missing, so it cannot currently load. Its configured path nevertheless
+ * proves ownership of Languages/Language 1. New-language onboarding must not
+ * treat that malformed/inactive language's territory as available.
+ */
+{
+  const { app, created } = makeApp();
+
+  const result = await createStandardLanguage(app, "Language 1", [
+    {
+      name: "Inactive Existing Language",
+      dictionaryFolder: "Languages/Language 1/Missing Lexicon",
+      hoverEnabled: true,
+      sheets: [],
+    },
+  ]);
+
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /language root/i);
+  assert.match(result.error, /Inactive Existing Language/);
   assert.deepEqual(created, []);
 }
 
