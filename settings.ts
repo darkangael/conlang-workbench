@@ -211,8 +211,19 @@ export class ConlangSettingTab extends PluginSettingTab {
       star.addEventListener("click", () => {
         void (async () => {
           if (!this.plugin.settings.activeLanguages.includes(lang.name)) {
-            await this.toggleActive(lang.name, true);
+            /*
+             * Clicking the star on an inactive language means "activate it,
+             * then make it primary." Do not perform the second mutation unless
+             * the activation transaction actually established that language in
+             * runtime authority.
+             */
+            const activated = await this.toggleActive(lang.name, true);
+            if (!activated) {
+              this.rerender();
+              return;
+            }
           }
+
           this.plugin.settings.primaryLanguage = lang.name;
           await this.plugin.saveSettings();
           this.rerender();
@@ -330,24 +341,98 @@ export class ConlangSettingTab extends PluginSettingTab {
     return name;
   }
 
-  /** Toggle a language's active state, keeping primary valid and reloading. */
-  private async toggleActive(name: string, active: boolean): Promise<void> {
-    const set = new Set(this.plugin.settings.activeLanguages);
-    if (active) set.add(name);
-    else set.delete(name);
-    let listed = Array.from(set);
-    if (listed.length === 0) {
-      listed = [name];
+  /**
+   * Request an active-language change without committing it directly.
+   *
+   * Settings owns the UI policy: it decides which languages should be active
+   * and which active language should remain primary. The plugin-level
+   * transaction owns persistence, runtime establishment, and safe rollback when
+   * source preflight rejects the requested authority.
+   *
+   * Returning true only when the requested state was actually established lets
+   * callers stop follow-up mutations such as "activate, then make primary".
+   */
+  private async toggleActive(name: string, active: boolean): Promise<boolean> {
+    const current = new Set(this.plugin.settings.activeLanguages);
+
+    if (active) {
+      current.add(name);
+    } else {
+      current.delete(name);
+    }
+
+    /*
+     * Refuse to deactivate the final active language without transiently
+     * changing settings. The previous implementation removed it and then added
+     * it back; calculating the requested state first is simpler and safer.
+     */
+    if (current.size === 0) {
       new Notice("Made Up Words: at least one language must stay active.");
+      return false;
     }
-    this.plugin.settings.activeLanguages = listed;
-    if (!listed.includes(this.plugin.settings.primaryLanguage)) {
-      this.plugin.settings.primaryLanguage = listed[0];
+
+    const activeLanguages = Array.from(current);
+    const primaryLanguage = activeLanguages.includes(
+      this.plugin.settings.primaryLanguage,
+    )
+      ? this.plugin.settings.primaryLanguage
+      : activeLanguages[0];
+
+    const result = await this.plugin.setActiveLanguageState(
+      activeLanguages,
+      primaryLanguage,
+    );
+
+    switch (result.status) {
+      case "applied":
+        return true;
+
+      case "blocked":
+        /*
+         * reloadActiveLanguage() already displayed the source diagnostics.
+         * The shared transaction has restored and persisted the configuration
+         * matching the untouched previous runtime.
+         */
+        return false;
+
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save active-language change:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: could not save the active-language change; the previous selection was restored.",
+        );
+        return false;
+
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist active-language rollback:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+        );
+        return false;
+
+      case "reload-failed":
+        console.error(
+          "Made Up Words: active-language reload failed after preflight:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: language data failed to reload after source validation. Check the developer console.",
+        );
+        return false;
+
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid active-language request:",
+          result.error,
+        );
+        new Notice(`Made Up Words: ${result.error}.`);
+        return false;
     }
-    await this.plugin.saveSettings();
-    await this.plugin.reloadActiveLanguage();
-    this.plugin.refreshPanel();
-    this.plugin.refreshHighlights();
   }
 
   // ===== Behaviour sections =====

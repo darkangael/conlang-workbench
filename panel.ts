@@ -321,30 +321,88 @@ export class TranslationPanelView extends ItemView {
   }
 
   /**
-   * Toggle whether a language is in the active list. Updates settings,
-   * reloads the dictionary, and re-renders the header. Refuses to deactivate
-   * the last active language (one must always be active).
+   * Toggle whether a language is active from the side panel.
+   *
+   * The panel decides only the requested active/primary state. Persistence,
+   * runtime reload, and blocked-preflight rollback are owned by the same shared
+   * plugin authority used by Settings, so the two UI surfaces cannot establish
+   * different notions of which languages are active.
    */
   private async toggleLanguageActive(name: string) {
     const settings = this.plugin.settings;
     const current = new Set(settings.activeLanguages);
+
     if (current.has(name)) {
-      // Don't allow turning off the only active language
+      // Refuse to deactivate the final active language without mutating state.
       if (current.size <= 1) {
         new Notice("Made Up Words: at least one language must be active.");
         return;
       }
+
       current.delete(name);
-      // If we just deactivated the primary, reassign
-      if (settings.primaryLanguage === name) {
-        settings.primaryLanguage = Array.from(current)[0];
-      }
     } else {
       current.add(name);
     }
-    settings.activeLanguages = Array.from(current);
-    await this.plugin.saveSettings();
-    await this.plugin.reloadActiveLanguage();
+
+    const activeLanguages = Array.from(current);
+    const primaryLanguage = activeLanguages.includes(settings.primaryLanguage)
+      ? settings.primaryLanguage
+      : activeLanguages[0];
+
+    const result = await this.plugin.setActiveLanguageState(
+      activeLanguages,
+      primaryLanguage,
+    );
+
+    switch (result.status) {
+      case "applied":
+      case "blocked":
+        break;
+
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save active-language change:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: could not save the active-language change; the previous selection was restored.",
+        );
+        break;
+
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist active-language rollback:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+        );
+        break;
+
+      case "reload-failed":
+        console.error(
+          "Made Up Words: active-language reload failed after preflight:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: language data failed to reload after source validation. Check the developer console.",
+        );
+        break;
+
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid active-language request:",
+          result.error,
+        );
+        new Notice(`Made Up Words: ${result.error}.`);
+        break;
+    }
+
+    /*
+     * Render from whatever state the transaction actually established. After
+     * success this is the requested state; after blocked preflight it is the
+     * safely restored previous state.
+     */
     this.renderHeader();
     this.renderBrowser();
     this.updateTranslatorLabels();

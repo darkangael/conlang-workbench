@@ -4225,7 +4225,11 @@ var ConlangSettingTab = class extends import_obsidian13.PluginSettingTab {
       star.addEventListener("click", () => {
         void (async () => {
           if (!this.plugin.settings.activeLanguages.includes(lang.name)) {
-            await this.toggleActive(lang.name, true);
+            const activated = await this.toggleActive(lang.name, true);
+            if (!activated) {
+              this.rerender();
+              return;
+            }
           }
           this.plugin.settings.primaryLanguage = lang.name;
           await this.plugin.saveSettings();
@@ -4300,24 +4304,76 @@ var ConlangSettingTab = class extends import_obsidian13.PluginSettingTab {
     while (names.has(name)) name = `Language ${++i}`;
     return name;
   }
-  /** Toggle a language's active state, keeping primary valid and reloading. */
+  /**
+   * Request an active-language change without committing it directly.
+   *
+   * Settings owns the UI policy: it decides which languages should be active
+   * and which active language should remain primary. The plugin-level
+   * transaction owns persistence, runtime establishment, and safe rollback when
+   * source preflight rejects the requested authority.
+   *
+   * Returning true only when the requested state was actually established lets
+   * callers stop follow-up mutations such as "activate, then make primary".
+   */
   async toggleActive(name, active) {
-    const set = new Set(this.plugin.settings.activeLanguages);
-    if (active) set.add(name);
-    else set.delete(name);
-    let listed = Array.from(set);
-    if (listed.length === 0) {
-      listed = [name];
+    const current = new Set(this.plugin.settings.activeLanguages);
+    if (active) {
+      current.add(name);
+    } else {
+      current.delete(name);
+    }
+    if (current.size === 0) {
       new import_obsidian13.Notice("Made Up Words: at least one language must stay active.");
+      return false;
     }
-    this.plugin.settings.activeLanguages = listed;
-    if (!listed.includes(this.plugin.settings.primaryLanguage)) {
-      this.plugin.settings.primaryLanguage = listed[0];
+    const activeLanguages = Array.from(current);
+    const primaryLanguage = activeLanguages.includes(
+      this.plugin.settings.primaryLanguage
+    ) ? this.plugin.settings.primaryLanguage : activeLanguages[0];
+    const result = await this.plugin.setActiveLanguageState(
+      activeLanguages,
+      primaryLanguage
+    );
+    switch (result.status) {
+      case "applied":
+        return true;
+      case "blocked":
+        return false;
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save active-language change:",
+          result.error
+        );
+        new import_obsidian13.Notice(
+          "Made Up Words: could not save the active-language change; the previous selection was restored."
+        );
+        return false;
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist active-language rollback:",
+          result.error
+        );
+        new import_obsidian13.Notice(
+          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+        );
+        return false;
+      case "reload-failed":
+        console.error(
+          "Made Up Words: active-language reload failed after preflight:",
+          result.error
+        );
+        new import_obsidian13.Notice(
+          "Made Up Words: language data failed to reload after source validation. Check the developer console."
+        );
+        return false;
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid active-language request:",
+          result.error
+        );
+        new import_obsidian13.Notice(`Made Up Words: ${result.error}.`);
+        return false;
     }
-    await this.plugin.saveSettings();
-    await this.plugin.reloadActiveLanguage();
-    this.plugin.refreshPanel();
-    this.plugin.refreshHighlights();
   }
   // ===== Behaviour sections =====
   renderHoverSection(containerEl) {
@@ -6336,9 +6392,12 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     }
   }
   /**
-   * Toggle whether a language is in the active list. Updates settings,
-   * reloads the dictionary, and re-renders the header. Refuses to deactivate
-   * the last active language (one must always be active).
+   * Toggle whether a language is active from the side panel.
+   *
+   * The panel decides only the requested active/primary state. Persistence,
+   * runtime reload, and blocked-preflight rollback are owned by the same shared
+   * plugin authority used by Settings, so the two UI surfaces cannot establish
+   * different notions of which languages are active.
    */
   async toggleLanguageActive(name) {
     const settings = this.plugin.settings;
@@ -6349,15 +6408,54 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
         return;
       }
       current.delete(name);
-      if (settings.primaryLanguage === name) {
-        settings.primaryLanguage = Array.from(current)[0];
-      }
     } else {
       current.add(name);
     }
-    settings.activeLanguages = Array.from(current);
-    await this.plugin.saveSettings();
-    await this.plugin.reloadActiveLanguage();
+    const activeLanguages = Array.from(current);
+    const primaryLanguage = activeLanguages.includes(settings.primaryLanguage) ? settings.primaryLanguage : activeLanguages[0];
+    const result = await this.plugin.setActiveLanguageState(
+      activeLanguages,
+      primaryLanguage
+    );
+    switch (result.status) {
+      case "applied":
+      case "blocked":
+        break;
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save active-language change:",
+          result.error
+        );
+        new import_obsidian17.Notice(
+          "Made Up Words: could not save the active-language change; the previous selection was restored."
+        );
+        break;
+      case "rollback-save-failed":
+        console.error(
+          "Made Up Words: failed to persist active-language rollback:",
+          result.error
+        );
+        new import_obsidian17.Notice(
+          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+        );
+        break;
+      case "reload-failed":
+        console.error(
+          "Made Up Words: active-language reload failed after preflight:",
+          result.error
+        );
+        new import_obsidian17.Notice(
+          "Made Up Words: language data failed to reload after source validation. Check the developer console."
+        );
+        break;
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid active-language request:",
+          result.error
+        );
+        new import_obsidian17.Notice(`Made Up Words: ${result.error}.`);
+        break;
+    }
     this.renderHeader();
     this.renderBrowser();
     this.updateTranslatorLabels();
@@ -8985,6 +9083,62 @@ function showLanguageSourceDiagnostics(app, issues) {
   new LanguageSourceDiagnosticsModal(app, issues).open();
 }
 
+// active-language-state.ts
+async function applyActiveLanguageState(request) {
+  const requestedActive = [...request.activeLanguages];
+  if (requestedActive.length === 0) {
+    return {
+      status: "invalid-request",
+      error: "at least one language must remain active"
+    };
+  }
+  if (new Set(requestedActive).size !== requestedActive.length) {
+    return {
+      status: "invalid-request",
+      error: "active languages must not contain duplicate names"
+    };
+  }
+  if (!requestedActive.includes(request.primaryLanguage)) {
+    return {
+      status: "invalid-request",
+      error: "the primary language must be active"
+    };
+  }
+  const previousActive = [...request.state.activeLanguages];
+  const previousPrimary = request.state.primaryLanguage;
+  const restorePreviousState = () => {
+    request.state.activeLanguages = [...previousActive];
+    request.state.primaryLanguage = previousPrimary;
+  };
+  request.state.activeLanguages = requestedActive;
+  request.state.primaryLanguage = request.primaryLanguage;
+  try {
+    await request.save();
+  } catch (error) {
+    restorePreviousState();
+    return { status: "save-failed", error };
+  }
+  let reload;
+  try {
+    reload = await request.reload();
+  } catch (error) {
+    return { status: "reload-failed", error };
+  }
+  if (reload.status === "loaded") {
+    return {
+      status: "applied",
+      dictionaryCount: reload.dictionaryCount
+    };
+  }
+  restorePreviousState();
+  try {
+    await request.save();
+  } catch (error) {
+    return { status: "rollback-save-failed", error };
+  }
+  return { status: "blocked" };
+}
+
 // main.ts
 var _ConlangPlugin = class _ConlangPlugin extends import_obsidian24.Plugin {
   constructor() {
@@ -9202,6 +9356,30 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian24.Plugin {
     this.updateHoverActive();
     this.refreshPanel();
     this.refreshHighlights();
+  }
+  /**
+   * Establish a requested active/primary-language configuration as one
+   * authority transaction.
+   *
+   * Settings and the side panel are separate UI surfaces, but they must not
+   * independently decide when an active-language change has succeeded. The
+   * shared transaction persists the requested configuration, asks the normal
+   * runtime loader to establish it, and safely restores the prior configuration
+   * when source preflight rejects the request before runtime state is touched.
+   *
+   * This wrapper intentionally contains no rollback logic of its own. Keeping
+   * that logic in active-language-state.ts gives every UI caller the same
+   * behavior and keeps the security-sensitive transaction independently
+   * testable without importing Obsidian.
+   */
+  async setActiveLanguageState(activeLanguages, primaryLanguage) {
+    return applyActiveLanguageState({
+      state: this.settings,
+      activeLanguages,
+      primaryLanguage,
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage()
+    });
   }
   /**
    * Show a one-time welcome notice if this is the user's first time loading

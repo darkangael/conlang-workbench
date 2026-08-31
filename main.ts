@@ -70,6 +70,10 @@ import type { HighlightKind } from "./highlight-core";
 import { normalizeClosedChoiceSettings } from "./settings-validation";
 import { preflightLanguageSources } from "./language-source-preflight";
 import { showLanguageSourceDiagnostics } from "./language-source-diagnostics-modal";
+import {
+  applyActiveLanguageState,
+  type ActiveLanguageStateResult,
+} from "./active-language-state";
 import { EditorView } from "@codemirror/view";
 
 export default class ConlangPlugin extends Plugin {
@@ -361,6 +365,34 @@ export default class ConlangPlugin extends Plugin {
     this.updateHoverActive();
     this.refreshPanel();
     this.refreshHighlights();
+  }
+
+  /**
+   * Establish a requested active/primary-language configuration as one
+   * authority transaction.
+   *
+   * Settings and the side panel are separate UI surfaces, but they must not
+   * independently decide when an active-language change has succeeded. The
+   * shared transaction persists the requested configuration, asks the normal
+   * runtime loader to establish it, and safely restores the prior configuration
+   * when source preflight rejects the request before runtime state is touched.
+   *
+   * This wrapper intentionally contains no rollback logic of its own. Keeping
+   * that logic in active-language-state.ts gives every UI caller the same
+   * behavior and keeps the security-sensitive transaction independently
+   * testable without importing Obsidian.
+   */
+  async setActiveLanguageState(
+    activeLanguages: string[],
+    primaryLanguage: string,
+  ): Promise<ActiveLanguageStateResult> {
+    return applyActiveLanguageState({
+      state: this.settings,
+      activeLanguages,
+      primaryLanguage,
+      save: () => this.saveSettings(),
+      reload: () => this.reloadActiveLanguage(),
+    });
   }
 
   /**

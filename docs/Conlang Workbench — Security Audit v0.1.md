@@ -1869,15 +1869,16 @@ sink was found. SEC-005-H1 is remediated and regression-tested.
 
 Review of command and mutation boundaries is in progress.
 
-The review has so far completed five substantial authority boundaries:
+The review has so far completed six substantial authority boundaries:
 
 - dictionary-entry persistence
 - translation commit into existing creator-authored Markdown
 - language identity, membership, rename, and canonical source authority
 - plugin-initiated settings/configuration deletion
 - new-language canonical source onboarding
+- active/primary-language runtime-state authority
 
-SEC-006-H1 through SEC-006-H5 are remediated and verified.
+SEC-006-H1 through SEC-006-H6 are remediated and verified.
 
 The remainder of the command and settings-mutation inventory still requires
 review before this section can be marked Pass. The remaining settings/path
@@ -2557,6 +2558,141 @@ The production build succeeds. Lint remains at zero errors with the established
 
 **Status:** Remediated and verified.
 
+#### SEC-006-H6 — Active-language changes could remain persisted after source preflight rejected their runtime state
+
+**Severity:** Hardening
+
+The §6 review found that active-language membership and primary-language settings
+could diverge from the runtime language authority established by the canonical
+source preflight introduced in SEC-006-H3.
+
+The Settings and side-panel activation paths previously performed this sequence:
+
+1. mutate `activeLanguages` and, when necessary, `primaryLanguage`;
+2. persist the new settings;
+3. call `reloadActiveLanguage()`;
+4. continue UI follow-up without checking whether reload returned
+   `{ status: "blocked" }`.
+
+A blocked H3 reload deliberately leaves the previously loaded dictionary and
+other linguistic indexes untouched because canonical source authority could not
+be established safely. The persisted settings, however, could still describe
+the rejected requested state.
+
+This created a split authority condition: runtime lookup data could remain from
+the previous active-language set while settings-derived behavior such as primary
+language selection referred to the rejected state.
+
+The Settings overview star exposed an additional combined mutation path. Clicking
+the star for an inactive language first attempted activation and then made the
+language primary regardless of whether activation had actually been established.
+
+The required invariant is:
+
+> Active and primary language configuration must remain aligned with the last
+> successfully established runtime language authority. An activation or
+> deactivation request is not committed as successful when canonical source
+> preflight rejects the corresponding reload.
+
+**Remediation:**
+
+A shared transaction authority has been added in
+`active-language-state.ts`.
+
+`applyActiveLanguageState()`:
+
+- receives a complete requested active-language list and primary language;
+- rejects an empty active-language list;
+- rejects duplicate active-language identities;
+- rejects a primary language that is not part of the requested active set;
+- snapshots the previous active/primary configuration;
+- installs and persists the requested configuration before reload;
+- restores the previous in-memory configuration if the initial save fails;
+- calls the normal runtime reload authority;
+- treats `{ status: "blocked" }` as a documented safe rollback point;
+- restores and persists the previous active/primary configuration after a
+  blocked preflight;
+- reports rollback-persistence failure distinctly rather than claiming success.
+
+The transaction deliberately does **not** treat an arbitrary thrown reload
+exception as equivalent to a blocked preflight.
+
+`reloadActiveLanguage()` only guarantees that the old runtime remains untouched
+when source preflight returns the explicit `blocked` status. Once preflight has
+passed, sequential dictionary, morpheme, example, or phonology loading may
+already have begun replacing runtime state before an exception occurs.
+
+Blindly restoring the previous settings after such an exception could therefore
+create a second authority mismatch. The transaction reports
+`reload-failed` instead of asserting a rollback it cannot prove safe.
+
+`ConlangPlugin.setActiveLanguageState()` now exposes this shared transaction to
+UI callers.
+
+Both Settings and the side panel now calculate a proposed active/primary state
+without directly mutating plugin settings and submit that complete state through
+the shared transaction authority.
+
+The Settings overview-star path now treats activation as a prerequisite. When
+the language is inactive, the star handler attempts activation first and stops
+without changing `primaryLanguage` unless the activation transaction returns
+success.
+
+Primary-only changes for already active languages remain separate mutation
+surfaces and are not claimed as part of this finding.
+
+**Verification:**
+
+`scripts/test-active-language-state.mjs` exercises:
+
+- successful requested-state persistence and runtime establishment;
+- initial save failure with in-memory restoration and no reload attempt;
+- blocked source preflight with restoration and persistence of the previous
+  configuration;
+- failure to persist the rollback, while preserving the old in-memory state;
+- a thrown post-preflight reload exception without an unjustified rollback;
+- rejection of an empty active-language set;
+- rejection of an inactive primary language;
+- rejection of duplicate active-language identities.
+
+Manual Obsidian runtime verification used `Test Language` as the known-good
+active and primary language and temporarily renamed
+`Languages/Language 3/Lexicon` so Language 3 failed canonical source preflight.
+
+The following failure paths were verified:
+
+- Settings active-language checkbox:
+  - H3 displayed the canonical-source diagnostic;
+  - Language 3 returned to inactive;
+  - Test Language remained active and primary.
+- Settings overview star on inactive Language 3:
+  - activation was blocked;
+  - Language 3 remained inactive;
+  - the follow-up primary mutation did not occur;
+  - Test Language remained primary.
+- Side-panel Language 3 activation:
+  - activation was blocked;
+  - the previous runtime and language selection remained authoritative.
+
+After restoring the exact `Languages/Language 3/Lexicon` folder, side-panel
+activation succeeded normally. Test Language and Language 3 could both remain
+active, and Language 3 could subsequently be selected as primary through the
+normal primary-only control. This confirms that the transaction permits valid
+state changes rather than merely refusing activation.
+
+The focused active-language-state regression suite passes. The production build
+succeeds. Lint remains at zero errors with the established 14-warning baseline,
+and `git diff --check` passes.
+
+A brief requested-state UI refresh can occur after the initial settings save and
+before runtime reload completes because `saveSettings()` refreshes UI consumers.
+A blocked preflight subsequently restores and persists the previous settings,
+which refreshes those consumers back to the authoritative prior state. This
+transient refresh does not recreate the durable H6 mismatch and is not expanded
+into a broader `saveSettings()` redesign within this finding.
+
+**Status:** Remediated and verified.
+
 ### Status
 
 **Reviewing**
@@ -2982,6 +3118,7 @@ audit section.
 | SEC-006-H3  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Name-based language identity and canonical source configuration could become ambiguous through blank/duplicate identities, stale active-language references, conflicting membership authority, overlapping same-inventory source trees, or unguarded rename mutation. | Code review; `test-language-membership.mjs`; `test-language-source-preflight.mjs`; production build; lint; commit `bcd4c83`                                                                                                                          | Runtime membership policy is explicit; source reload preflights identity, paths, folder existence/type, stale active references, and same-inventory overlaps before clearing state; creator metadata is preserved; rename requires confirmation and rollback protection; blocked authority state fails closed without guessing or rerouting creator data.                                                                                                                                         |
 | SEC-006-H4  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Plugin-initiated language, cypher-sheet, cypher-rule, and inflection-rule configuration deletion lacked a shared explicit confirmation boundary, and a rendered array index could become stale authority for a different object.                                      | Code review; `scripts/test-delete-confirmation.mjs`; `scripts/test-language-source-preflight.mjs`; production build; lint; manual Obsidian Cancel/Confirm runtime verification for language, cypher sheet, cypher rule, and inflection rule deletion | Deletion now requires fail-closed explicit confirmation; callers capture and revalidate the exact object by identity before mutation; save failure restores removed in-memory configuration; blocked language reload restores the previous persisted language configuration; language removal has no vault-file or vault-folder deletion authority.                                                                                                                                               |
 | SEC-006-H5  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | New-language registration could persist canonical source claims before establishing the folder authority required by runtime source preflight.                                                                                                                        | Code review; `scripts/test-language-creator.mjs`; `scripts/test-dictionary-entry-writer.mjs`; production build; lint; manual Obsidian Add Language and subsequent activation runtime verification                                                    | New-language onboarding now preflights the complete standard folder structure and same-inventory claims before mutation, establishes folders through a shared strict additive writer, registers settings only after folder creation succeeds, preserves folders on later failure, and creates the standard Lexicon/Morphemes/Inflections/Cyphers/Examples/Phonology structure without forcing migration of existing custom layouts.                                                               |
+| SEC-006-H6  | §6 Commands and Mutating Operations | Remediated and verified          | Hardening | Active/primary-language settings could remain persisted after canonical source preflight rejected the requested runtime state, and the Settings overview star could continue into a primary-language mutation after blocked activation.                               | Code review; `scripts/test-active-language-state.mjs`; production build; lint; `git diff --check`; manual Obsidian checkbox, overview-star, side-panel blocked-activation, restored-source activation, and primary-selection runtime verification    | Active-language membership changes now use one shared transactional authority. Invalid requests fail before persistence; initial save failure restores memory; explicit preflight-blocked reload restores and persists the previous active/primary configuration; arbitrary post-preflight reload exceptions are not falsely treated as safe rollback points; combined activate-then-primary UI flow stops unless activation succeeds.                                                            |
 
 ---
 
