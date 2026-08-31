@@ -75,6 +75,10 @@ import {
   type ActiveLanguageStateResult,
 } from "./active-language-state";
 import {
+  applyPrimaryLanguageState,
+  type PrimaryLanguageStateResult,
+} from "./primary-language-state";
+import {
   applyLanguageSourceState,
   type CanonicalFolderSetting,
   type LanguageSourceStateResult,
@@ -442,6 +446,28 @@ export default class ConlangPlugin extends Plugin {
       primaryLanguage,
       save: () => this.saveSettings(),
       reload: () => this.reloadActiveLanguage(),
+    });
+  }
+
+  /**
+   * Establish a primary-language-only change without rebuilding linguistic
+   * inventories.
+   *
+   * The active-language authority transaction establishes which languages are
+   * loaded. This smaller transaction only selects one member of that already
+   * active set as the primary translation and entry-creation target.
+   *
+   * Keeping persistence and rollback in primary-language-state.ts ensures that
+   * Settings and the side panel cannot leave an unsaved primary selection
+   * influencing runtime behavior after saveData() fails.
+   */
+  async setPrimaryLanguageState(
+    primaryLanguage: string,
+  ): Promise<PrimaryLanguageStateResult> {
+    return applyPrimaryLanguageState({
+      state: this.settings,
+      primaryLanguage,
+      save: () => this.saveSettings(),
     });
   }
 

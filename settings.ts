@@ -228,8 +228,36 @@ export class ConlangSettingTab extends PluginSettingTab {
             }
           }
 
-          this.plugin.settings.primaryLanguage = lang.name;
-          await this.plugin.saveSettings();
+          const result = await this.plugin.setPrimaryLanguageState(lang.name);
+
+          switch (result.status) {
+            case "applied":
+            case "unchanged":
+              break;
+
+            case "save-failed":
+              console.error(
+                "Made Up Words: failed to save primary-language change:",
+                result.error,
+              );
+              new Notice(
+                "Made Up Words: could not save the primary-language change; the previous primary language was restored.",
+              );
+              break;
+
+            case "invalid-request":
+              console.error(
+                "Made Up Words: rejected invalid primary-language request:",
+                result.error,
+              );
+              new Notice(`Made Up Words: ${result.error}.`);
+              break;
+          }
+
+          /*
+           * Always redraw from the state the transaction actually established.
+           * On save failure that is the safely restored previous primary.
+           */
           this.rerender();
         })();
       });
@@ -1314,8 +1342,32 @@ export class ConlangSettingTab extends PluginSettingTab {
         )
         .addButton((b) =>
           b.setButtonText("Make primary").onClick(async () => {
-            this.plugin.settings.primaryLanguage = lang.name;
-            await this.plugin.saveSettings();
+            const result = await this.plugin.setPrimaryLanguageState(lang.name);
+
+            switch (result.status) {
+              case "applied":
+              case "unchanged":
+                break;
+
+              case "save-failed":
+                console.error(
+                  "Made Up Words: failed to save primary-language change:",
+                  result.error,
+                );
+                new Notice(
+                  "Made Up Words: could not save the primary-language change; the previous primary language was restored.",
+                );
+                break;
+
+              case "invalid-request":
+                console.error(
+                  "Made Up Words: rejected invalid primary-language request:",
+                  result.error,
+                );
+                new Notice(`Made Up Words: ${result.error}.`);
+                break;
+            }
+
             this.rerender();
           }),
         );

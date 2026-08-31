@@ -4563,8 +4563,28 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
               return;
             }
           }
-          this.plugin.settings.primaryLanguage = lang.name;
-          await this.plugin.saveSettings();
+          const result = await this.plugin.setPrimaryLanguageState(lang.name);
+          switch (result.status) {
+            case "applied":
+            case "unchanged":
+              break;
+            case "save-failed":
+              console.error(
+                "Made Up Words: failed to save primary-language change:",
+                result.error
+              );
+              new import_obsidian14.Notice(
+                "Made Up Words: could not save the primary-language change; the previous primary language was restored."
+              );
+              break;
+            case "invalid-request":
+              console.error(
+                "Made Up Words: rejected invalid primary-language request:",
+                result.error
+              );
+              new import_obsidian14.Notice(`Made Up Words: ${result.error}.`);
+              break;
+          }
           this.rerender();
         })();
       });
@@ -5288,8 +5308,28 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
         "Target for English-to-conlang translation and default save folder for new entries."
       ).addButton(
         (b) => b.setButtonText("Make primary").onClick(async () => {
-          this.plugin.settings.primaryLanguage = lang.name;
-          await this.plugin.saveSettings();
+          const result = await this.plugin.setPrimaryLanguageState(lang.name);
+          switch (result.status) {
+            case "applied":
+            case "unchanged":
+              break;
+            case "save-failed":
+              console.error(
+                "Made Up Words: failed to save primary-language change:",
+                result.error
+              );
+              new import_obsidian14.Notice(
+                "Made Up Words: could not save the primary-language change; the previous primary language was restored."
+              );
+              break;
+            case "invalid-request":
+              console.error(
+                "Made Up Words: rejected invalid primary-language request:",
+                result.error
+              );
+              new import_obsidian14.Notice(`Made Up Words: ${result.error}.`);
+              break;
+          }
           this.rerender();
         })
       );
@@ -6991,15 +7031,39 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     this.runTranslatorTranslation();
   }
   /**
-   * Set the primary language. The chosen language must already be active
-   * (the UI prevents calling this otherwise).
+   * Request a primary-language change through the shared authority transaction.
+   *
+   * The panel still avoids obviously invalid requests for normal UI behavior,
+   * but the transaction independently validates configured and active identity.
+   * That keeps correctness at the authority boundary rather than trusting this
+   * particular caller.
    */
   async setPrimaryLanguage(name) {
     const settings = this.plugin.settings;
     if (!settings.activeLanguages.includes(name)) return;
     if (settings.primaryLanguage === name) return;
-    settings.primaryLanguage = name;
-    await this.plugin.saveSettings();
+    const result = await this.plugin.setPrimaryLanguageState(name);
+    switch (result.status) {
+      case "applied":
+      case "unchanged":
+        break;
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save primary-language change:",
+          result.error
+        );
+        new import_obsidian18.Notice(
+          "Made Up Words: could not save the primary-language change; the previous primary language was restored."
+        );
+        break;
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid primary-language request:",
+          result.error
+        );
+        new import_obsidian18.Notice(`Made Up Words: ${result.error}.`);
+        break;
+    }
     this.renderHeader();
     this.updateTranslatorLabels();
   }
@@ -9668,6 +9732,50 @@ async function applyActiveLanguageState(request) {
   return { status: "blocked" };
 }
 
+// primary-language-state.ts
+async function applyPrimaryLanguageState(request) {
+  const requestedPrimary = request.primaryLanguage.trim();
+  if (!requestedPrimary) {
+    return {
+      status: "invalid-request",
+      error: "the primary language cannot be blank"
+    };
+  }
+  const configuredMatches = request.state.languages.filter(
+    (language) => language.name === requestedPrimary
+  );
+  if (configuredMatches.length === 0) {
+    return {
+      status: "invalid-request",
+      error: "the primary language must be configured"
+    };
+  }
+  if (configuredMatches.length > 1) {
+    return {
+      status: "invalid-request",
+      error: "the primary language identity must be unique"
+    };
+  }
+  if (!request.state.activeLanguages.includes(requestedPrimary)) {
+    return {
+      status: "invalid-request",
+      error: "the primary language must be active"
+    };
+  }
+  if (request.state.primaryLanguage === requestedPrimary) {
+    return { status: "unchanged" };
+  }
+  const previousPrimary = request.state.primaryLanguage;
+  request.state.primaryLanguage = requestedPrimary;
+  try {
+    await request.save();
+  } catch (error) {
+    request.state.primaryLanguage = previousPrimary;
+    return { status: "save-failed", error };
+  }
+  return { status: "applied" };
+}
+
 // language-source-state.ts
 function getSourceValue(language, setting) {
   return language[setting];
@@ -10515,6 +10623,25 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
       primaryLanguage,
       save: () => this.saveSettings(),
       reload: () => this.reloadActiveLanguage()
+    });
+  }
+  /**
+   * Establish a primary-language-only change without rebuilding linguistic
+   * inventories.
+   *
+   * The active-language authority transaction establishes which languages are
+   * loaded. This smaller transaction only selects one member of that already
+   * active set as the primary translation and entry-creation target.
+   *
+   * Keeping persistence and rollback in primary-language-state.ts ensures that
+   * Settings and the side panel cannot leave an unsaved primary selection
+   * influencing runtime behavior after saveData() fails.
+   */
+  async setPrimaryLanguageState(primaryLanguage) {
+    return applyPrimaryLanguageState({
+      state: this.settings,
+      primaryLanguage,
+      save: () => this.saveSettings()
     });
   }
   /**

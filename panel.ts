@@ -410,15 +410,49 @@ export class TranslationPanelView extends ItemView {
   }
 
   /**
-   * Set the primary language. The chosen language must already be active
-   * (the UI prevents calling this otherwise).
+   * Request a primary-language change through the shared authority transaction.
+   *
+   * The panel still avoids obviously invalid requests for normal UI behavior,
+   * but the transaction independently validates configured and active identity.
+   * That keeps correctness at the authority boundary rather than trusting this
+   * particular caller.
    */
   private async setPrimaryLanguage(name: string) {
     const settings = this.plugin.settings;
+
     if (!settings.activeLanguages.includes(name)) return;
     if (settings.primaryLanguage === name) return;
-    settings.primaryLanguage = name;
-    await this.plugin.saveSettings();
+
+    const result = await this.plugin.setPrimaryLanguageState(name);
+
+    switch (result.status) {
+      case "applied":
+      case "unchanged":
+        break;
+
+      case "save-failed":
+        console.error(
+          "Made Up Words: failed to save primary-language change:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: could not save the primary-language change; the previous primary language was restored.",
+        );
+        break;
+
+      case "invalid-request":
+        console.error(
+          "Made Up Words: rejected invalid primary-language request:",
+          result.error,
+        );
+        new Notice(`Made Up Words: ${result.error}.`);
+        break;
+    }
+
+    /*
+     * Render from the transaction's final state. A failed save restores the
+     * previous primary before control returns here.
+     */
     this.renderHeader();
     this.updateTranslatorLabels();
   }
