@@ -18,6 +18,7 @@ import {
 import { INFLECTION_PRESETS, findPreset } from "./presets";
 import { validateLanguageRename } from "./language-identity";
 import { confirmLanguageRename } from "./language-rename-modal";
+import { confirmDeletion } from "./delete-confirm-modal";
 
 export class ConlangSettingTab extends PluginSettingTab {
   plugin: ConlangPlugin;
@@ -68,11 +69,7 @@ export class ConlangSettingTab extends PluginSettingTab {
         "folder, cypher sheets, and inflection rules.",
     });
     for (let i = 0; i < this.plugin.settings.languages.length; i++) {
-      this.renderLanguageCard(
-        containerEl,
-        this.plugin.settings.languages[i],
-        i,
-      );
+      this.renderLanguageCard(containerEl, this.plugin.settings.languages[i]);
     }
   }
 
@@ -523,11 +520,7 @@ export class ConlangSettingTab extends PluginSettingTab {
 
   // ===== Per-language card =====
 
-  private renderLanguageCard(
-    parent: HTMLElement,
-    lang: LanguageConfig,
-    index: number,
-  ): void {
+  private renderLanguageCard(parent: HTMLElement, lang: LanguageConfig): void {
     const isActive = this.plugin.settings.activeLanguages.includes(lang.name);
     const isPrimary = this.plugin.settings.primaryLanguage === lang.name;
 
@@ -904,7 +897,7 @@ export class ConlangSettingTab extends PluginSettingTab {
       )
       .addButton((b) => {
         b.setButtonText("Remove language").onClick(async () => {
-          await this.removeLanguage(index, lang.name);
+          await this.removeLanguage(lang);
         });
         // Obsidian 1.13.0 renamed `setWarning()` to `setDestructive()`, but
         // `setDestructive()` does not exist on 1.7.2, this plugin's
@@ -1030,11 +1023,68 @@ export class ConlangSettingTab extends PluginSettingTab {
     );
   }
 
-  /** Remove a language and keep active/primary references valid. */
-  private async removeLanguage(index: number, name: string): Promise<void> {
-    this.plugin.settings.languages.splice(index, 1);
+  /**
+   * Remove one configured language after explicit authorization.
+   *
+   * Removing a language deletes only its Workbench configuration. Canonical
+   * vault folders and creator-authored files are deliberately left untouched.
+   *
+   * The LanguageConfig object itself is the authorization target. We re-find
+   * that exact object after the asynchronous modal closes instead of trusting
+   * the array index captured when the settings card was rendered.
+   */
+  private async removeLanguage(lang: LanguageConfig): Promise<void> {
+    const approvedName = lang.name;
+
+    const confirmed = await confirmDeletion(this.app, {
+      title: "Remove language?",
+      message:
+        `Remove the language configuration "${approvedName}" from Conlang Workbench? ` +
+        "Its configured vault folders and files will not be deleted.",
+      confirmText: "Remove language",
+    });
+
+    if (!confirmed) return;
+
+    /*
+     * Confirmation authorizes this exact LanguageConfig object and identity,
+     * not whichever language might later occupy its former array position.
+     */
+    const currentIndex = this.plugin.settings.languages.indexOf(lang);
+    if (currentIndex < 0 || lang.name !== approvedName) {
+      new Notice(
+        "Made Up Words: the language changed while removal confirmation was open.",
+      );
+      this.rerender();
+      return;
+    }
+
+    const previousLanguages = [...this.plugin.settings.languages];
+    const previousActiveLanguages = [...this.plugin.settings.activeLanguages];
+    const previousPrimaryLanguage = this.plugin.settings.primaryLanguage;
+    const cardWasOpen = this.openCards.has(approvedName);
+    const sheetsWereOpen = this.openSheets.has(approvedName);
+    const inflectionsWereOpen = this.openInflections.has(approvedName);
+
+    const restoreRemovalState = () => {
+      this.plugin.settings.languages = [...previousLanguages];
+      this.plugin.settings.activeLanguages = [...previousActiveLanguages];
+      this.plugin.settings.primaryLanguage = previousPrimaryLanguage;
+
+      if (cardWasOpen) this.openCards.add(approvedName);
+      else this.openCards.delete(approvedName);
+
+      if (sheetsWereOpen) this.openSheets.add(approvedName);
+      else this.openSheets.delete(approvedName);
+
+      if (inflectionsWereOpen) this.openInflections.add(approvedName);
+      else this.openInflections.delete(approvedName);
+    };
+
+    this.plugin.settings.languages.splice(currentIndex, 1);
     this.plugin.settings.activeLanguages =
-      this.plugin.settings.activeLanguages.filter((n) => n !== name);
+      this.plugin.settings.activeLanguages.filter((n) => n !== approvedName);
+
     if (
       this.plugin.settings.languages.length > 0 &&
       this.plugin.settings.activeLanguages.length === 0
@@ -1043,17 +1093,65 @@ export class ConlangSettingTab extends PluginSettingTab {
         this.plugin.settings.languages[0].name,
       ];
     }
-    if (this.plugin.settings.primaryLanguage === name) {
+
+    if (this.plugin.settings.primaryLanguage === approvedName) {
       this.plugin.settings.primaryLanguage =
         this.plugin.settings.activeLanguages[0] ??
         this.plugin.settings.languages[0]?.name ??
         "";
     }
-    this.openCards.delete(name);
-    this.openSheets.delete(name);
-    this.openInflections.delete(name);
-    await this.plugin.saveSettings();
-    await this.plugin.reloadActiveLanguage();
+
+    this.openCards.delete(approvedName);
+    this.openSheets.delete(approvedName);
+    this.openInflections.delete(approvedName);
+
+    try {
+      await this.plugin.saveSettings();
+    } catch (error) {
+      /*
+       * The deletion was not reliably persisted. Restore the previous in-memory
+       * configuration rather than pretending the removal succeeded.
+       */
+      restoreRemovalState();
+      console.error("Made Up Words: failed to remove language:", error);
+      new Notice(
+        "Made Up Words: could not save the language removal; the language was restored.",
+      );
+      this.rerender();
+      return;
+    }
+
+    const reload = await this.plugin.reloadActiveLanguage();
+
+    if (reload.status === "blocked") {
+      /*
+       * Preflight guarantees a blocked reload has not cleared/rebuilt runtime
+       * linguistic state. Restore the configuration that matched that state and
+       * persist the rollback.
+       */
+      restoreRemovalState();
+
+      try {
+        await this.plugin.saveSettings();
+      } catch (error) {
+        console.error(
+          "Made Up Words: failed to persist language-removal rollback:",
+          error,
+        );
+        new Notice(
+          "Made Up Words: language removal was rolled back in memory, but the rollback could not be saved. Review settings before restarting the app.",
+        );
+        this.rerender();
+        return;
+      }
+
+      new Notice(
+        "Made Up Words: language removal was cancelled because the remaining language data could not be safely reloaded.",
+      );
+      this.rerender();
+      return;
+    }
+
     this.plugin.refreshPanel();
     this.plugin.refreshHighlights();
     this.rerender();
@@ -1127,8 +1225,43 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setIcon("trash")
           .setTooltip("Delete sheet")
           .onClick(async () => {
-            lang.sheets.splice(sheetIndex, 1);
-            await this.plugin.saveSettings();
+            const sheetName = sheet.name.trim() || "Untitled sheet";
+            const confirmed = await confirmDeletion(this.app, {
+              title: "Delete cypher sheet?",
+              message:
+                `Delete the cypher sheet "${sheetName}" and its ${sheet.rules.length} ` +
+                `rule${sheet.rules.length === 1 ? "" : "s"} from this language's settings?`,
+              confirmText: "Delete sheet",
+            });
+
+            if (!confirmed) return;
+
+            // Re-find the exact object approved by the user. A stale rendered
+            // index must never authorize deletion of a different sheet.
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              new Notice(
+                "Made Up Words: that cypher sheet no longer exists; nothing was deleted.",
+              );
+              this.rerender();
+              return;
+            }
+
+            lang.sheets.splice(currentIndex, 1);
+
+            try {
+              await this.plugin.saveSettings();
+            } catch (error) {
+              lang.sheets.splice(currentIndex, 0, sheet);
+              console.error(
+                "Made Up Words: failed to delete cypher sheet:",
+                error,
+              );
+              new Notice(
+                "Made Up Words: could not save the cypher-sheet deletion; the sheet was restored.",
+              );
+            }
+
             this.rerender();
           }),
       );
@@ -1215,8 +1348,43 @@ export class ConlangSettingTab extends PluginSettingTab {
     const deleteTd = tr.createEl("td");
     const deleteBtn = deleteTd.createEl("button", { text: "×" });
     deleteBtn.addEventListener("click", () => {
-      sheet.rules.splice(ruleIndex, 1);
-      void this.plugin.saveSettings().then(() => this.rerender());
+      void (async () => {
+        const ruleDescription =
+          rule.input || rule.output
+            ? `"${rule.input || "(empty)"}" → "${rule.output || "(empty)"}"`
+            : "this cypher rule";
+
+        const confirmed = await confirmDeletion(this.app, {
+          title: "Delete cypher rule?",
+          message: `Delete ${ruleDescription} from this cypher sheet?`,
+          confirmText: "Delete rule",
+        });
+
+        if (!confirmed) return;
+
+        const currentIndex = sheet.rules.indexOf(rule);
+        if (currentIndex < 0) {
+          new Notice(
+            "Made Up Words: that cypher rule no longer exists; nothing was deleted.",
+          );
+          this.rerender();
+          return;
+        }
+
+        sheet.rules.splice(currentIndex, 1);
+
+        try {
+          await this.plugin.saveSettings();
+        } catch (error) {
+          sheet.rules.splice(currentIndex, 0, rule);
+          console.error("Made Up Words: failed to delete cypher rule:", error);
+          new Notice(
+            "Made Up Words: could not save the cypher-rule deletion; the rule was restored.",
+          );
+        }
+
+        this.rerender();
+      })();
     });
   }
 
@@ -1334,8 +1502,46 @@ export class ConlangSettingTab extends PluginSettingTab {
     const deleteTd = tr.createEl("td");
     const deleteBtn = deleteTd.createEl("button", { text: "×" });
     deleteBtn.addEventListener("click", () => {
-      rules.splice(ruleIndex, 1);
-      void this.plugin.saveSettings().then(() => this.rerender());
+      void (async () => {
+        const label = rule.label.trim();
+        const ruleDescription = label
+          ? `the inflection rule "${label}"`
+          : "this inflection rule";
+
+        const confirmed = await confirmDeletion(this.app, {
+          title: "Delete inflection rule?",
+          message: `Delete ${ruleDescription} from this language's settings?`,
+          confirmText: "Delete rule",
+        });
+
+        if (!confirmed) return;
+
+        const currentIndex = rules.indexOf(rule);
+        if (currentIndex < 0) {
+          new Notice(
+            "Made Up Words: that inflection rule no longer exists; nothing was deleted.",
+          );
+          this.rerender();
+          return;
+        }
+
+        rules.splice(currentIndex, 1);
+
+        try {
+          await this.plugin.saveSettings();
+        } catch (error) {
+          rules.splice(currentIndex, 0, rule);
+          console.error(
+            "Made Up Words: failed to delete inflection rule:",
+            error,
+          );
+          new Notice(
+            "Made Up Words: could not save the inflection-rule deletion; the rule was restored.",
+          );
+        }
+
+        this.rerender();
+      })();
     });
   }
 }
