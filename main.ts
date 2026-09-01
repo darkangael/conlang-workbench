@@ -70,7 +70,7 @@ import {
   registerEntryLinkHandler,
 } from "./highlight";
 import type { HighlightKind } from "./highlight-core";
-import { normalizeClosedChoiceSettings } from "./settings-validation";
+import { decodePersistedSettings } from "./persisted-settings-decoder";
 import { preflightLanguageSources } from "./language-source-preflight";
 import { showLanguageSourceDiagnostics } from "./language-source-diagnostics-modal";
 import {
@@ -405,15 +405,48 @@ export default class ConlangPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const data = (await this.loadData()) as Partial<ConlangSettings> | null;
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+    /*
+     * loadSettings() is the first awaited operation in onload(), making this
+     * method the gateway to every later registration, migration, vault read,
+     * runtime index, UI behavior, and settings write.
+     *
+     * loadData() returns untrusted runtime data. Decode it before installing it
+     * as settings authority. If decoding blocks, throw here: the rejected raw
+     * representation remains untouched on disk, migrateSettings() never sees
+     * it, and JavaScript stops onload() before anything below this gateway can
+     * register or run.
+     */
+    const raw: unknown = await this.loadData();
+    const decoded = decodePersistedSettings(raw);
 
-    // Persisted settings are runtime data, so TypeScript's compile-time unions
-    // cannot guarantee that closed-choice values are actually valid here.
-    // Normalize them before any DOM rendering or mutation behavior can use
-    // those values.
-    normalizeClosedChoiceSettings(this.settings);
+    if (decoded.status === "blocked") {
+      const issueSummary = decoded.issues
+        .map(
+          (issue) =>
+            `${issue.path}: expected ${issue.expected}, received ${issue.actual}`,
+        )
+        .join("; ");
 
+      console.error(
+        "Conlang Workbench: startup blocked by malformed persisted settings. " +
+          "The settings file was not changed.",
+        decoded.issues,
+      );
+      new Notice(
+        "Conlang Workbench could not start because its saved settings are " +
+          "malformed. Creator data was preserved; see the developer console " +
+          "for details.",
+        12000,
+      );
+      throw new Error(
+        "Conlang Workbench persisted-settings validation failed: " +
+          issueSummary,
+      );
+    }
+
+    this.settings = decoded.settings;
+
+    // Migration receives authority only after structural validation succeeds.
     this.migrateSettings();
   }
 

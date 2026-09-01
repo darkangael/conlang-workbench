@@ -496,17 +496,17 @@ function parseInflectedForms(value) {
       }
     }
   };
-  const isRecord = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  const isRecord2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (isRecord(item)) {
+      if (isRecord2(item)) {
         pushFromRecord(item);
         continue;
       }
       const scalar = parseYamlScalarText(item);
       if (scalar !== void 0) pushFromString(scalar);
     }
-  } else if (isRecord(value)) {
+  } else if (isRecord2(value)) {
     pushFromRecord(value);
   } else if (typeof value === "string" && value.trim()) {
     pushFromString(value);
@@ -9874,6 +9874,224 @@ function normalizeClosedChoiceSettings(settings) {
   }
 }
 
+// persisted-settings-decoder.ts
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function describeRuntimeValue(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+function addTypeIssue(issues, path, expected, value) {
+  issues.push({
+    path,
+    expected,
+    actual: describeRuntimeValue(value)
+  });
+}
+function validateOptionalString(owner, key, path, issues) {
+  if (owner[key] !== void 0 && typeof owner[key] !== "string") {
+    addTypeIssue(issues, `${path}.${key}`, "string", owner[key]);
+  }
+}
+function validateRequiredString(owner, key, path, issues) {
+  if (typeof owner[key] !== "string") {
+    addTypeIssue(issues, `${path}.${key}`, "string", owner[key]);
+  }
+}
+function validateRequiredBoolean(owner, key, path, issues) {
+  if (typeof owner[key] !== "boolean") {
+    addTypeIssue(issues, `${path}.${key}`, "boolean", owner[key]);
+  }
+}
+function validateCypherRule(value, path, issues) {
+  if (!isRecord(value)) {
+    addTypeIssue(issues, path, "object", value);
+    return false;
+  }
+  validateRequiredString(value, "input", path, issues);
+  validateRequiredString(value, "output", path, issues);
+  validateRequiredBoolean(value, "enabled", path, issues);
+  if (value.type !== "word" && value.type !== "prefix" && value.type !== "suffix" && value.type !== "default") {
+    addTypeIssue(
+      issues,
+      `${path}.type`,
+      '"word", "prefix", "suffix", or "default"',
+      value.type
+    );
+  }
+  return true;
+}
+function validateCypherSheet(value, path, issues) {
+  if (!isRecord(value)) {
+    addTypeIssue(issues, path, "object", value);
+    return false;
+  }
+  validateRequiredString(value, "name", path, issues);
+  validateRequiredBoolean(value, "enabled", path, issues);
+  if (!Array.isArray(value.rules)) {
+    addTypeIssue(issues, `${path}.rules`, "array", value.rules);
+  } else {
+    value.rules.forEach((rule, index) => {
+      validateCypherRule(rule, `${path}.rules[${index}]`, issues);
+    });
+  }
+  return true;
+}
+function validateInflectionRule(value, path, issues) {
+  if (!isRecord(value)) {
+    addTypeIssue(issues, path, "object", value);
+    return false;
+  }
+  validateRequiredString(value, "label", path, issues);
+  validateRequiredString(value, "pattern", path, issues);
+  validateRequiredString(value, "strip", path, issues);
+  validateRequiredString(value, "add", path, issues);
+  validateRequiredBoolean(value, "enabled", path, issues);
+  validateOptionalString(value, "pos", path, issues);
+  validateOptionalString(value, "description", path, issues);
+  if (value.position !== "suffix" && value.position !== "prefix") {
+    addTypeIssue(
+      issues,
+      `${path}.position`,
+      '"suffix" or "prefix"',
+      value.position
+    );
+  }
+  return true;
+}
+function validateLanguage(value, path, issues) {
+  if (!isRecord(value)) {
+    addTypeIssue(issues, path, "object", value);
+    return false;
+  }
+  validateRequiredString(value, "name", path, issues);
+  validateRequiredString(value, "dictionaryFolder", path, issues);
+  validateRequiredBoolean(value, "hoverEnabled", path, issues);
+  validateOptionalString(value, "rootFolder", path, issues);
+  validateOptionalString(value, "morphemeFolder", path, issues);
+  validateOptionalString(value, "exampleFolder", path, issues);
+  validateOptionalString(value, "phonologyFolder", path, issues);
+  validateOptionalString(value, "profilePath", path, issues);
+  if (!Array.isArray(value.sheets)) {
+    addTypeIssue(issues, `${path}.sheets`, "array", value.sheets);
+  } else {
+    value.sheets.forEach((sheet, index) => {
+      validateCypherSheet(sheet, `${path}.sheets[${index}]`, issues);
+    });
+  }
+  if (value.inflections !== void 0) {
+    if (!Array.isArray(value.inflections)) {
+      addTypeIssue(issues, `${path}.inflections`, "array", value.inflections);
+    } else {
+      value.inflections.forEach((rule, index) => {
+        validateInflectionRule(rule, `${path}.inflections[${index}]`, issues);
+      });
+    }
+  }
+  return true;
+}
+function clonePersistedValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => clonePersistedValue(item));
+  }
+  if (isRecord(value)) {
+    const clone = {};
+    for (const [key, item] of Object.entries(value)) {
+      Object.defineProperty(clone, key, {
+        value: clonePersistedValue(item),
+        enumerable: true,
+        configurable: true,
+        writable: true
+      });
+    }
+    return clone;
+  }
+  return value;
+}
+function decodePersistedSettings(raw) {
+  if (raw !== null && raw !== void 0 && !isRecord(raw)) {
+    return {
+      status: "blocked",
+      issues: [
+        {
+          path: "settings",
+          expected: "object",
+          actual: describeRuntimeValue(raw)
+        }
+      ]
+    };
+  }
+  const record = raw != null ? raw : {};
+  const issues = [];
+  if (record.languages !== void 0) {
+    if (!Array.isArray(record.languages)) {
+      addTypeIssue(issues, "settings.languages", "array", record.languages);
+    } else {
+      record.languages.forEach((language, index) => {
+        validateLanguage(language, `settings.languages[${index}]`, issues);
+      });
+    }
+  }
+  if (record.activeLanguages !== void 0) {
+    if (!Array.isArray(record.activeLanguages)) {
+      addTypeIssue(
+        issues,
+        "settings.activeLanguages",
+        "array of strings",
+        record.activeLanguages
+      );
+    } else {
+      record.activeLanguages.forEach((name, index) => {
+        if (typeof name !== "string") {
+          addTypeIssue(
+            issues,
+            `settings.activeLanguages[${index}]`,
+            "string",
+            name
+          );
+        }
+      });
+    }
+  }
+  const optionalStrings = ["primaryLanguage", "activeLanguage"];
+  for (const key of optionalStrings) {
+    validateOptionalString(record, key, "settings", issues);
+  }
+  const optionalBooleans = [
+    "hoverConlang",
+    "hoverEnglish",
+    "hasSeenWelcome",
+    "highlightKnownWords",
+    "highlightConlang",
+    "highlightEnglish",
+    "caseSensitiveMatching",
+    "showFormsInTooltip"
+  ];
+  for (const key of optionalBooleans) {
+    if (record[key] !== void 0 && typeof record[key] !== "boolean") {
+      addTypeIssue(issues, `settings.${key}`, "boolean", record[key]);
+    }
+  }
+  if (issues.length > 0) {
+    return { status: "blocked", issues };
+  }
+  const settingsRecord = clonePersistedValue(DEFAULT_SETTINGS);
+  const persistedClone = clonePersistedValue(record);
+  for (const [key, value] of Object.entries(persistedClone)) {
+    Object.defineProperty(settingsRecord, key, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  }
+  const settings = settingsRecord;
+  normalizeClosedChoiceSettings(settings);
+  return { status: "valid", settings };
+}
+
 // language-source-preflight.ts
 function preflightLanguageSources(languages, activeLanguageNames, pathState) {
   const issues = [];
@@ -11690,9 +11908,25 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     );
   }
   async loadSettings() {
-    const data = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-    normalizeClosedChoiceSettings(this.settings);
+    const raw = await this.loadData();
+    const decoded = decodePersistedSettings(raw);
+    if (decoded.status === "blocked") {
+      const issueSummary = decoded.issues.map(
+        (issue) => `${issue.path}: expected ${issue.expected}, received ${issue.actual}`
+      ).join("; ");
+      console.error(
+        "Conlang Workbench: startup blocked by malformed persisted settings. The settings file was not changed.",
+        decoded.issues
+      );
+      new import_obsidian25.Notice(
+        "Conlang Workbench could not start because its saved settings are malformed. Creator data was preserved; see the developer console for details.",
+        12e3
+      );
+      throw new Error(
+        "Conlang Workbench persisted-settings validation failed: " + issueSummary
+      );
+    }
+    this.settings = decoded.settings;
     this.migrateSettings();
   }
   /**
