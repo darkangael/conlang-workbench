@@ -1004,4 +1004,4 @@ A new data-safety review should be considered when any of the following occurs:
 
 - **Completed:** No
 - **Completion commit:** —
-- **Reviewer notes:** —
+- **Reviewer notes:** Upstream security and data-safety findings were reported to Made Up Words as issue #21, “Security and data-safety findings from the Conlang Workbench fork.”
