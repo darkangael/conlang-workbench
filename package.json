@@ -22,7 +22,9 @@
     "test:dictionary-language-scope": "node scripts/test-dictionary-language-scope.mjs",
     "test:inflection-language-scope": "node scripts/test-inflection-language-scope.mjs",
     "test:translation-commit-plan": "node scripts/test-translation-commit-plan.mjs",
-    "test:translation-vocabulary-repair": "node scripts/test-translation-vocabulary-repair.mjs"
+    "test:translation-vocabulary-repair": "node scripts/test-translation-vocabulary-repair.mjs",
+    "format": "prettier --write",
+    "format:check": "prettier --check"
   },
   "keywords": [
     "obsidian",
@@ -46,6 +48,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "obsidian": "^1.13.0",
+    "prettier": "3.9.6",
     "tslib": "^2.4.0",
     "typescript": "^4.9.5"
   }
