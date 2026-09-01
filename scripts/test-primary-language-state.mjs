@@ -9,7 +9,7 @@ const temp = await mkdtemp(join(tmpdir(), "conlang-primary-language-state-"));
 
 try {
   await build({
-    entryPoints: ["primary-language-state.ts"],
+    entryPoints: ["primary-language-state.ts", "settings-authority-queue.ts"],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -22,6 +22,13 @@ try {
 
   const { applyPrimaryLanguageState } = await import(
     `${pathToFileURL(modulePath).href}?v=${Date.now()}`
+  );
+
+  const queueModulePath = join(temp, "settings-authority-queue.mjs");
+  await readFile(queueModulePath, "utf8");
+
+  const { SettingsAuthorityQueue } = await import(
+    `${pathToFileURL(queueModulePath).href}?v=${Date.now()}`
   );
 
   const makeState = () => ({
@@ -63,6 +70,103 @@ try {
       state.primaryLanguage,
       "Language A",
       "failed persistence must restore the previous in-memory primary",
+    );
+  }
+
+  {
+    /*
+     * Reproduce the H13 request ordering through the common authority queue.
+     *
+     * The first request changes settled A -> provisional B and holds its save
+     * open. The second request asks for A while that provisional B is live.
+     *
+     * The critical property is that the second transaction callback must not
+     * begin yet. After the first save fails, H8 restores settled A. Only then
+     * may the second transaction inspect state. It should therefore see A as
+     * the settled previous value and return "unchanged" without attempting a
+     * save.
+     *
+     * Without the common coordinator, the second request previously captured
+     * provisional B as rollback authority and could leave B authoritative even
+     * though its originating save had failed.
+     */
+    const state = makeState();
+    const queue = new SettingsAuthorityQueue();
+
+    let rejectFirstSave;
+    const firstSave = new Promise((_, reject) => {
+      rejectFirstSave = reject;
+    });
+
+    let secondSaveCalls = 0;
+
+    const firstResultPromise = queue.run(() =>
+      applyPrimaryLanguageState({
+        state,
+        primaryLanguage: "Language B",
+        save: async () => {
+          await firstSave;
+        },
+      }),
+    );
+
+    /*
+     * queue.run() deliberately starts callbacks on a Promise continuation.
+     * Yield once so the first transaction can enter and install provisional B.
+     */
+    await Promise.resolve();
+
+    assert.equal(
+      state.primaryLanguage,
+      "Language B",
+      "the first queued request should install its provisional primary",
+    );
+
+    const secondResultPromise = queue.run(() =>
+      applyPrimaryLanguageState({
+        state,
+        primaryLanguage: "Language A",
+        save: async () => {
+          secondSaveCalls += 1;
+        },
+      }),
+    );
+
+    await Promise.resolve();
+
+    assert.equal(
+      state.primaryLanguage,
+      "Language B",
+      "the second request must not begin while the first owns the authority boundary",
+    );
+    assert.equal(
+      secondSaveCalls,
+      0,
+      "the second request must not attempt persistence while the first is pending",
+    );
+
+    rejectFirstSave(new Error("first save failed"));
+    const firstResult = await firstResultPromise;
+
+    assert.equal(firstResult.status, "save-failed");
+    assert.equal(
+      state.primaryLanguage,
+      "Language A",
+      "the failed first request must restore the original settled primary",
+    );
+
+    const secondResult = await secondResultPromise;
+
+    assert.deepEqual(secondResult, { status: "unchanged" });
+    assert.equal(
+      secondSaveCalls,
+      0,
+      "the second request should see restored settled A and require no save",
+    );
+    assert.equal(
+      state.primaryLanguage,
+      "Language A",
+      "provisional B must never become rollback authority for the queued request",
     );
   }
 

@@ -8,16 +8,21 @@ import { pathToFileURL } from "node:url";
 const tempDir = await mkdtemp(join(tmpdir(), "conlang-root-repair-state-"));
 
 try {
-  const outputFile = join(tempDir, "language-root-repair-state.mjs");
-
   await build({
-    entryPoints: ["language-root-repair-state.ts"],
+    entryPoints: [
+      "language-root-repair-state.ts",
+      "persisted-setting-state.ts",
+      "settings-authority-queue.ts",
+    ],
     bundle: true,
     platform: "node",
     format: "esm",
-    outfile: outputFile,
+    outdir: tempDir,
+    outExtension: { ".js": ".mjs" },
     logLevel: "silent",
   });
+
+  const outputFile = join(tempDir, "language-root-repair-state.mjs");
 
   // Read the generated module before importing it so a failed or missing build
   // produces a direct test failure rather than an obscure dynamic-import error.
@@ -25,6 +30,29 @@ try {
 
   const { applyLanguageRootRepairState } = await import(
     `${pathToFileURL(outputFile).href}?t=${Date.now()}`
+  );
+
+  const persistedModulePath = join(tempDir, "persisted-setting-state.mjs");
+  await readFile(persistedModulePath, "utf8");
+
+  const { applyPersistedSettingState } = await import(
+    `${pathToFileURL(persistedModulePath).href}?t=${Date.now()}`
+  );
+
+  /*
+   * H13 coordinates H7 with unrelated whole-settings transactions through the
+   * same plugin-wide queue. Keeping the coordinator as a separate entry point
+   * lets this pure regression exercise that boundary without importing the
+   * Obsidian-dependent plugin host.
+   */
+  const authorityQueueModulePath = join(
+    tempDir,
+    "settings-authority-queue.mjs",
+  );
+  await readFile(authorityQueueModulePath, "utf8");
+
+  const { SettingsAuthorityQueue } = await import(
+    `${pathToFileURL(authorityQueueModulePath).href}?t=${Date.now()}`
   );
 
   const oldRoot = "Languages/Test Language";
@@ -387,6 +415,122 @@ try {
     );
   }
 
+  /*
+   * H13: the plugin-wide authority queue must cover the complete H7 repair
+   * transaction, not merely its save() callback.
+   *
+   * Folder establishment happens after fresh authority planning and after the
+   * transaction captures the configuration it may later restore, but before
+   * repaired settings are installed. An unrelated settings transaction must
+   * therefore remain excluded even during this early asynchronous phase.
+   *
+   * This pure regression tests the composition used by the production wrapper:
+   *
+   *   SettingsAuthorityQueue -> applyLanguageRootRepairState()
+   *
+   * It intentionally does not claim to import or test main.ts itself.
+   */
+  async function testCommonAuthorityQueueExcludesOrdinarySettingDuringRepair() {
+    const language = makeLanguage();
+    const original = snapshotSources(language);
+    const authorityQueue = new SettingsAuthorityQueue();
+
+    let releaseFolderEstablishment;
+    const folderEstablishmentHeld = new Promise((resolve) => {
+      releaseFolderEstablishment = resolve;
+    });
+
+    let folderEstablishmentStarted;
+    const folderEstablishmentEntered = new Promise((resolve) => {
+      folderEstablishmentStarted = resolve;
+    });
+
+    let repairSaveCalls = 0;
+
+    const repairPromise = authorityQueue.run(() =>
+      applyLanguageRootRepairState({
+        language,
+        activeLanguages: [],
+        plan: () => makePlan(),
+        createMissingFolders: async () => {
+          folderEstablishmentStarted();
+          await folderEstablishmentHeld;
+        },
+        save: async () => {
+          repairSaveCalls++;
+        },
+        reload: async () => {
+          throw new Error("inactive repair must not reload");
+        },
+      }),
+    );
+
+    await folderEstablishmentEntered;
+
+    const ordinaryState = { enabled: false };
+    let ordinaryWriteCalls = 0;
+    let ordinarySaveCalls = 0;
+
+    const ordinaryPromise = authorityQueue.run(() =>
+      applyPersistedSettingState({
+        read: () => ordinaryState.enabled,
+        write: (value) => {
+          ordinaryWriteCalls++;
+          ordinaryState.enabled = value;
+        },
+        requested: true,
+        save: async () => {
+          ordinarySaveCalls++;
+        },
+      }),
+    );
+
+    /*
+     * Give a mistakenly uncoordinated transaction a chance to enter. Correct
+     * queueing keeps the ordinary transaction completely dormant while H7 is
+     * still establishing its planner-authorized folders.
+     */
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(
+      snapshotSources(language),
+      original,
+      "repair settings must still be untouched while folder establishment is held",
+    );
+    assert.equal(
+      ordinaryWriteCalls,
+      0,
+      "ordinary settings must not write while H7 owns the authority boundary",
+    );
+    assert.equal(
+      ordinarySaveCalls,
+      0,
+      "ordinary settings must not save while H7 owns the authority boundary",
+    );
+
+    releaseFolderEstablishment();
+
+    const repairResult = await repairPromise;
+    const ordinaryResult = await ordinaryPromise;
+
+    assert.deepEqual(repairResult, {
+      status: "applied",
+      foldersEstablished: true,
+    });
+    assert.equal(repairSaveCalls, 1);
+    assert.deepEqual(
+      snapshotSources(language),
+      expectedRepairedSources(original.profilePath),
+    );
+
+    assert.deepEqual(ordinaryResult, { status: "applied" });
+    assert.equal(ordinaryState.enabled, true);
+    assert.equal(ordinaryWriteCalls, 1);
+    assert.equal(ordinarySaveCalls, 1);
+  }
+
+  await testCommonAuthorityQueueExcludesOrdinarySettingDuringRepair();
   await testPlannerBlockPreventsAllMutation();
   await testFolderFailureLeavesConfigurationUntouched();
   await testInitialSaveFailureRestoresAllOwnedConfiguration();

@@ -22,7 +22,6 @@ import {
   showLanguageRenameBlocked,
 } from "./language-rename-modal";
 import { confirmDeletion } from "./delete-confirm-modal";
-import { createStandardLanguage } from "./language-creator";
 import type { CanonicalFolderSetting } from "./language-source-state";
 import { LinguisticRuleTargetMissingError } from "./linguistic-rule-state";
 
@@ -124,63 +123,44 @@ export class ConlangSettingTab extends PluginSettingTab {
         );
         dropdown.setValue(this.plugin.settings.languageMembership);
         dropdown.onChange(async (value) => {
-          const previousMembership = this.plugin.settings.languageMembership;
           const requestedMembership =
             value as ConlangSettings["languageMembership"];
 
-          if (requestedMembership === previousMembership) return;
-
           /*
-           * Changing membership policy changes which creator-authored sources
-           * are accepted into runtime indexes. Treat the setting and successful
-           * reload as one logical operation rather than leaving configuration
-           * and loaded data under different authority rules.
+           * Membership controls which creator-authored sources are accepted
+           * into active runtime indexes. Delegate the complete authority
+           * transaction to the plugin so previous-state capture, persistence,
+           * reload, and any safe rollback all remain inside the shared H13
+           * serialization boundary.
            */
-          this.plugin.settings.languageMembership = requestedMembership;
+          const result =
+            await this.plugin.setLanguageMembershipState(requestedMembership);
 
-          try {
-            await this.plugin.saveSettings();
-          } catch (error) {
-            // The requested setting was never established reliably. Restore the
-            // in-memory value immediately and make the control reflect it.
-            this.plugin.settings.languageMembership = previousMembership;
-            dropdown.setValue(previousMembership);
-
-            console.error(
-              "Made Up Words: failed to save language membership setting",
-              error,
-            );
-            new Notice(
-              "Made Up Words: could not save the language membership change.",
-            );
+          if (result.status === "applied") {
+            /*
+             * The requested policy and replacement runtime indexes are both
+             * established. Preserve the existing membership-setting behavior
+             * by refreshing consumers and rebuilding this settings view.
+             */
+            this.plugin.refreshPanel();
+            this.plugin.refreshHighlights();
+            this.rerender();
             return;
           }
 
-          const reload = await this.plugin.reloadActiveLanguage();
+          if (result.status === "unchanged") {
+            return;
+          }
 
-          if (reload.status === "blocked") {
-            /*
-             * Preflight guarantees a blocked reload left the old runtime indexes
-             * untouched. Restore the old setting so persisted configuration and
-             * currently loaded authority remain aligned.
-             */
-            this.plugin.settings.languageMembership = previousMembership;
-            dropdown.setValue(previousMembership);
+          if (result.status === "save-failed") {
+            new Notice(
+              "Made Up Words: could not save the language membership change.",
+            );
+            this.rerender();
+            return;
+          }
 
-            try {
-              await this.plugin.saveSettings();
-            } catch (error) {
-              console.error(
-                "Made Up Words: failed to persist language membership rollback",
-                error,
-              );
-              new Notice(
-                "Made Up Words: reload was blocked and the previous membership " +
-                  "setting could not be saved. Review settings before restarting Obsidian.",
-              );
-              return;
-            }
-
+          if (result.status === "blocked") {
             new Notice(
               "Made Up Words: language membership was restored because reload was blocked.",
             );
@@ -188,6 +168,30 @@ export class ConlangSettingTab extends PluginSettingTab {
             return;
           }
 
+          if (result.status === "rollback-save-failed") {
+            new Notice(
+              "Made Up Words: reload was blocked and the previous membership " +
+                "setting was restored in memory, but the rollback could not be saved. " +
+                "Review settings before restarting Obsidian.",
+            );
+            this.rerender();
+            return;
+          }
+
+          /*
+           * A thrown reload may occur after runtime replacement has begun.
+           * The transaction therefore keeps the requested persisted policy
+           * rather than falsely claiming that restoring the old setting could
+           * reconstruct the previous runtime indexes.
+           */
+          console.error(
+            "Made Up Words: language membership reload failed after it began",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: language membership reload failed after it began. " +
+              "See the developer console.",
+          );
           this.plugin.refreshPanel();
           this.plugin.refreshHighlights();
           this.rerender();
@@ -290,54 +294,32 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setButtonText("Add language")
           .setCta()
           .onClick(async () => {
-            const newName = this.uniqueLanguageName();
-
             /*
-             * New-language registration is intentionally a two-stage operation.
-             *
-             * First, the creator performs a read-only authority preflight over
-             * the complete standard folder structure and then establishes any
-             * missing folders additively. Settings are not changed unless that
-             * entire filesystem step succeeds.
+             * The plugin owns the complete H13 authority transaction. Settings
+             * handles presentation only, so no provisional language mutation
+             * can escape the shared serialization boundary through this UI.
              */
-            const creation = await createStandardLanguage(
-              this.app,
-              newName,
-              this.plugin.settings.languages,
-            );
+            const result = await this.plugin.createLanguageState();
 
-            if (creation.status !== "created") {
-              new Notice(`Could not add "${newName}": ${creation.error}`);
+            if (result.status === "blocked" || result.status === "failed") {
+              new Notice(`Could not add "${result.name}": ${result.error}`);
               return;
             }
 
-            const language = creation.language;
-            this.plugin.settings.languages.push(language);
-
-            try {
-              await this.plugin.saveSettings();
-            } catch (error) {
-              /*
-               * Folder creation has already succeeded, but a settings-save
-               * failure does not authorize deleting those folders. Creator or
-               * concurrent data could already exist inside them.
-               *
-               * Roll back only the unsaved in-memory configuration, locating
-               * the exact object by identity rather than trusting a stale array
-               * index after an awaited operation.
-               */
-              const currentIndex =
-                this.plugin.settings.languages.indexOf(language);
-
-              if (currentIndex !== -1) {
-                this.plugin.settings.languages.splice(currentIndex, 1);
-              }
-
+            if (result.status === "save-failed") {
               const message =
-                error instanceof Error ? error.message : String(error);
+                result.error instanceof Error
+                  ? result.error.message
+                  : String(result.error);
 
+              /*
+               * The H5 creator has already established additive vault
+               * structure. A settings-save failure restores only the exact
+               * LanguageConfig inserted by this transaction; those folders are
+               * deliberately preserved because creator data may exist there.
+               */
               new Notice(
-                `Created folders for "${newName}", but could not save ` +
+                `Created folders for "${result.name}", but could not save ` +
                   `the language configuration: ${message}`,
               );
               return;
@@ -348,13 +330,13 @@ export class ConlangSettingTab extends PluginSettingTab {
              * opens after successful persistence, but the language is not
              * automatically activated or made primary.
              */
-            this.openCards.add(newName);
+            this.openCards.add(result.name);
             this.rerender();
           }),
       )
       .addButton((btn) =>
         btn.setButtonText("Reload dictionaries").onClick(async () => {
-          const result = await this.plugin.reloadActiveLanguage();
+          const result = await this.plugin.reloadSettledLanguageState();
           if (result.status === "blocked") return;
 
           this.plugin.refreshPanel();
@@ -364,14 +346,6 @@ export class ConlangSettingTab extends PluginSettingTab {
           );
         }),
       );
-  }
-
-  private uniqueLanguageName(): string {
-    const names = new Set(this.plugin.settings.languages.map((l) => l.name));
-    let i = this.plugin.settings.languages.length + 1;
-    let name = `Language ${i}`;
-    while (names.has(name)) name = `Language ${++i}`;
-    return name;
   }
 
   /**
@@ -1693,7 +1667,7 @@ export class ConlangSettingTab extends PluginSettingTab {
     new Setting(body)
       .addButton((b) =>
         b.setButtonText("Reload language data").onClick(async () => {
-          const result = await this.plugin.reloadActiveLanguage();
+          const result = await this.plugin.reloadSettledLanguageState();
           if (result.status === "blocked") return;
 
           this.plugin.refreshPanel();
@@ -1960,34 +1934,40 @@ export class ConlangSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Remove one configured language after explicit authorization.
+   * Request removal of one configured language.
    *
-   * Removing a language deletes only its Workbench configuration. Canonical
-   * vault folders and creator-authored files are deliberately left untouched.
+   * The plugin owns the complete H13 authority transaction. In particular, it
+   * acquires the common settings queue before reading the authoritative name
+   * and keeps that queue held while this confirmation modal is open.
    *
-   * The LanguageConfig object itself is the authorization target. We re-find
-   * that exact object after the asynchronous modal closes instead of trusting
-   * the array index captured when the settings card was rendered.
+   * This settings-layer method therefore owns only presentation: constructing
+   * the confirmation UI, reporting transaction results, and updating the
+   * expansion-state sets after a removal remains authoritative.
    */
   private async removeLanguage(lang: LanguageConfig): Promise<void> {
-    const approvedName = lang.name;
+    const result = await this.plugin.removeLanguageState(lang, (approvedName) =>
+      confirmDeletion(this.app, {
+        title: "Remove language?",
+        message:
+          `Remove the language configuration "${approvedName}" from Conlang Workbench? ` +
+          "Its configured vault folders and files will not be deleted.",
+        confirmText: "Remove language",
+      }),
+    );
 
-    const confirmed = await confirmDeletion(this.app, {
-      title: "Remove language?",
-      message:
-        `Remove the language configuration "${approvedName}" from Conlang Workbench? ` +
-        "Its configured vault folders and files will not be deleted.",
-      confirmText: "Remove language",
-    });
+    if (result.status === "cancelled") {
+      return;
+    }
 
-    if (!confirmed) return;
+    if (result.status === "target-missing") {
+      new Notice(
+        "Made Up Words: the language is no longer configured, so nothing was removed.",
+      );
+      this.rerender();
+      return;
+    }
 
-    /*
-     * Confirmation authorizes this exact LanguageConfig object and identity,
-     * not whichever language might later occupy its former array position.
-     */
-    const currentIndex = this.plugin.settings.languages.indexOf(lang);
-    if (currentIndex < 0 || lang.name !== approvedName) {
+    if (result.status === "target-changed") {
       new Notice(
         "Made Up Words: the language changed while removal confirmation was open.",
       );
@@ -1995,61 +1975,8 @@ export class ConlangSettingTab extends PluginSettingTab {
       return;
     }
 
-    const previousLanguages = [...this.plugin.settings.languages];
-    const previousActiveLanguages = [...this.plugin.settings.activeLanguages];
-    const previousPrimaryLanguage = this.plugin.settings.primaryLanguage;
-    const cardWasOpen = this.openCards.has(approvedName);
-    const sheetsWereOpen = this.openSheets.has(approvedName);
-    const inflectionsWereOpen = this.openInflections.has(approvedName);
-
-    const restoreRemovalState = () => {
-      this.plugin.settings.languages = [...previousLanguages];
-      this.plugin.settings.activeLanguages = [...previousActiveLanguages];
-      this.plugin.settings.primaryLanguage = previousPrimaryLanguage;
-
-      if (cardWasOpen) this.openCards.add(approvedName);
-      else this.openCards.delete(approvedName);
-
-      if (sheetsWereOpen) this.openSheets.add(approvedName);
-      else this.openSheets.delete(approvedName);
-
-      if (inflectionsWereOpen) this.openInflections.add(approvedName);
-      else this.openInflections.delete(approvedName);
-    };
-
-    this.plugin.settings.languages.splice(currentIndex, 1);
-    this.plugin.settings.activeLanguages =
-      this.plugin.settings.activeLanguages.filter((n) => n !== approvedName);
-
-    if (
-      this.plugin.settings.languages.length > 0 &&
-      this.plugin.settings.activeLanguages.length === 0
-    ) {
-      this.plugin.settings.activeLanguages = [
-        this.plugin.settings.languages[0].name,
-      ];
-    }
-
-    if (this.plugin.settings.primaryLanguage === approvedName) {
-      this.plugin.settings.primaryLanguage =
-        this.plugin.settings.activeLanguages[0] ??
-        this.plugin.settings.languages[0]?.name ??
-        "";
-    }
-
-    this.openCards.delete(approvedName);
-    this.openSheets.delete(approvedName);
-    this.openInflections.delete(approvedName);
-
-    try {
-      await this.plugin.saveSettings();
-    } catch (error) {
-      /*
-       * The deletion was not reliably persisted. Restore the previous in-memory
-       * configuration rather than pretending the removal succeeded.
-       */
-      restoreRemovalState();
-      console.error("Made Up Words: failed to remove language:", error);
+    if (result.status === "save-failed") {
+      console.error("Made Up Words: failed to remove language:", result.error);
       new Notice(
         "Made Up Words: could not save the language removal; the language was restored.",
       );
@@ -2057,35 +1984,44 @@ export class ConlangSettingTab extends PluginSettingTab {
       return;
     }
 
-    const reload = await this.plugin.reloadActiveLanguage();
-
-    if (reload.status === "blocked") {
-      /*
-       * Preflight guarantees a blocked reload has not cleared/rebuilt runtime
-       * linguistic state. Restore the configuration that matched that state and
-       * persist the rollback.
-       */
-      restoreRemovalState();
-
-      try {
-        await this.plugin.saveSettings();
-      } catch (error) {
-        console.error(
-          "Made Up Words: failed to persist language-removal rollback:",
-          error,
-        );
-        new Notice(
-          "Made Up Words: language removal was rolled back in memory, but the rollback could not be saved. Review settings before restarting the app.",
-        );
-        this.rerender();
-        return;
-      }
-
+    if (result.status === "blocked") {
       new Notice(
         "Made Up Words: language removal was cancelled because the remaining language data could not be safely reloaded.",
       );
       this.rerender();
       return;
+    }
+
+    if (result.status === "rollback-save-failed") {
+      console.error(
+        "Made Up Words: failed to persist language-removal rollback:",
+        result.error,
+      );
+      new Notice(
+        "Made Up Words: language removal was rolled back in memory, but the rollback could not be saved. Review settings before restarting the app.",
+      );
+      this.rerender();
+      return;
+    }
+
+    /*
+     * Both "applied" and "reload-failed" leave the successfully persisted
+     * removal authoritative. Remove presentation keys only now, after the
+     * transaction has established that the language configuration remains
+     * removed.
+     */
+    this.openCards.delete(result.name);
+    this.openSheets.delete(result.name);
+    this.openInflections.delete(result.name);
+
+    if (result.status === "reload-failed") {
+      console.error(
+        "Made Up Words: language was removed, but language data reload failed:",
+        result.error,
+      );
+      new Notice(
+        "Made Up Words: the language was removed, but language data could not be fully reloaded. Review the language data before continuing.",
+      );
     }
 
     this.plugin.refreshPanel();

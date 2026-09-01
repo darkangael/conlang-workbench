@@ -63,8 +63,14 @@ export interface ApplyPersistedSettingStateRequest<T> {
  * serializes the complete settings object, so leaving a failed mutation in
  * memory could allow a later unrelated successful save to persist it.
  *
- * This helper deliberately does not claim to serialize unrelated settings
- * saves. Whole-settings concurrency remains a separate persistence boundary.
+ * This primitive deliberately does not serialize concurrent calls. Coordination
+ * belongs to the caller because ordinary settings share one complete mutable
+ * settings object with other authority transaction families.
+ *
+ * Production callers therefore enter the plugin-wide SettingsAuthorityQueue
+ * before invoking this primitive. That boundary must be acquired before
+ * request.read() runs so another transaction's provisional value cannot be
+ * mistaken for settled rollback authority.
  */
 export async function applyPersistedSettingState<T>(
   request: ApplyPersistedSettingStateRequest<T>,

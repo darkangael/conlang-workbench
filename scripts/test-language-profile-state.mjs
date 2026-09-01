@@ -8,24 +8,32 @@ import { pathToFileURL } from "node:url";
 const tempDir = await mkdtemp(join(tmpdir(), "conlang-profile-state-"));
 
 try {
-  const outputFile = join(tempDir, "language-profile-state.mjs");
-
   await build({
-    entryPoints: ["language-profile-state.ts"],
+    entryPoints: ["language-profile-state.ts", "settings-authority-queue.ts"],
     bundle: true,
     platform: "node",
     format: "esm",
-    outfile: outputFile,
+    outdir: tempDir,
+    outExtension: { ".js": ".mjs" },
     logLevel: "silent",
   });
+
+  const profileModulePath = join(tempDir, "language-profile-state.mjs");
 
   // Verify that esbuild actually emitted the independently testable transaction
   // before importing it. This produces a clearer failure than a missing-module
   // error if the build step ever changes unexpectedly.
-  await readFile(outputFile, "utf8");
+  await readFile(profileModulePath, "utf8");
 
   const { applyLanguageProfileState } = await import(
-    `${pathToFileURL(outputFile).href}?t=${Date.now()}`
+    `${pathToFileURL(profileModulePath).href}?t=${Date.now()}`
+  );
+
+  const queueModulePath = join(tempDir, "settings-authority-queue.mjs");
+  await readFile(queueModulePath, "utf8");
+
+  const { SettingsAuthorityQueue } = await import(
+    `${pathToFileURL(queueModulePath).href}?t=${Date.now()}`
   );
 
   function makeLanguage() {
@@ -242,6 +250,117 @@ try {
     assert.equal(reloadCalls, 1);
   }
 
+  async function testOverlappingFailedProfileChangesDoNotRetainProvisionalAuthority() {
+    /*
+     * H13 regression: the plugin-wide authority queue must serialize complete
+     * profile transactions before they read rollback authority.
+     *
+     * The first request installs one provisional profile path while its save is
+     * pending. The second request is submitted immediately, but the common
+     * coordinator must prevent it from starting until the first transaction
+     * has completely restored settled authority.
+     *
+     * Both persistence attempts fail deliberately. Neither requested profile
+     * path therefore has authority, so the language must finish with the
+     * original path that existed before either transaction began.
+     */
+    const language = makeLanguage();
+    const original = language.profilePath;
+    const queue = new SettingsAuthorityQueue();
+
+    let rejectFirstSave;
+    let rejectSecondSave;
+    let reloadCalls = 0;
+
+    const firstSave = new Promise((_, reject) => {
+      rejectFirstSave = reject;
+    });
+
+    const secondSave = new Promise((_, reject) => {
+      rejectSecondSave = reject;
+    });
+
+    const first = queue.run(() =>
+      applyLanguageProfileState({
+        language,
+        activeLanguages: ["Some Other Language"],
+        profilePath: "Reference/Profile B.md",
+        validate: () => ({ status: "valid" }),
+        save: () => firstSave,
+        reload: async () => {
+          reloadCalls++;
+          return { status: "loaded", dictionaryCount: 0 };
+        },
+      }),
+    );
+
+    /*
+     * Queue callbacks begin on a Promise microtask. Yield once so the first
+     * transaction reaches its held persistence boundary.
+     */
+    await Promise.resolve();
+
+    assert.equal(
+      language.profilePath,
+      "Reference/Profile B.md",
+      "the first queued request should install its provisional profile before awaiting persistence",
+    );
+
+    const second = queue.run(() =>
+      applyLanguageProfileState({
+        language,
+        activeLanguages: ["Some Other Language"],
+        profilePath: "Reference/Profile C.md",
+        validate: () => ({ status: "valid" }),
+        save: () => secondSave,
+        reload: async () => {
+          reloadCalls++;
+          return { status: "loaded", dictionaryCount: 0 };
+        },
+      }),
+    );
+
+    await Promise.resolve();
+
+    assert.equal(
+      language.profilePath,
+      "Reference/Profile B.md",
+      "the second queued request must not install its profile while the first transaction is pending",
+    );
+
+    rejectFirstSave(new Error("first profile save failed"));
+    const firstResult = await first;
+    assert.equal(firstResult.status, "save-failed");
+    assert.equal(language.profilePath, original);
+
+    /*
+     * The second queued transaction can begin only after the first rollback has
+     * restored the original profile path.
+     */
+    await Promise.resolve();
+
+    assert.equal(
+      language.profilePath,
+      "Reference/Profile C.md",
+      "the second profile should become provisional only after the first rollback settles",
+    );
+
+    rejectSecondSave(new Error("second profile save failed"));
+    const secondResult = await second;
+    assert.equal(secondResult.status, "save-failed");
+
+    assert.equal(
+      language.profilePath,
+      original,
+      "two failed overlapping profile changes must not retain either rejected provisional profile",
+    );
+    assert.equal(
+      reloadCalls,
+      0,
+      "inactive-language reproduction should isolate persistence rollback without runtime reload",
+    );
+  }
+
   await testActiveProfileAppliesOnlyAfterReload();
   await testInvalidRequestDoesNotMutateSaveOrReload();
   await testInitialSaveFailureRestoresPreviousPath();
@@ -250,6 +369,7 @@ try {
   await testReloadThrowDoesNotPretendRollbackIsSafe();
   await testInactiveLanguagePersistsWithoutReload();
   await testProfileCanBeRemoved();
+  await testOverlappingFailedProfileChangesDoNotRetainProvisionalAuthority();
 
   console.log("language-profile-state regression tests passed");
 } finally {

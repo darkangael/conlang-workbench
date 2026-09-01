@@ -5,11 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const temp = await mkdtemp(join(tmpdir(), "conlang-case-sensitive-state-"));
+const temp = await mkdtemp(
+  join(tmpdir(), "conlang-language-membership-state-"),
+);
 
 try {
   await build({
-    entryPoints: ["case-sensitive-state.ts", "settings-authority-queue.ts"],
+    entryPoints: [
+      "language-membership-state.ts",
+      "settings-authority-queue.ts",
+    ],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -17,12 +22,12 @@ try {
     outExtension: { ".js": ".mjs" },
   });
 
-  const modulePath = join(temp, "case-sensitive-state.mjs");
+  const modulePath = join(temp, "language-membership-state.mjs");
 
-  // Produce a clear test failure if bundling unexpectedly created no output.
+  // Fail clearly if bundling unexpectedly produces no testable module.
   await readFile(modulePath, "utf8");
 
-  const { applyCaseSensitiveMatchingState } = await import(
+  const { applyLanguageMembershipState } = await import(
     `${pathToFileURL(modulePath).href}?v=${Date.now()}`
   );
 
@@ -34,21 +39,21 @@ try {
   );
 
   const makeState = () => ({
-    caseSensitiveMatching: false,
+    languageMembership: "folder",
   });
 
   {
     const state = makeState();
     const calls = [];
 
-    const result = await applyCaseSensitiveMatchingState({
+    const result = await applyLanguageMembershipState({
       state,
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
       save: async () => {
-        calls.push(`save:${state.caseSensitiveMatching}`);
+        calls.push(`save:${state.languageMembership}`);
       },
       reload: async () => {
-        calls.push(`reload:${state.caseSensitiveMatching}`);
+        calls.push(`reload:${state.languageMembership}`);
         return { status: "loaded", dictionaryCount: 12 };
       },
     });
@@ -57,27 +62,27 @@ try {
       status: "applied",
       dictionaryCount: 12,
     });
-    assert.equal(state.caseSensitiveMatching, true);
+    assert.equal(state.languageMembership, "respect-explicit");
     assert.deepEqual(
       calls,
-      ["save:true", "reload:true"],
-      "requested policy must be persisted before runtime is rebuilt under it",
+      ["save:respect-explicit", "reload:respect-explicit"],
+      "requested membership policy must be persisted before runtime reload",
     );
   }
 
   {
     const state = makeState();
-    let reloadCalls = 0;
     const saveError = new Error("save failed");
+    let reloadCalls = 0;
 
-    const result = await applyCaseSensitiveMatchingState({
+    const result = await applyLanguageMembershipState({
       state,
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
       save: async () => {
         assert.equal(
-          state.caseSensitiveMatching,
-          true,
-          "save callback must observe the requested policy",
+          state.languageMembership,
+          "respect-explicit",
+          "save must observe the requested membership policy",
         );
         throw saveError;
       },
@@ -90,29 +95,28 @@ try {
     assert.equal(result.status, "save-failed");
     assert.equal(result.error, saveError);
     assert.equal(
-      state.caseSensitiveMatching,
-      false,
-      "failed initial persistence must restore the old in-memory policy",
+      state.languageMembership,
+      "folder",
+      "failed initial persistence must restore the previous policy",
     );
     assert.equal(
       reloadCalls,
       0,
-      "runtime must not reload when the requested setting was not saved",
+      "runtime must not reload when initial persistence fails",
     );
   }
 
   {
     /*
-     * Reproduce the H13 initial-save ordering through the common coordinator.
+     * Reproduce the H13 rollback-authority race through the common queue.
      *
-     * T1 changes settled false -> provisional true and holds its save open.
-     * T2 requests false while provisional true is live, but its callback must
-     * remain queued and therefore cannot treat true as settled rollback
-     * authority.
+     * T1 installs provisional "respect-explicit" and holds its save open.
+     * T2 requests settled "folder" while T1 is pending. Because the callback is
+     * queued, T2 must not read T1's provisional value as settled authority.
      *
-     * When T1 fails, H9 restores settled false. T2 may then begin, observe that
-     * its requested false policy is already authoritative, and return unchanged
-     * without saving or reloading.
+     * When T1 fails, memory returns to "folder". T2 may then begin and discover
+     * that its requested policy is already authoritative, requiring no save or
+     * reload.
      */
     const state = makeState();
     const queue = new SettingsAuthorityQueue();
@@ -126,9 +130,9 @@ try {
     let secondSaveCalls = 0;
 
     const firstResultPromise = queue.run(() =>
-      applyCaseSensitiveMatchingState({
+      applyLanguageMembershipState({
         state,
-        caseSensitiveMatching: true,
+        languageMembership: "respect-explicit",
         save: async () => {
           await firstSave;
         },
@@ -142,15 +146,15 @@ try {
     await Promise.resolve();
 
     assert.equal(
-      state.caseSensitiveMatching,
-      true,
+      state.languageMembership,
+      "respect-explicit",
       "the first queued request should install its provisional policy",
     );
 
     const secondResultPromise = queue.run(() =>
-      applyCaseSensitiveMatchingState({
+      applyLanguageMembershipState({
         state,
-        caseSensitiveMatching: false,
+        languageMembership: "folder",
         save: async () => {
           secondSaveCalls++;
         },
@@ -164,14 +168,14 @@ try {
     await Promise.resolve();
 
     assert.equal(
-      state.caseSensitiveMatching,
-      true,
-      "the second request must not begin while T1 owns the authority boundary",
+      state.languageMembership,
+      "respect-explicit",
+      "the second transaction must not begin while T1 owns authority",
     );
     assert.equal(
       secondSaveCalls,
       0,
-      "the second request must not persist while T1 is pending",
+      "the second transaction must not persist while T1 is pending",
     );
 
     rejectFirstSave(new Error("first save failed"));
@@ -179,9 +183,9 @@ try {
 
     assert.equal(firstResult.status, "save-failed");
     assert.equal(
-      state.caseSensitiveMatching,
-      false,
-      "failed T1 must restore the original settled policy",
+      state.languageMembership,
+      "folder",
+      "failed T1 must restore the original settled membership policy",
     );
 
     const secondResult = await secondResultPromise;
@@ -190,17 +194,17 @@ try {
     assert.equal(
       secondSaveCalls,
       0,
-      "T2 should see restored false and require no persistence",
+      "T2 should observe restored folder authority and require no save",
     );
     assert.equal(
       reloadCalls,
       0,
-      "failed initial persistence and unchanged T2 must not reach runtime reload",
+      "failed persistence and unchanged T2 must not reach runtime reload",
     );
     assert.equal(
-      state.caseSensitiveMatching,
-      false,
-      "provisional true must never become rollback authority for the queued request",
+      state.languageMembership,
+      "folder",
+      "provisional membership must never become rollback authority for T2",
     );
   }
 
@@ -208,25 +212,25 @@ try {
     const state = makeState();
     const persisted = [];
 
-    const result = await applyCaseSensitiveMatchingState({
+    const result = await applyLanguageMembershipState({
       state,
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
       save: async () => {
-        persisted.push(state.caseSensitiveMatching);
+        persisted.push(state.languageMembership);
       },
       reload: async () => ({ status: "blocked" }),
     });
 
     assert.deepEqual(result, { status: "blocked" });
     assert.equal(
-      state.caseSensitiveMatching,
-      false,
-      "blocked preflight must restore the policy matching untouched indexes",
+      state.languageMembership,
+      "folder",
+      "blocked preflight must restore the policy matching untouched runtime",
     );
     assert.deepEqual(
       persisted,
-      [true, false],
-      "blocked reload must persist both the request and its safe rollback",
+      ["respect-explicit", "folder"],
+      "blocked reload must persist both the request and safe rollback",
     );
   }
 
@@ -235,9 +239,9 @@ try {
     let saveCalls = 0;
     const rollbackError = new Error("rollback save failed");
 
-    const result = await applyCaseSensitiveMatchingState({
+    const result = await applyLanguageMembershipState({
       state,
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
       save: async () => {
         saveCalls++;
         if (saveCalls === 2) throw rollbackError;
@@ -248,9 +252,9 @@ try {
     assert.equal(result.status, "rollback-save-failed");
     assert.equal(result.error, rollbackError);
     assert.equal(
-      state.caseSensitiveMatching,
-      false,
-      "memory must still match untouched runtime when rollback persistence fails",
+      state.languageMembership,
+      "folder",
+      "memory must still match untouched runtime if rollback save fails",
     );
     assert.equal(saveCalls, 2);
   }
@@ -260,9 +264,9 @@ try {
     let saveCalls = 0;
     const reloadError = new Error("loader failed after preflight");
 
-    const result = await applyCaseSensitiveMatchingState({
+    const result = await applyLanguageMembershipState({
       state,
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
       save: async () => {
         saveCalls++;
       },
@@ -274,9 +278,9 @@ try {
     assert.equal(result.status, "reload-failed");
     assert.equal(result.error, reloadError);
     assert.equal(
-      state.caseSensitiveMatching,
-      true,
-      "post-preflight reload failure must not pretend the old runtime was restored",
+      state.languageMembership,
+      "respect-explicit",
+      "post-preflight reload failure must not pretend old runtime was restored",
     );
     assert.equal(
       saveCalls,
@@ -287,14 +291,14 @@ try {
 
   {
     const state = {
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
     };
     let saveCalls = 0;
     let reloadCalls = 0;
 
-    const result = await applyCaseSensitiveMatchingState({
+    const result = await applyLanguageMembershipState({
       state,
-      caseSensitiveMatching: true,
+      languageMembership: "respect-explicit",
       save: async () => {
         saveCalls++;
       },
@@ -305,12 +309,12 @@ try {
     });
 
     assert.deepEqual(result, { status: "unchanged" });
-    assert.equal(state.caseSensitiveMatching, true);
+    assert.equal(state.languageMembership, "respect-explicit");
     assert.equal(saveCalls, 0);
     assert.equal(reloadCalls, 0);
   }
 
-  console.log("case-sensitive state regression tests passed");
+  console.log("language membership state regression tests passed");
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

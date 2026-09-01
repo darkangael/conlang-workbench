@@ -3624,7 +3624,7 @@ async function repairMissingTranslationVocabulary(unresolved, targetLanguage, de
 }
 
 // settings.ts
-var import_obsidian14 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // presets.ts
 var INFLECTION_PRESETS = [
@@ -4031,435 +4031,6 @@ function confirmDeletion(app, options) {
   });
 }
 
-// language-creator.ts
-var import_obsidian13 = require("obsidian");
-
-// language-standard-paths.ts
-function buildStandardLanguagePathsFromRoot(root) {
-  return {
-    root,
-    lexicon: joinVaultPath(root, "Lexicon"),
-    morphemes: joinVaultPath(root, "Morphemes"),
-    inflections: joinVaultPath(root, "Inflections"),
-    cyphers: joinVaultPath(root, "Cyphers"),
-    examples: joinVaultPath(root, "Examples"),
-    phonology: joinVaultPath(root, "Phonology")
-  };
-}
-function buildStandardLanguagePaths(languageName) {
-  const root = joinVaultPath("Languages", languageName);
-  return buildStandardLanguagePathsFromRoot(root);
-}
-
-// language-root-authority.ts
-var LANGUAGE_CONTAINER = "Languages";
-function configuredCanonicalSources(language) {
-  var _a, _b, _c;
-  const sources = [
-    {
-      setting: "dictionaryFolder",
-      path: language.dictionaryFolder
-    }
-  ];
-  if ((_a = language.morphemeFolder) == null ? void 0 : _a.trim()) {
-    sources.push({
-      setting: "morphemeFolder",
-      path: language.morphemeFolder
-    });
-  }
-  if ((_b = language.exampleFolder) == null ? void 0 : _b.trim()) {
-    sources.push({
-      setting: "exampleFolder",
-      path: language.exampleFolder
-    });
-  }
-  if ((_c = language.phonologyFolder) == null ? void 0 : _c.trim()) {
-    sources.push({
-      setting: "phonologyFolder",
-      path: language.phonologyFolder
-    });
-  }
-  return sources;
-}
-function validateLanguageRoot(rootFolder) {
-  let safeRoot;
-  try {
-    safeRoot = validateVaultRelativePath(rootFolder);
-  } catch (error) {
-    return {
-      status: "invalid",
-      reason: "invalid-root-path",
-      detail: `language root "${rootFolder}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  const parts = safeRoot.split("/");
-  if (safeRoot === LANGUAGE_CONTAINER) {
-    return {
-      status: "invalid",
-      reason: "root-is-container",
-      detail: `"${LANGUAGE_CONTAINER}" is the shared language container, not an individual language root.`
-    };
-  }
-  if (parts.length !== 2 || parts[0] !== LANGUAGE_CONTAINER) {
-    return {
-      status: "invalid",
-      reason: "root-not-direct-child",
-      detail: `language root "${safeRoot}" must be one immediate child beneath "${LANGUAGE_CONTAINER}/".`
-    };
-  }
-  return {
-    status: "valid",
-    root: safeRoot
-  };
-}
-function rootFromCanonicalSource(setting, sourcePath) {
-  let safePath;
-  try {
-    safePath = validateVaultRelativePath(sourcePath);
-  } catch (error) {
-    return {
-      status: "unresolved",
-      reason: "invalid-source-path",
-      detail: `${setting} "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  const parts = safePath.split("/");
-  if (safePath === LANGUAGE_CONTAINER) {
-    return {
-      status: "unresolved",
-      reason: "source-is-language-container",
-      detail: `${setting} points at "${LANGUAGE_CONTAINER}", which is the shared language container rather than an individual language tree.`
-    };
-  }
-  if (parts.length < 2 || parts[0] !== LANGUAGE_CONTAINER) {
-    return {
-      status: "unresolved",
-      reason: "outside-language-container",
-      detail: `${setting} "${safePath}" is not inside a language root beneath "${LANGUAGE_CONTAINER}/".`
-    };
-  }
-  return {
-    status: "resolved",
-    root: `${LANGUAGE_CONTAINER}/${parts[1]}`
-  };
-}
-function configuredLanguageRootClaims(language) {
-  if (language.rootFolder) {
-    const explicit = validateLanguageRoot(language.rootFolder);
-    if (explicit.status === "valid") {
-      return [explicit.root];
-    }
-  }
-  const claims = /* @__PURE__ */ new Set();
-  for (const source of configuredCanonicalSources(language)) {
-    const resolved = rootFromCanonicalSource(source.setting, source.path);
-    if (resolved.status === "resolved") {
-      claims.add(resolved.root);
-    }
-  }
-  return [...claims];
-}
-function findLanguageRootClaimConflict(rootFolder, language, languages) {
-  for (const other of languages) {
-    if (other === language) {
-      continue;
-    }
-    for (const claimedRoot of configuredLanguageRootClaims(other)) {
-      if (languageRootsOverlap(rootFolder, claimedRoot)) {
-        return {
-          language: other.name,
-          root: claimedRoot
-        };
-      }
-    }
-  }
-  return null;
-}
-function inferLegacyLanguageRoot(language) {
-  const sources = configuredCanonicalSources(language);
-  let inferredRoot = null;
-  for (const source of sources) {
-    const resolved = rootFromCanonicalSource(source.setting, source.path);
-    if (resolved.status === "unresolved") {
-      return resolved;
-    }
-    if (inferredRoot === null) {
-      inferredRoot = resolved.root;
-      continue;
-    }
-    if (resolved.root !== inferredRoot) {
-      return {
-        status: "unresolved",
-        reason: "inconsistent-language-roots",
-        detail: `configured canonical sources identify both "${inferredRoot}" and "${resolved.root}" as language roots; Workbench cannot choose between them safely.`
-      };
-    }
-  }
-  if (inferredRoot === null) {
-    throw new Error(
-      "LanguageConfig contained no canonical source from which to infer a root."
-    );
-  }
-  return {
-    status: "inferred",
-    root: inferredRoot
-  };
-}
-function validateCanonicalSourceWithinRoot(rootFolder, sourcePath) {
-  const rootResult = validateLanguageRoot(rootFolder);
-  if (rootResult.status === "invalid") {
-    return {
-      status: "invalid",
-      reason: "invalid-root",
-      detail: rootResult.detail
-    };
-  }
-  let safeSource;
-  try {
-    safeSource = validateVaultRelativePath(sourcePath);
-  } catch (error) {
-    return {
-      status: "invalid",
-      reason: "invalid-source",
-      detail: `canonical source "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  if (safeSource === rootResult.root) {
-    return {
-      status: "invalid",
-      reason: "outside-language-root",
-      detail: `canonical source "${safeSource}" must be inside language root "${rootResult.root}", not the root folder itself.`
-    };
-  }
-  if (!isPathWithinFolder(safeSource, rootResult.root)) {
-    return {
-      status: "invalid",
-      reason: "outside-language-root",
-      detail: `canonical source "${safeSource}" is outside language root "${rootResult.root}".`
-    };
-  }
-  return { status: "valid" };
-}
-function validateLanguageSourceChange(request) {
-  const { language, languages, setting, value, pathState } = request;
-  if (setting === "dictionaryFolder" && !(value == null ? void 0 : value.trim())) {
-    return {
-      status: "invalid",
-      reason: "blank-dictionary",
-      detail: "The dictionary folder cannot be blank."
-    };
-  }
-  if (setting !== "dictionaryFolder" && value === void 0) {
-    return { status: "valid" };
-  }
-  if (!language.rootFolder) {
-    return {
-      status: "invalid",
-      reason: "root-unresolved",
-      detail: `Language "${language.name}" has no established Languages/<root> ownership boundary. Repair the language root before changing its canonical source folders.`
-    };
-  }
-  const root = validateLanguageRoot(language.rootFolder);
-  if (root.status === "invalid") {
-    return {
-      status: "invalid",
-      reason: "invalid-root",
-      detail: root.detail
-    };
-  }
-  const rootState = pathState(root.root);
-  if (rootState === "missing") {
-    return {
-      status: "invalid",
-      reason: "missing-root",
-      detail: `Language root "${root.root}" does not exist. Repair the configured language root before changing canonical sources.`
-    };
-  }
-  if (rootState === "other") {
-    return {
-      status: "invalid",
-      reason: "root-not-folder",
-      detail: `Language root "${root.root}" exists but is not a folder.`
-    };
-  }
-  const conflict = findLanguageRootClaimConflict(
-    root.root,
-    language,
-    languages
-  );
-  if (conflict) {
-    return {
-      status: "invalid",
-      reason: "root-conflict",
-      detail: `Language root "${root.root}" conflicts with "${conflict.root}", already reserved by "${conflict.language}".`
-    };
-  }
-  const structural = validateCanonicalSourceWithinRoot(root.root, value);
-  if (structural.status === "invalid") {
-    return {
-      status: "invalid",
-      reason: structural.reason === "outside-language-root" ? "outside-language-root" : "invalid-source",
-      detail: structural.detail
-    };
-  }
-  const sourceState = pathState(value);
-  if (sourceState === "missing") {
-    return {
-      status: "invalid",
-      reason: "missing-source",
-      detail: `Canonical source folder "${value}" does not exist.`
-    };
-  }
-  if (sourceState === "other") {
-    return {
-      status: "invalid",
-      reason: "source-not-folder",
-      detail: `Canonical source path "${value}" exists but is not a folder.`
-    };
-  }
-  return { status: "valid" };
-}
-function languageRootsOverlap(firstRoot, secondRoot) {
-  return isPathWithinFolder(firstRoot, secondRoot) || isPathWithinFolder(secondRoot, firstRoot);
-}
-
-// language-creator.ts
-function configuredInventoryPaths(language) {
-  var _a, _b, _c;
-  const sources = [
-    {
-      inventory: "lexicon",
-      path: language.dictionaryFolder
-    }
-  ];
-  if ((_a = language.morphemeFolder) == null ? void 0 : _a.trim()) {
-    sources.push({
-      inventory: "morphemes",
-      path: language.morphemeFolder
-    });
-  }
-  if ((_b = language.exampleFolder) == null ? void 0 : _b.trim()) {
-    sources.push({
-      inventory: "examples",
-      path: language.exampleFolder
-    });
-  }
-  if ((_c = language.phonologyFolder) == null ? void 0 : _c.trim()) {
-    sources.push({
-      inventory: "phonology",
-      path: language.phonologyFolder
-    });
-  }
-  return sources;
-}
-function findCanonicalClaimConflict(candidate, existingLanguages) {
-  const candidateSources = configuredInventoryPaths(candidate);
-  for (const existingLanguage of existingLanguages) {
-    const existingSources = configuredInventoryPaths(existingLanguage);
-    for (const candidateSource of candidateSources) {
-      for (const existingSource of existingSources) {
-        if (candidateSource.inventory !== existingSource.inventory) {
-          continue;
-        }
-        const overlaps = isPathWithinFolder(candidateSource.path, existingSource.path) || isPathWithinFolder(existingSource.path, candidateSource.path);
-        if (!overlaps) {
-          continue;
-        }
-        return `${candidateSource.inventory} folder "${candidateSource.path}" overlaps "${existingSource.path}", already configured for "${existingLanguage.name}"`;
-      }
-    }
-  }
-  return null;
-}
-async function createStandardLanguage(app, languageName, existingLanguages) {
-  let paths;
-  try {
-    paths = buildStandardLanguagePaths(languageName);
-  } catch (error) {
-    return {
-      status: "blocked",
-      error: "invalid language destination: " + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  const language = {
-    name: languageName,
-    /*
-     * Record the structural ownership boundary independently from the display
-     * name. A later settings-controlled language rename therefore does not
-     * silently move authority to a different vault subtree.
-     */
-    rootFolder: paths.root,
-    dictionaryFolder: paths.lexicon,
-    morphemeFolder: paths.morphemes,
-    exampleFolder: paths.examples,
-    phonologyFolder: paths.phonology,
-    hoverEnabled: true,
-    sheets: []
-  };
-  for (const existingLanguage of existingLanguages) {
-    for (const claimedRoot of configuredLanguageRootClaims(existingLanguage)) {
-      if (languageRootsOverlap(paths.root, claimedRoot)) {
-        return {
-          status: "blocked",
-          error: `language root "${paths.root}" conflicts with "${claimedRoot}", already reserved by "${existingLanguage.name}"`
-        };
-      }
-    }
-  }
-  const conflict = findCanonicalClaimConflict(language, existingLanguages);
-  if (conflict) {
-    return {
-      status: "blocked",
-      error: conflict
-    };
-  }
-  const existingRoot = app.vault.getAbstractFileByPath(paths.root);
-  if (existingRoot instanceof import_obsidian13.TFolder) {
-    return {
-      status: "blocked",
-      error: `language root "${paths.root}" already exists but is not configured. Use Import Language to explicitly adopt an existing language root.`
-    };
-  }
-  if (existingRoot) {
-    return {
-      status: "blocked",
-      error: `language root "${paths.root}" exists but is not a folder`
-    };
-  }
-  const intendedFolders = [
-    paths.root,
-    paths.lexicon,
-    paths.morphemes,
-    paths.inflections,
-    paths.cyphers,
-    paths.examples,
-    paths.phonology
-  ];
-  const inspectionIssues = inspectVaultFolderPaths(app, intendedFolders);
-  if (inspectionIssues.length > 0) {
-    const issue = inspectionIssues[0];
-    return {
-      status: "blocked",
-      error: `folder preflight failed for "${issue.requestedPath}": ` + issue.detail
-    };
-  }
-  try {
-    for (const folder of intendedFolders) {
-      await ensureVaultFolderStrict(app, folder);
-    }
-  } catch (error) {
-    return {
-      status: "failed",
-      error: "couldn't establish the standard language folders: " + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  return {
-    status: "created",
-    language,
-    paths
-  };
-}
-
 // linguistic-rule-state.ts
 var LinguisticRuleTargetMissingError = class extends Error {
   constructor() {
@@ -4611,7 +4182,7 @@ var LinguisticRuleStateQueue = class {
 };
 
 // settings.ts
-var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
+var ConlangSettingTab = class extends import_obsidian13.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     // Persist expand/collapse state across re-renders, keyed by language name.
@@ -4656,7 +4227,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     this.renderHighlightSection(containerEl);
     this.renderMatchingSection(containerEl);
     this.renderTranslationSection(containerEl);
-    new import_obsidian14.Setting(containerEl).setName("Individual languages").setHeading();
+    new import_obsidian13.Setting(containerEl).setName("Individual languages").setHeading();
     containerEl.createEl("p", {
       cls: "conlang-help",
       text: "Each language is a card below. Expand one to edit its dictionary folder, cypher sheets, and inflection rules."
@@ -4672,11 +4243,11 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
   }
   // ===== Top overview =====
   renderLanguageOverview(containerEl) {
-    new import_obsidian14.Setting(containerEl).setName("Languages").setHeading();
-    new import_obsidian14.Setting(containerEl).setName("Active languages").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Languages").setHeading();
+    new import_obsidian13.Setting(containerEl).setName("Active languages").setDesc(
       "Active languages contribute to hover, lookup, dictionary browsing, and highlighting. Tick to activate; click the star to set the primary."
     );
-    new import_obsidian14.Setting(containerEl).setName("Language membership").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Language membership").setDesc(
       "Configured folders is recommended: canonical source folders determine runtime membership and existing `language:` metadata is left untouched. Respect explicit metadata preserves the older behavior and rejects a source whose `language:` value conflicts with its configured language."
     ).addDropdown((dropdown) => {
       dropdown.addOption("folder", "Configured folders (recommended)");
@@ -4686,46 +4257,45 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       );
       dropdown.setValue(this.plugin.settings.languageMembership);
       dropdown.onChange(async (value) => {
-        const previousMembership = this.plugin.settings.languageMembership;
         const requestedMembership = value;
-        if (requestedMembership === previousMembership) return;
-        this.plugin.settings.languageMembership = requestedMembership;
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          this.plugin.settings.languageMembership = previousMembership;
-          dropdown.setValue(previousMembership);
-          console.error(
-            "Made Up Words: failed to save language membership setting",
-            error
-          );
-          new import_obsidian14.Notice(
-            "Made Up Words: could not save the language membership change."
-          );
+        const result = await this.plugin.setLanguageMembershipState(requestedMembership);
+        if (result.status === "applied") {
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+          this.rerender();
           return;
         }
-        const reload = await this.plugin.reloadActiveLanguage();
-        if (reload.status === "blocked") {
-          this.plugin.settings.languageMembership = previousMembership;
-          dropdown.setValue(previousMembership);
-          try {
-            await this.plugin.saveSettings();
-          } catch (error) {
-            console.error(
-              "Made Up Words: failed to persist language membership rollback",
-              error
-            );
-            new import_obsidian14.Notice(
-              "Made Up Words: reload was blocked and the previous membership setting could not be saved. Review settings before restarting Obsidian."
-            );
-            return;
-          }
-          new import_obsidian14.Notice(
+        if (result.status === "unchanged") {
+          return;
+        }
+        if (result.status === "save-failed") {
+          new import_obsidian13.Notice(
+            "Made Up Words: could not save the language membership change."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "blocked") {
+          new import_obsidian13.Notice(
             "Made Up Words: language membership was restored because reload was blocked."
           );
           this.rerender();
           return;
         }
+        if (result.status === "rollback-save-failed") {
+          new import_obsidian13.Notice(
+            "Made Up Words: reload was blocked and the previous membership setting was restored in memory, but the rollback could not be saved. Review settings before restarting Obsidian."
+          );
+          this.rerender();
+          return;
+        }
+        console.error(
+          "Made Up Words: language membership reload failed after it began",
+          result.error
+        );
+        new import_obsidian13.Notice(
+          "Made Up Words: language membership reload failed after it began. See the developer console."
+        );
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
         this.rerender();
@@ -4767,7 +4337,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
                 "Made Up Words: failed to save primary-language change:",
                 result.error
               );
-              new import_obsidian14.Notice(
+              new import_obsidian13.Notice(
                 "Made Up Words: could not save the primary-language change; the previous primary language was restored."
               );
               break;
@@ -4776,7 +4346,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
                 "Made Up Words: rejected invalid primary-language request:",
                 result.error
               );
-              new import_obsidian14.Notice(`Made Up Words: ${result.error}.`);
+              new import_obsidian13.Notice(`Made Up Words: ${result.error}.`);
               break;
           }
           this.rerender();
@@ -4801,54 +4371,34 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
         row.createSpan({ cls: "conlang-badge", text: "inactive" });
       }
     }
-    new import_obsidian14.Setting(containerEl).addButton(
+    new import_obsidian13.Setting(containerEl).addButton(
       (btn) => btn.setButtonText("Add language").setCta().onClick(async () => {
-        const newName = this.uniqueLanguageName();
-        const creation = await createStandardLanguage(
-          this.app,
-          newName,
-          this.plugin.settings.languages
-        );
-        if (creation.status !== "created") {
-          new import_obsidian14.Notice(`Could not add "${newName}": ${creation.error}`);
+        const result = await this.plugin.createLanguageState();
+        if (result.status === "blocked" || result.status === "failed") {
+          new import_obsidian13.Notice(`Could not add "${result.name}": ${result.error}`);
           return;
         }
-        const language = creation.language;
-        this.plugin.settings.languages.push(language);
-        try {
-          await this.plugin.saveSettings();
-        } catch (error) {
-          const currentIndex = this.plugin.settings.languages.indexOf(language);
-          if (currentIndex !== -1) {
-            this.plugin.settings.languages.splice(currentIndex, 1);
-          }
-          const message = error instanceof Error ? error.message : String(error);
-          new import_obsidian14.Notice(
-            `Created folders for "${newName}", but could not save the language configuration: ${message}`
+        if (result.status === "save-failed") {
+          const message = result.error instanceof Error ? result.error.message : String(result.error);
+          new import_obsidian13.Notice(
+            `Created folders for "${result.name}", but could not save the language configuration: ${message}`
           );
           return;
         }
-        this.openCards.add(newName);
+        this.openCards.add(result.name);
         this.rerender();
       })
     ).addButton(
       (btn) => btn.setButtonText("Reload dictionaries").onClick(async () => {
-        const result = await this.plugin.reloadActiveLanguage();
+        const result = await this.plugin.reloadSettledLanguageState();
         if (result.status === "blocked") return;
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           `Made Up Words: loaded ${result.dictionaryCount} dictionary entries`
         );
       })
     );
-  }
-  uniqueLanguageName() {
-    const names = new Set(this.plugin.settings.languages.map((l) => l.name));
-    let i = this.plugin.settings.languages.length + 1;
-    let name = `Language ${i}`;
-    while (names.has(name)) name = `Language ${++i}`;
-    return name;
   }
   /**
    * Request an active-language change without committing it directly.
@@ -4869,7 +4419,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       current.delete(name);
     }
     if (current.size === 0) {
-      new import_obsidian14.Notice("Made Up Words: at least one language must stay active.");
+      new import_obsidian13.Notice("Made Up Words: at least one language must stay active.");
       return false;
     }
     const activeLanguages = Array.from(current);
@@ -4890,7 +4440,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to save active-language change:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: could not save the active-language change; the previous selection was restored."
         );
         return false;
@@ -4899,7 +4449,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to persist active-language rollback:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
         );
         return false;
@@ -4908,7 +4458,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: active-language reload failed after preflight:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: language data failed to reload after source validation. Check the developer console."
         );
         return false;
@@ -4917,7 +4467,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: rejected invalid active-language request:",
           result.error
         );
-        new import_obsidian14.Notice(`Made Up Words: ${result.error}.`);
+        new import_obsidian13.Notice(`Made Up Words: ${result.error}.`);
         return false;
     }
   }
@@ -4947,7 +4497,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to save language-source change:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: could not save the language-source change; the previous source was restored."
         );
         return false;
@@ -4956,7 +4506,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to persist language-source rollback:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: the source change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
         );
         return false;
@@ -4965,7 +4515,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: language-source reload failed after preflight:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: language data failed to reload after source validation. The requested source was kept because automatic rollback is no longer known to be safe. Check the developer console."
         );
         return false;
@@ -4974,7 +4524,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: rejected invalid language-source request:",
           result.error
         );
-        new import_obsidian14.Notice(`Made Up Words: ${result.error}.`);
+        new import_obsidian13.Notice(`Made Up Words: ${result.error}.`);
         return false;
     }
   }
@@ -4999,7 +4549,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to save language-profile change:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: could not save the language-profile change; the previous profile path was restored."
         );
         return false;
@@ -5008,7 +4558,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to persist language-profile rollback:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: the profile change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
         );
         return false;
@@ -5017,7 +4567,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: language-profile reload failed after preflight:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: language data failed to reload after profile validation. The requested profile path was kept because automatic rollback is no longer known to be safe. Check the developer console."
         );
         return false;
@@ -5026,7 +4576,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: rejected invalid language-profile request:",
           result.error
         );
-        new import_obsidian14.Notice(`Made Up Words: ${result.error}`);
+        new import_obsidian13.Notice(`Made Up Words: ${result.error}`);
         return false;
     }
   }
@@ -5048,7 +4598,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     var _a;
     const rootFolder = lang.rootFolder;
     if (!rootFolder) {
-      new import_obsidian14.Notice(
+      new import_obsidian13.Notice(
         "Made Up Words: this language has no established Languages/<root> ownership boundary. It cannot be repaired automatically."
       );
       return;
@@ -5062,19 +4612,19 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           this.plugin.refreshHighlights();
         }
         this.rerender();
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           wasActive ? `Made Up Words: repaired "${lang.name}" and reloaded ${(_a = result.dictionaryCount) != null ? _a : 0} dictionary entries across active languages.` : `Made Up Words: repaired "${lang.name}". It remains inactive.`
         );
         return;
       case "blocked":
-        new import_obsidian14.Notice(`Made Up Words: ${result.detail}`);
+        new import_obsidian13.Notice(`Made Up Words: ${result.detail}`);
         return;
       case "folder-creation-failed":
         console.error(
           "Made Up Words: language-root folder establishment failed:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: language-root repair could not establish all required folders. Configuration was not changed; any folders already created were preserved. Check the developer console."
         );
         this.rerender();
@@ -5084,13 +4634,13 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to save language-root repair:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: the repaired configuration could not be saved and was restored in memory. Additively created folders were preserved."
         );
         this.rerender();
         return;
       case "reload-blocked":
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: language-root repair was cancelled because the repaired sources could not be safely loaded. The previous configuration was restored; any created folders were preserved."
         );
         this.rerender();
@@ -5100,7 +4650,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: failed to persist language-root repair rollback:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: repair was blocked and restored in memory, but the rollback could not be saved. Created folders were preserved. Review settings before restarting the app."
         );
         this.rerender();
@@ -5110,7 +4660,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "Made Up Words: language-root reload failed after preflight:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: the repaired configuration was saved, but language data failed to reload after validation. Automatic rollback is no longer known to be safe. Created folders and the repaired configuration were kept. Check the developer console."
         );
         this.rerender();
@@ -5119,8 +4669,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
   }
   // ===== Behaviour sections =====
   renderHoverSection(containerEl) {
-    new import_obsidian14.Setting(containerEl).setName("Hover tooltips").setHeading();
-    new import_obsidian14.Setting(containerEl).setName("Hover modifier key").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Hover tooltips").setHeading();
+    new import_obsidian13.Setting(containerEl).setName("Hover modifier key").setDesc(
       "Hold this key while hovering to see translation tooltips. 'None' shows a tooltip on any hover. Hover can also be turned off per language in each card below."
     ).addDropdown((dd) => {
       dd.addOption("none", "None (always show)");
@@ -5142,12 +4692,12 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save hover modifier preference",
             result.error
           );
-          new import_obsidian14.Notice("Made Up Words: could not save the hover modifier.");
+          new import_obsidian13.Notice("Made Up Words: could not save the hover modifier.");
           this.rerender();
         }
       });
     });
-    new import_obsidian14.Setting(containerEl).setName("Show your words' meanings").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Show your words' meanings").setDesc(
       "Hovering one of your made-up words shows its dictionary entry. Covers headwords, phrases, declared forms, and inflected forms."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.hoverConlang).onChange(async (v) => {
@@ -5163,12 +4713,12 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save conlang-hover preference",
             result.error
           );
-          new import_obsidian14.Notice("Made Up Words: could not save the hover change.");
+          new import_obsidian13.Notice("Made Up Words: could not save the hover change.");
           this.rerender();
         }
       })
     );
-    new import_obsidian14.Setting(containerEl).setName("Show English to conlang translations").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Show English to conlang translations").setDesc(
       "Hovering an English word shows the conlang words that mean it. Turn this off if your made-up words are being mistaken for English. It also switches off the cypher preview below, which transforms hovered text the same way. A word that's already one of your headwords is never treated as English, whichever way this is set."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.hoverEnglish).onChange(async (v) => {
@@ -5184,12 +4734,12 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save English-hover preference",
             result.error
           );
-          new import_obsidian14.Notice("Made Up Words: could not save the hover change.");
+          new import_obsidian13.Notice("Made Up Words: could not save the hover change.");
         }
         this.rerender();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName("Fallback for unknown words").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Fallback for unknown words").setDesc(
       "What to show when you hover a word that isn't in the dictionary. 'Cypher preview' shows a phonological placeholder; 'Nothing' shows no tooltip. The cypher preview is an English to conlang transformation, so this only applies while that direction is on."
     ).addDropdown((dd) => {
       dd.addOption("cypher", "Cypher preview");
@@ -5210,15 +4760,15 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save hover fallback preference",
             result.error
           );
-          new import_obsidian14.Notice("Made Up Words: could not save the hover fallback.");
+          new import_obsidian13.Notice("Made Up Words: could not save the hover fallback.");
           this.rerender();
         }
       });
     });
   }
   renderHighlightSection(containerEl) {
-    new import_obsidian14.Setting(containerEl).setName("Highlighting").setHeading();
-    new import_obsidian14.Setting(containerEl).setName("Highlight known words in notes").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Highlighting").setHeading();
+    new import_obsidian13.Setting(containerEl).setName("Highlight known words in notes").setDesc(
       "Visually mark recognised words in both the editor and Reading view."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightKnownWords).onChange(async (v) => {
@@ -5234,7 +4784,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save highlighting preference",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the highlighting change."
           );
         }
@@ -5242,7 +4792,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       })
     );
     if (!this.plugin.settings.highlightKnownWords) return;
-    new import_obsidian14.Setting(containerEl).setName("Highlight style").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Highlight style").setDesc(
       "How highlighted words look. Themeable via the .conlang-known-word CSS class."
     ).addDropdown((dd) => {
       dd.addOption("underline", "Dotted underline + colour");
@@ -5263,12 +4813,12 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save highlight style preference",
             result.error
           );
-          new import_obsidian14.Notice("Made Up Words: could not save the highlight style.");
+          new import_obsidian13.Notice("Made Up Words: could not save the highlight style.");
           this.rerender();
         }
       });
     });
-    new import_obsidian14.Setting(containerEl).setName("Highlight conlang words").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Highlight conlang words").setDesc(
       "Mark words that exist as dictionary entries (including inflected forms and phrases)."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightConlang).onChange(async (v) => {
@@ -5284,14 +4834,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save conlang-highlighting preference",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the highlighting change."
           );
           this.rerender();
         }
       })
     );
-    new import_obsidian14.Setting(containerEl).setName("Highlight translatable English words").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Highlight translatable English words").setDesc(
       "Mark English words the dictionary can translate. Handy for spotting coverage, but noisier in English-heavy notes."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.highlightEnglish).onChange(async (v) => {
@@ -5307,7 +4857,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save English-highlighting preference",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the highlighting change."
           );
           this.rerender();
@@ -5316,8 +4866,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     );
   }
   renderMatchingSection(containerEl) {
-    new import_obsidian14.Setting(containerEl).setName("Word matching").setHeading();
-    new import_obsidian14.Setting(containerEl).setName("Case-sensitive matching").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Word matching").setHeading();
+    new import_obsidian13.Setting(containerEl).setName("Case-sensitive matching").setDesc(
       "Treat capitalized and lowercase conlang words as different entries (e.g. a proper noun 'Sol' vs a common noun 'sol'). Affects dictionary headwords, aliases, and phrase matching. English-side lookups stay case-insensitive. Changing this reloads the dictionary."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.caseSensitiveMatching).onChange(async (v) => {
@@ -5331,21 +4881,21 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           return;
         }
         if (result.status === "save-failed") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Conlang workbench: could not save the case-matching change."
           );
           this.rerender();
           return;
         }
         if (result.status === "blocked") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Conlang workbench: case-matching change was blocked because the active language sources are not currently safe to reload."
           );
           this.rerender();
           return;
         }
         if (result.status === "rollback-save-failed") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Conlang workbench: the case-matching change was blocked and restored in memory, but the rollback could not be saved."
           );
           this.rerender();
@@ -5355,14 +4905,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           "[Conlang] Case-sensitive matching reload failed:",
           result.error
         );
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Conlang workbench: case-matching reload failed after it began. See the developer console."
         );
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName("Show declared forms in hover tooltip").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Show declared forms in hover tooltip").setDesc(
       "Include an entry's hardcoded `forms:` (its declension or conjugation table) in the hover tooltip. The side panel always shows them. Turn this off to keep tooltips compact when your entries carry long form tables."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.showFormsInTooltip).onChange(async (v) => {
@@ -5378,7 +4928,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save tooltip-forms preference",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the tooltip forms change."
           );
           this.rerender();
@@ -5387,8 +4937,8 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     );
   }
   renderTranslationSection(containerEl) {
-    new import_obsidian14.Setting(containerEl).setName("Translation").setHeading();
-    new import_obsidian14.Setting(containerEl).setName("Commit wrapper").setDesc(
+    new import_obsidian13.Setting(containerEl).setName("Translation").setHeading();
+    new import_obsidian13.Setting(containerEl).setName("Commit wrapper").setDesc(
       "How committed translations are stored in the note. HTML tooltip is recommended (uses native <abbr> tags)."
     ).addDropdown((dd) => {
       dd.addOption("html-tooltip", "HTML tooltip (<abbr>)");
@@ -5409,7 +4959,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save translation wrapper preference",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the translation wrapper."
           );
           this.rerender();
@@ -5480,7 +5030,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       });
     }
     const body = card.createDiv({ cls: "conlang-card-body" });
-    new import_obsidian14.Setting(body).setName("Name").setDesc(
+    new import_obsidian13.Setting(body).setName("Name").setDesc(
       "Language names must be unique. Renaming also renames this language's existing owned root folder and updates configured paths beneath it. Workbench does not rewrite creator-authored Markdown or YAML metadata."
     ).addText((text) => {
       text.setValue(lang.name);
@@ -5553,7 +5103,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to rename language root",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the language root could not be renamed. No settings were changed."
           );
           this.rerender();
@@ -5564,7 +5114,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save language rename",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the rename could not be saved, so the language root and settings were restored."
           );
           this.rerender();
@@ -5576,7 +5126,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             result.error,
             result.rollbackError
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: settings could not be saved and the renamed root could not be moved back. The current session kept the new paths to match the vault, but persisted settings may still be old. Review the language configuration before restarting Obsidian.",
             12e3
           );
@@ -5584,7 +5134,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
           return;
         }
         if (result.status === "reload-blocked") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the language rename was restored because runtime source validation blocked the renamed configuration."
           );
           this.rerender();
@@ -5595,7 +5145,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: blocked language reload and filesystem rollback failed",
             result.rollbackError
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: runtime reload was blocked and the renamed root could not be moved back. The new root and settings remain in place, while the previous runtime data is still loaded. Review the language configuration before continuing.",
             12e3
           );
@@ -5607,7 +5157,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to save restored language rename state",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the language root and in-memory settings were restored, but that rollback could not be saved. Persisted settings may still contain the renamed paths. Review settings before restarting Obsidian.",
             12e3
           );
@@ -5619,7 +5169,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: language rename reload failed after preflight",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the language rename was saved, but runtime reload failed after validation began. The renamed root and settings were kept because automatic rollback is no longer known to be safe.",
             12e3
           );
@@ -5658,7 +5208,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
         });
       });
     };
-    const dictionarySetting = new import_obsidian14.Setting(body).setName("Dictionary folder").setDesc(
+    const dictionarySetting = new import_obsidian13.Setting(body).setName("Dictionary folder").setDesc(
       "Folder of one .md file per word, each with frontmatter `definition:` set."
     );
     addSourceFolderText(
@@ -5667,7 +5217,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       () => lang.dictionaryFolder,
       false
     );
-    const morphemeSetting = new import_obsidian14.Setting(body).setName("Morpheme folder").setDesc(
+    const morphemeSetting = new import_obsidian13.Setting(body).setName("Morpheme folder").setDesc(
       "Optional folder of canonical morpheme notes. Morphemes are loaded separately from dictionary entries and do not automatically become translation candidates."
     );
     addSourceFolderText(
@@ -5679,7 +5229,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       },
       true
     );
-    const exampleSetting = new import_obsidian14.Setting(body).setName("Examples folder").setDesc(
+    const exampleSetting = new import_obsidian13.Setting(body).setName("Examples folder").setDesc(
       "Optional folder of standalone linguistic example notes. Only notes explicitly marked as linguistic examples are loaded."
     );
     addSourceFolderText(
@@ -5691,7 +5241,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       },
       true
     );
-    const phonologySetting = new import_obsidian14.Setting(body).setName("Phonology folder").setDesc(
+    const phonologySetting = new import_obsidian13.Setting(body).setName("Phonology folder").setDesc(
       "Optional folder of canonical phonological-unit notes. Only notes explicitly marked as phonological units are loaded."
     );
     addSourceFolderText(
@@ -5703,7 +5253,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       },
       true
     );
-    new import_obsidian14.Setting(body).setName("Language profile").setDesc(
+    new import_obsidian13.Setting(body).setName("Language profile").setDesc(
       "Optional vault path to this language's canonical language profile note."
     ).addText(
       (t) => {
@@ -5715,10 +5265,10 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       }
     );
     const profile = this.plugin.getLanguageProfile(lang);
-    new import_obsidian14.Setting(body).setName("Profile status").setDesc(
+    new import_obsidian13.Setting(body).setName("Profile status").setDesc(
       !lang.profilePath ? "No language profile configured." : profile ? `Loaded: ${profile.name} (${profile.id})` : "Profile not found or invalid."
     );
-    new import_obsidian14.Setting(body).setName("Active").setDesc(
+    new import_obsidian13.Setting(body).setName("Active").setDesc(
       "Include this language in hover, lookup, browsing, and highlighting."
     ).addToggle(
       (tg) => tg.setValue(isActive).onChange(async (v) => {
@@ -5727,7 +5277,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       })
     );
     if (isActive && !isPrimary) {
-      new import_obsidian14.Setting(body).setName("Primary language").setDesc(
+      new import_obsidian13.Setting(body).setName("Primary language").setDesc(
         "Target for English-to-conlang translation and default save folder for new entries."
       ).addButton(
         (b) => b.setButtonText("Make primary").onClick(async () => {
@@ -5741,7 +5291,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
                 "Made Up Words: failed to save primary-language change:",
                 result.error
               );
-              new import_obsidian14.Notice(
+              new import_obsidian13.Notice(
                 "Made Up Words: could not save the primary-language change; the previous primary language was restored."
               );
               break;
@@ -5750,14 +5300,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
                 "Made Up Words: rejected invalid primary-language request:",
                 result.error
               );
-              new import_obsidian14.Notice(`Made Up Words: ${result.error}.`);
+              new import_obsidian13.Notice(`Made Up Words: ${result.error}.`);
               break;
           }
           this.rerender();
         })
       );
     }
-    new import_obsidian14.Setting(body).setName("Enable hover tooltips").setDesc("Show translation tooltips when hovering this language's words.").addToggle(
+    new import_obsidian13.Setting(body).setName("Enable hover tooltips").setDesc("Show translation tooltips when hovering this language's words.").addToggle(
       (tg) => tg.setValue(lang.hoverEnabled).onChange(async (v) => {
         const result = await this.plugin.setPersistedSettingState(
           () => lang.hoverEnabled,
@@ -5771,20 +5321,20 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             `Made Up Words: failed to save hover preference for "${lang.name}"`,
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             `Made Up Words: could not save hover settings for "${lang.name}".`
           );
           this.rerender();
         }
       })
     );
-    new import_obsidian14.Setting(body).addButton(
+    new import_obsidian13.Setting(body).addButton(
       (b) => b.setButtonText("Reload language data").onClick(async () => {
-        const result = await this.plugin.reloadActiveLanguage();
+        const result = await this.plugin.reloadSettledLanguageState();
         if (result.status === "blocked") return;
         this.plugin.refreshPanel();
         this.plugin.refreshHighlights();
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           isActive ? `Reloaded \u2014 ${result.dictionaryCount} dictionary entries across active languages` : `${lang.name} is inactive; activate it to load its language data.`
         );
       })
@@ -5821,7 +5371,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       }
     };
     rebuildSheets();
-    new import_obsidian14.Setting(sheetsBody).addButton(
+    new import_obsidian13.Setting(sheetsBody).addButton(
       (b) => b.setButtonText("Add sheet").setCta().onClick(async () => {
         const result = await this.plugin.setLinguisticRuleState(
           lang,
@@ -5838,14 +5388,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to add cypher sheet:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the new cypher sheet; it was not added."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the cypher-sheet change could not be applied because its target changed."
           );
           this.rerender();
@@ -5866,7 +5416,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       text: "When a word isn't in the dictionary, these rules try to find its lemma. Strip removes characters from the end (suffix) or start (prefix); add then attaches characters to reconstruct the lemma. Most rules just chop a suffix off \u2014 leave add empty for that. Use add for respellings (strip 'ies', add 'y'). Optional POS filter: comma-separated, e.g. 'noun' or 'noun,proper-noun'. Rules are tried in order; the first whose reconstructed stem exists wins."
     });
     let pendingPresetId = "";
-    new import_obsidian14.Setting(inflBody).setName("Apply preset").setDesc(
+    new import_obsidian13.Setting(inflBody).setName("Apply preset").setDesc(
       "Load a curated starter set. Replaces existing inflection rules for this language."
     ).addDropdown((dd) => {
       dd.addOption("", "\u2014 pick a preset \u2014");
@@ -5880,7 +5430,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       (b) => b.setButtonText("Apply").setCta().onClick(async () => {
         var _a2;
         if (!pendingPresetId) {
-          new import_obsidian14.Notice("Made Up Words: pick a preset first");
+          new import_obsidian13.Notice("Made Up Words: pick a preset first");
           return;
         }
         const preset = findPreset(pendingPresetId);
@@ -5914,14 +5464,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to apply inflection preset:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the inflection preset; the previous rules were restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the inflection rules changed while preset replacement was pending; the preset was not applied."
           );
           this.rerender();
@@ -5929,11 +5479,11 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
         }
         this.openInflections.add(lang.name);
         this.rerender();
-        new import_obsidian14.Notice(`Made Up Words: applied preset "${preset.name}"`);
+        new import_obsidian13.Notice(`Made Up Words: applied preset "${preset.name}"`);
       })
     );
     this.renderInflectionTable(inflBody, lang);
-    new import_obsidian14.Setting(inflBody).addButton(
+    new import_obsidian13.Setting(inflBody).addButton(
       (b) => b.setButtonText("Add inflection rule").onClick(async () => {
         const result = await this.plugin.setLinguisticRuleState(
           lang,
@@ -5955,14 +5505,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to add inflection rule:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the new inflection rule; it was not added."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: the inflection-rule change could not be applied because its target changed."
           );
           this.rerender();
@@ -5974,94 +5524,79 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     );
   }
   /**
-   * Remove one configured language after explicit authorization.
+   * Request removal of one configured language.
    *
-   * Removing a language deletes only its Workbench configuration. Canonical
-   * vault folders and creator-authored files are deliberately left untouched.
+   * The plugin owns the complete H13 authority transaction. In particular, it
+   * acquires the common settings queue before reading the authoritative name
+   * and keeps that queue held while this confirmation modal is open.
    *
-   * The LanguageConfig object itself is the authorization target. We re-find
-   * that exact object after the asynchronous modal closes instead of trusting
-   * the array index captured when the settings card was rendered.
+   * This settings-layer method therefore owns only presentation: constructing
+   * the confirmation UI, reporting transaction results, and updating the
+   * expansion-state sets after a removal remains authoritative.
    */
   async removeLanguage(lang) {
-    var _a, _b, _c;
-    const approvedName = lang.name;
-    const confirmed = await confirmDeletion(this.app, {
-      title: "Remove language?",
-      message: `Remove the language configuration "${approvedName}" from Conlang Workbench? Its configured vault folders and files will not be deleted.`,
-      confirmText: "Remove language"
-    });
-    if (!confirmed) return;
-    const currentIndex = this.plugin.settings.languages.indexOf(lang);
-    if (currentIndex < 0 || lang.name !== approvedName) {
-      new import_obsidian14.Notice(
+    const result = await this.plugin.removeLanguageState(
+      lang,
+      (approvedName) => confirmDeletion(this.app, {
+        title: "Remove language?",
+        message: `Remove the language configuration "${approvedName}" from Conlang Workbench? Its configured vault folders and files will not be deleted.`,
+        confirmText: "Remove language"
+      })
+    );
+    if (result.status === "cancelled") {
+      return;
+    }
+    if (result.status === "target-missing") {
+      new import_obsidian13.Notice(
+        "Made Up Words: the language is no longer configured, so nothing was removed."
+      );
+      this.rerender();
+      return;
+    }
+    if (result.status === "target-changed") {
+      new import_obsidian13.Notice(
         "Made Up Words: the language changed while removal confirmation was open."
       );
       this.rerender();
       return;
     }
-    const previousLanguages = [...this.plugin.settings.languages];
-    const previousActiveLanguages = [...this.plugin.settings.activeLanguages];
-    const previousPrimaryLanguage = this.plugin.settings.primaryLanguage;
-    const cardWasOpen = this.openCards.has(approvedName);
-    const sheetsWereOpen = this.openSheets.has(approvedName);
-    const inflectionsWereOpen = this.openInflections.has(approvedName);
-    const restoreRemovalState = () => {
-      this.plugin.settings.languages = [...previousLanguages];
-      this.plugin.settings.activeLanguages = [...previousActiveLanguages];
-      this.plugin.settings.primaryLanguage = previousPrimaryLanguage;
-      if (cardWasOpen) this.openCards.add(approvedName);
-      else this.openCards.delete(approvedName);
-      if (sheetsWereOpen) this.openSheets.add(approvedName);
-      else this.openSheets.delete(approvedName);
-      if (inflectionsWereOpen) this.openInflections.add(approvedName);
-      else this.openInflections.delete(approvedName);
-    };
-    this.plugin.settings.languages.splice(currentIndex, 1);
-    this.plugin.settings.activeLanguages = this.plugin.settings.activeLanguages.filter((n) => n !== approvedName);
-    if (this.plugin.settings.languages.length > 0 && this.plugin.settings.activeLanguages.length === 0) {
-      this.plugin.settings.activeLanguages = [
-        this.plugin.settings.languages[0].name
-      ];
-    }
-    if (this.plugin.settings.primaryLanguage === approvedName) {
-      this.plugin.settings.primaryLanguage = (_c = (_b = this.plugin.settings.activeLanguages[0]) != null ? _b : (_a = this.plugin.settings.languages[0]) == null ? void 0 : _a.name) != null ? _c : "";
-    }
-    this.openCards.delete(approvedName);
-    this.openSheets.delete(approvedName);
-    this.openInflections.delete(approvedName);
-    try {
-      await this.plugin.saveSettings();
-    } catch (error) {
-      restoreRemovalState();
-      console.error("Made Up Words: failed to remove language:", error);
-      new import_obsidian14.Notice(
+    if (result.status === "save-failed") {
+      console.error("Made Up Words: failed to remove language:", result.error);
+      new import_obsidian13.Notice(
         "Made Up Words: could not save the language removal; the language was restored."
       );
       this.rerender();
       return;
     }
-    const reload = await this.plugin.reloadActiveLanguage();
-    if (reload.status === "blocked") {
-      restoreRemovalState();
-      try {
-        await this.plugin.saveSettings();
-      } catch (error) {
-        console.error(
-          "Made Up Words: failed to persist language-removal rollback:",
-          error
-        );
-        new import_obsidian14.Notice(
-          "Made Up Words: language removal was rolled back in memory, but the rollback could not be saved. Review settings before restarting the app."
-        );
-        this.rerender();
-        return;
-      }
-      new import_obsidian14.Notice(
+    if (result.status === "blocked") {
+      new import_obsidian13.Notice(
         "Made Up Words: language removal was cancelled because the remaining language data could not be safely reloaded."
       );
       this.rerender();
       return;
+    }
+    if (result.status === "rollback-save-failed") {
+      console.error(
+        "Made Up Words: failed to persist language-removal rollback:",
+        result.error
+      );
+      new import_obsidian13.Notice(
+        "Made Up Words: language removal was rolled back in memory, but the rollback could not be saved. Review settings before restarting the app."
+      );
+      this.rerender();
+      return;
+    }
+    this.openCards.delete(result.name);
+    this.openSheets.delete(result.name);
+    this.openInflections.delete(result.name);
+    if (result.status === "reload-failed") {
+      console.error(
+        "Made Up Words: language was removed, but language data reload failed:",
+        result.error
+      );
+      new import_obsidian13.Notice(
+        "Made Up Words: the language was removed, but language data could not be fully reloaded. Review the language data before continuing."
+      );
     }
     this.plugin.refreshPanel();
     this.plugin.refreshHighlights();
@@ -6087,7 +5622,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
   renderSheet(parent, lang, sheetIndex, rebuildSheets) {
     const sheet = lang.sheets[sheetIndex];
     const box = parent.createDiv({ cls: "conlang-sheet" });
-    new import_obsidian14.Setting(box).setName(sheet.name).addExtraButton(
+    new import_obsidian13.Setting(box).setName(sheet.name).addExtraButton(
       (b) => b.setIcon("arrow-up").setTooltip("Move sheet up").setDisabled(sheetIndex === 0).onClick(async () => {
         const result = await this.plugin.setLinguisticRuleState(
           lang,
@@ -6104,14 +5639,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to move cypher sheet:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-sheet reorder; the previous order was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher sheet no longer exists; it was not moved."
           );
           this.rerender();
@@ -6136,14 +5671,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to move cypher sheet:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-sheet reorder; the previous order was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher sheet no longer exists; it was not moved."
           );
           this.rerender();
@@ -6168,14 +5703,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to change cypher-sheet enabled state:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-sheet setting; the previous setting was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher sheet no longer exists; the setting was not changed."
           );
           this.rerender();
@@ -6205,14 +5740,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to delete cypher sheet:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-sheet deletion; the sheet was not deleted."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher sheet no longer exists; nothing was deleted."
           );
           this.rerender();
@@ -6221,7 +5756,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
         this.rerender();
       })
     );
-    new import_obsidian14.Setting(box).setName("Sheet name").addText(
+    new import_obsidian13.Setting(box).setName("Sheet name").addText(
       (t) => t.setValue(sheet.name).onChange(async (v) => {
         const result = await this.plugin.setLinguisticRuleState(
           lang,
@@ -6238,14 +5773,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to rename cypher sheet:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-sheet name; the previous name was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher sheet no longer exists; its name was not changed."
           );
           this.rerender();
@@ -6262,7 +5797,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     for (let r = 0; r < sheet.rules.length; r++) {
       this.renderRuleRow(tbody, lang, sheet, r);
     }
-    new import_obsidian14.Setting(box).addButton(
+    new import_obsidian13.Setting(box).addButton(
       (b) => b.setButtonText("Add rule").onClick(async () => {
         const result = await this.plugin.setLinguisticRuleState(
           lang,
@@ -6284,14 +5819,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to add cypher rule:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the new cypher rule; it was not added."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher sheet no longer exists; no rule was added."
           );
           this.rerender();
@@ -6331,14 +5866,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to change cypher-rule input:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-rule input; the previous value was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher rule no longer exists; its input was not changed."
           );
           this.rerender();
@@ -6372,14 +5907,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to change cypher-rule output:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-rule output; the previous value was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher rule no longer exists; its output was not changed."
           );
           this.rerender();
@@ -6414,14 +5949,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to change cypher-rule type:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-rule type; the previous value was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher rule no longer exists; its type was not changed."
           );
           this.rerender();
@@ -6453,14 +5988,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to change cypher-rule enabled state:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-rule setting; the previous setting was restored."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher rule no longer exists; the setting was not changed."
           );
           this.rerender();
@@ -6500,14 +6035,14 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
             "Made Up Words: failed to delete cypher rule:",
             result.error
           );
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: could not save the cypher-rule deletion; the rule was not deleted."
           );
           this.rerender();
           return;
         }
         if (result.status === "target-missing") {
-          new import_obsidian14.Notice(
+          new import_obsidian13.Notice(
             "Made Up Words: that cypher rule no longer exists; nothing was deleted."
           );
           this.rerender();
@@ -6602,13 +6137,13 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
       );
       if (result.status === "save-failed") {
         console.error(`Made Up Words: failed to ${description}:`, result.error);
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: could not save the inflection-rule change; the previous value was restored."
         );
         return false;
       }
       if (result.status === "target-missing") {
-        new import_obsidian14.Notice(
+        new import_obsidian13.Notice(
           "Made Up Words: that inflection rule no longer exists; the change was not applied."
         );
         return false;
@@ -6701,7 +6236,7 @@ var ConlangSettingTab = class extends import_obsidian14.PluginSettingTab {
     });
   }
 };
-var PresetConfirmModal = class extends import_obsidian14.Modal {
+var PresetConfirmModal = class extends import_obsidian13.Modal {
   constructor(app, presetName, description, existingCount, resolve) {
     super(app);
     this.decided = false;
@@ -6742,10 +6277,10 @@ var PresetConfirmModal = class extends import_obsidian14.Modal {
 };
 
 // panel.ts
-var import_obsidian18 = require("obsidian");
+var import_obsidian17 = require("obsidian");
 
 // morpheme-tab.ts
-var import_obsidian15 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var MorphemeTab = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7042,14 +6577,14 @@ var MorphemeTab = class {
    */
   async openMorpheme(morpheme) {
     const file = this.plugin.app.vault.getAbstractFileByPath(morpheme.path);
-    if (file instanceof import_obsidian15.TFile) {
+    if (file instanceof import_obsidian14.TFile) {
       await this.plugin.app.workspace.getLeaf(false).openFile(file);
     }
   }
 };
 
 // linguistic-example-tab.ts
-var import_obsidian16 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 var LinguisticExampleTab = class {
   constructor(app, inventory) {
     this.app = app;
@@ -7248,13 +6783,13 @@ var LinguisticExampleTab = class {
    */
   async openSourceNote(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian16.TFile)) return;
+    if (!(file instanceof import_obsidian15.TFile)) return;
     await this.app.workspace.getLeaf(false).openFile(file);
   }
 };
 
 // phonology-tab.ts
-var import_obsidian17 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 var PhonologyTab = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7586,7 +7121,7 @@ var PhonologyTab = class {
   async openUnit(unit) {
     if (!unit.path) return;
     const file = this.plugin.app.vault.getAbstractFileByPath(unit.path);
-    if (file instanceof import_obsidian17.TFile) {
+    if (file instanceof import_obsidian16.TFile) {
       await this.plugin.app.workspace.getLeaf(false).openFile(file);
     }
   }
@@ -7645,7 +7180,7 @@ function explainInflection(label) {
 
 // panel.ts
 var VIEW_TYPE_PANEL = "made-up-words-panel";
-var _TranslationPanelView = class _TranslationPanelView extends import_obsidian18.ItemView {
+var _TranslationPanelView = class _TranslationPanelView extends import_obsidian17.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.activeTab = "translate";
@@ -7825,7 +7360,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     const current = new Set(settings.activeLanguages);
     if (current.has(name)) {
       if (current.size <= 1) {
-        new import_obsidian18.Notice("Made Up Words: at least one language must be active.");
+        new import_obsidian17.Notice("Made Up Words: at least one language must be active.");
         return;
       }
       current.delete(name);
@@ -7847,7 +7382,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
           "Made Up Words: failed to save active-language change:",
           result.error
         );
-        new import_obsidian18.Notice(
+        new import_obsidian17.Notice(
           "Made Up Words: could not save the active-language change; the previous selection was restored."
         );
         break;
@@ -7856,7 +7391,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
           "Made Up Words: failed to persist active-language rollback:",
           result.error
         );
-        new import_obsidian18.Notice(
+        new import_obsidian17.Notice(
           "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
         );
         break;
@@ -7865,7 +7400,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
           "Made Up Words: active-language reload failed after preflight:",
           result.error
         );
-        new import_obsidian18.Notice(
+        new import_obsidian17.Notice(
           "Made Up Words: language data failed to reload after source validation. Check the developer console."
         );
         break;
@@ -7874,7 +7409,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
           "Made Up Words: rejected invalid active-language request:",
           result.error
         );
-        new import_obsidian18.Notice(`Made Up Words: ${result.error}.`);
+        new import_obsidian17.Notice(`Made Up Words: ${result.error}.`);
         break;
     }
     this.renderHeader();
@@ -7904,7 +7439,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
           "Made Up Words: failed to save primary-language change:",
           result.error
         );
-        new import_obsidian18.Notice(
+        new import_obsidian17.Notice(
           "Made Up Words: could not save the primary-language change; the previous primary language was restored."
         );
         break;
@@ -7913,7 +7448,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
           "Made Up Words: rejected invalid primary-language request:",
           result.error
         );
-        new import_obsidian18.Notice(`Made Up Words: ${result.error}.`);
+        new import_obsidian17.Notice(`Made Up Words: ${result.error}.`);
         break;
     }
     this.renderHeader();
@@ -8114,7 +7649,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     return null;
   }
   readSelection() {
-    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian18.MarkdownView);
+    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian17.MarkdownView);
     if (view) {
       const editorSel = view.editor.getSelection();
       if (editorSel && editorSel.length > 0) return editorSel;
@@ -8232,7 +7767,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian18.TFile) {
+      if (file instanceof import_obsidian17.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -8352,7 +7887,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
         chip.addClass("conlang-clickable");
         chip.addEventListener("click", () => {
           const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-          if (file instanceof import_obsidian18.TFile) {
+          if (file instanceof import_obsidian17.TFile) {
             void this.plugin.app.workspace.getLeaf(false).openFile(file);
           }
         });
@@ -8405,7 +7940,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
   }
   renderActions(text, direction) {
     this.actionsEl.empty();
-    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian18.MarkdownView);
+    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian17.MarkdownView);
     const hasEditor = view !== null && view.editor.getSelection() === text;
     if (direction === "english-to-conlang") {
       const replaceBtn = this.actionsEl.createEl("button", {
@@ -8483,7 +8018,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian18.TFile) {
+      if (file instanceof import_obsidian17.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -8801,7 +8336,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     card.addClass("conlang-clickable");
     card.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian18.TFile) {
+      if (file instanceof import_obsidian17.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -8869,7 +8404,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
       row.addEventListener("click", (e) => {
         e.stopPropagation();
         const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-        if (file instanceof import_obsidian18.TFile) {
+        if (file instanceof import_obsidian17.TFile) {
           void this.plugin.app.workspace.getLeaf(false).openFile(file);
         }
       });
@@ -9371,7 +8906,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian1
     }
     row.addEventListener("click", () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian18.TFile) {
+      if (file instanceof import_obsidian17.TFile) {
         void this.plugin.app.workspace.getLeaf(false).openFile(file);
       }
     });
@@ -9384,7 +8919,7 @@ _TranslationPanelView.BROWSER_PAGE = 200;
 var TranslationPanelView = _TranslationPanelView;
 
 // entry-modal.ts
-var import_obsidian19 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 var COMMON_POS = [
   {
     label: "noun",
@@ -9434,7 +8969,7 @@ function buildPosChips(parent, onPick) {
     chip.addEventListener("click", () => onPick(pos.label));
   }
 }
-var EntryCreationModal = class extends import_obsidian19.Modal {
+var EntryCreationModal = class extends import_obsidian18.Modal {
   constructor(app, englishText, translatedText, resolve) {
     super(app);
     this.decided = false;
@@ -9497,7 +9032,7 @@ var EntryCreationModal = class extends import_obsidian19.Modal {
     this.contentEl.empty();
   }
 };
-var MultiEntryModal = class extends import_obsidian19.Modal {
+var MultiEntryModal = class extends import_obsidian18.Modal {
   constructor(app, englishText, inits, resolve) {
     super(app);
     this.decided = false;
@@ -9575,7 +9110,7 @@ var MultiEntryModal = class extends import_obsidian19.Modal {
       form: r.formInput.value.trim()
     }));
     if (targets.length === 0) {
-      new import_obsidian19.Notice(
+      new import_obsidian18.Notice(
         "Made Up Words: tick at least one language (with a form) to save."
       );
       return;
@@ -9596,7 +9131,7 @@ var MultiEntryModal = class extends import_obsidian19.Modal {
 };
 
 // name-modal.ts
-var import_obsidian20 = require("obsidian");
+var import_obsidian19 = require("obsidian");
 var NAME_CATEGORIES = [
   {
     label: "character",
@@ -9627,7 +9162,7 @@ var NAME_CATEGORIES = [
     description: "Anything else that gets its own proper-noun treatment."
   }
 ];
-var NameCreationModal = class extends import_obsidian20.Modal {
+var NameCreationModal = class extends import_obsidian19.Modal {
   constructor(app, cypherFn, resolve) {
     super(app);
     this.decided = false;
@@ -9730,7 +9265,7 @@ var NameCreationModal = class extends import_obsidian20.Modal {
   applyCypher() {
     const src = this.deriveFromEnglish.trim();
     if (!src) {
-      new import_obsidian20.Notice("Made Up Words: type an English word to derive from first");
+      new import_obsidian19.Notice("Made Up Words: type an English word to derive from first");
       return;
     }
     const out = this.cypherFn(src);
@@ -9750,7 +9285,7 @@ var NameCreationModal = class extends import_obsidian20.Modal {
   submit() {
     const conlang = this.conlangForm.trim();
     if (!conlang) {
-      new import_obsidian20.Notice(
+      new import_obsidian19.Notice(
         "Made Up Words: give the name a conlang form (type it or derive it)"
       );
       this.conlangInput.focus();
@@ -9776,8 +9311,8 @@ var NameCreationModal = class extends import_obsidian20.Modal {
 };
 
 // lookup-modal.ts
-var import_obsidian21 = require("obsidian");
-var LookupModal = class extends import_obsidian21.Modal {
+var import_obsidian20 = require("obsidian");
+var LookupModal = class extends import_obsidian20.Modal {
   constructor(app, query, matches) {
     super(app);
     this.query = query;
@@ -9878,7 +9413,7 @@ var LookupModal = class extends import_obsidian21.Modal {
     row.addClass("conlang-clickable");
     row.addEventListener("click", () => {
       const file = this.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian21.TFile) {
+      if (file instanceof import_obsidian20.TFile) {
         void this.app.workspace.getLeaf(false).openFile(file).then(() => this.close());
       }
     });
@@ -9889,7 +9424,7 @@ var LookupModal = class extends import_obsidian21.Modal {
 };
 
 // word-modal.ts
-var import_obsidian22 = require("obsidian");
+var import_obsidian21 = require("obsidian");
 var COMMON_POS2 = [
   {
     label: "noun",
@@ -9924,7 +9459,7 @@ var COMMON_POS2 = [
     description: "An exclamation expressing emotion or reaction. e.g. oh!, wow, alas."
   }
 ];
-var WordCreationModal = class extends import_obsidian22.Modal {
+var WordCreationModal = class extends import_obsidian21.Modal {
   constructor(app, cypherFn, resolve, initialEnglishDefinition = "") {
     super(app);
     this.decided = false;
@@ -10012,7 +9547,7 @@ var WordCreationModal = class extends import_obsidian22.Modal {
   deriveFromEnglish() {
     const src = this.englishDefinition.trim();
     if (!src) {
-      new import_obsidian22.Notice("Made Up Words: type an English meaning first");
+      new import_obsidian21.Notice("Made Up Words: type an English meaning first");
       this.englishInput.focus();
       return;
     }
@@ -10026,12 +9561,12 @@ var WordCreationModal = class extends import_obsidian22.Modal {
     const c = this.conlangWord.trim();
     const e = this.englishDefinition.trim();
     if (!c) {
-      new import_obsidian22.Notice("Made Up Words: give the word a conlang form");
+      new import_obsidian21.Notice("Made Up Words: give the word a conlang form");
       this.conlangInput.focus();
       return;
     }
     if (!e) {
-      new import_obsidian22.Notice("Made Up Words: give the word an English meaning");
+      new import_obsidian21.Notice("Made Up Words: give the word an English meaning");
       this.englishInput.focus();
       return;
     }
@@ -10058,7 +9593,7 @@ var WordCreationModal = class extends import_obsidian22.Modal {
 var import_view = require("@codemirror/view");
 var import_state = require("@codemirror/state");
 var import_language = require("@codemirror/language");
-var import_obsidian23 = require("obsidian");
+var import_obsidian22 = require("obsidian");
 
 // highlight-core.ts
 var BASE_CLASS = "conlang-known-word";
@@ -10182,7 +9717,7 @@ function registerEntryLinkHandler(plugin) {
     const path = el.getAttribute(ENTRY_PATH_ATTR);
     if (!path) return;
     const file = plugin.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian23.TFile)) return;
+    if (!(file instanceof import_obsidian22.TFile)) return;
     evt.preventDefault();
     evt.stopPropagation();
     void plugin.app.workspace.getLeaf(evt.ctrlKey || evt.metaKey).openFile(file);
@@ -10463,7 +9998,7 @@ function preflightLanguageSources(languages, activeLanguageNames, pathState) {
 }
 
 // language-source-diagnostics-modal.ts
-var import_obsidian24 = require("obsidian");
+var import_obsidian23 = require("obsidian");
 function inventoryLabel(inventory) {
   switch (inventory) {
     case "lexicon":
@@ -10497,7 +10032,7 @@ function issueText(issue) {
       return `${inventoryLabel(issue.inventory)} source overlap: ${issue.language} uses "${issue.path}" while ${issue.otherLanguage} uses "${issue.otherPath}".`;
   }
 }
-var LanguageSourceDiagnosticsModal = class extends import_obsidian24.Modal {
+var LanguageSourceDiagnosticsModal = class extends import_obsidian23.Modal {
   constructor(app, issues) {
     super(app);
     this.issues = issues;
@@ -10516,7 +10051,7 @@ var LanguageSourceDiagnosticsModal = class extends import_obsidian24.Modal {
     contentEl.createEl("p", {
       text: "Correct the configuration or folder conflict, then reload again. Workbench did not move, rename, create, or delete any vault files."
     });
-    new import_obsidian24.Setting(contentEl).addButton((button) => {
+    new import_obsidian23.Setting(contentEl).addButton((button) => {
       button.setButtonText("Close").onClick(() => this.close());
     });
   }
@@ -10628,6 +10163,512 @@ async function applyPrimaryLanguageState(request) {
   return { status: "applied" };
 }
 
+// settings-authority-queue.ts
+var SettingsAuthorityQueue = class {
+  constructor() {
+    /*
+     * The tail represents completion of the most recently queued authority
+     * transaction. Starting with a fulfilled Promise lets the first transaction
+     * begin on the next Promise continuation without waiting for real work.
+     */
+    this.tail = Promise.resolve();
+  }
+  /**
+   * Run one complete settings-authority transaction after all previously
+   * submitted transactions have settled.
+   *
+   * The callback itself is intentionally deferred until this request reaches
+   * the front of the queue. That is the security property H13 requires: code
+   * inside the callback cannot capture another queued transaction's provisional
+   * settings as its rollback authority.
+   *
+   * The caller receives the transaction's original result or rejection. The
+   * internal tail is converted back to a fulfilled Promise in either case so
+   * an unexpected exception in one transaction cannot permanently prevent
+   * later authority work from running.
+   */
+  run(transaction) {
+    const result = this.tail.then(transaction);
+    this.tail = result.then(
+      () => void 0,
+      () => void 0
+    );
+    return result;
+  }
+};
+
+// language-creator.ts
+var import_obsidian24 = require("obsidian");
+
+// language-standard-paths.ts
+function buildStandardLanguagePathsFromRoot(root) {
+  return {
+    root,
+    lexicon: joinVaultPath(root, "Lexicon"),
+    morphemes: joinVaultPath(root, "Morphemes"),
+    inflections: joinVaultPath(root, "Inflections"),
+    cyphers: joinVaultPath(root, "Cyphers"),
+    examples: joinVaultPath(root, "Examples"),
+    phonology: joinVaultPath(root, "Phonology")
+  };
+}
+function buildStandardLanguagePaths(languageName) {
+  const root = joinVaultPath("Languages", languageName);
+  return buildStandardLanguagePathsFromRoot(root);
+}
+
+// language-root-authority.ts
+var LANGUAGE_CONTAINER = "Languages";
+function configuredCanonicalSources(language) {
+  var _a, _b, _c;
+  const sources = [
+    {
+      setting: "dictionaryFolder",
+      path: language.dictionaryFolder
+    }
+  ];
+  if ((_a = language.morphemeFolder) == null ? void 0 : _a.trim()) {
+    sources.push({
+      setting: "morphemeFolder",
+      path: language.morphemeFolder
+    });
+  }
+  if ((_b = language.exampleFolder) == null ? void 0 : _b.trim()) {
+    sources.push({
+      setting: "exampleFolder",
+      path: language.exampleFolder
+    });
+  }
+  if ((_c = language.phonologyFolder) == null ? void 0 : _c.trim()) {
+    sources.push({
+      setting: "phonologyFolder",
+      path: language.phonologyFolder
+    });
+  }
+  return sources;
+}
+function validateLanguageRoot(rootFolder) {
+  let safeRoot;
+  try {
+    safeRoot = validateVaultRelativePath(rootFolder);
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: "invalid-root-path",
+      detail: `language root "${rootFolder}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  const parts = safeRoot.split("/");
+  if (safeRoot === LANGUAGE_CONTAINER) {
+    return {
+      status: "invalid",
+      reason: "root-is-container",
+      detail: `"${LANGUAGE_CONTAINER}" is the shared language container, not an individual language root.`
+    };
+  }
+  if (parts.length !== 2 || parts[0] !== LANGUAGE_CONTAINER) {
+    return {
+      status: "invalid",
+      reason: "root-not-direct-child",
+      detail: `language root "${safeRoot}" must be one immediate child beneath "${LANGUAGE_CONTAINER}/".`
+    };
+  }
+  return {
+    status: "valid",
+    root: safeRoot
+  };
+}
+function rootFromCanonicalSource(setting, sourcePath) {
+  let safePath;
+  try {
+    safePath = validateVaultRelativePath(sourcePath);
+  } catch (error) {
+    return {
+      status: "unresolved",
+      reason: "invalid-source-path",
+      detail: `${setting} "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  const parts = safePath.split("/");
+  if (safePath === LANGUAGE_CONTAINER) {
+    return {
+      status: "unresolved",
+      reason: "source-is-language-container",
+      detail: `${setting} points at "${LANGUAGE_CONTAINER}", which is the shared language container rather than an individual language tree.`
+    };
+  }
+  if (parts.length < 2 || parts[0] !== LANGUAGE_CONTAINER) {
+    return {
+      status: "unresolved",
+      reason: "outside-language-container",
+      detail: `${setting} "${safePath}" is not inside a language root beneath "${LANGUAGE_CONTAINER}/".`
+    };
+  }
+  return {
+    status: "resolved",
+    root: `${LANGUAGE_CONTAINER}/${parts[1]}`
+  };
+}
+function configuredLanguageRootClaims(language) {
+  if (language.rootFolder) {
+    const explicit = validateLanguageRoot(language.rootFolder);
+    if (explicit.status === "valid") {
+      return [explicit.root];
+    }
+  }
+  const claims = /* @__PURE__ */ new Set();
+  for (const source of configuredCanonicalSources(language)) {
+    const resolved = rootFromCanonicalSource(source.setting, source.path);
+    if (resolved.status === "resolved") {
+      claims.add(resolved.root);
+    }
+  }
+  return [...claims];
+}
+function findLanguageRootClaimConflict(rootFolder, language, languages) {
+  for (const other of languages) {
+    if (other === language) {
+      continue;
+    }
+    for (const claimedRoot of configuredLanguageRootClaims(other)) {
+      if (languageRootsOverlap(rootFolder, claimedRoot)) {
+        return {
+          language: other.name,
+          root: claimedRoot
+        };
+      }
+    }
+  }
+  return null;
+}
+function inferLegacyLanguageRoot(language) {
+  const sources = configuredCanonicalSources(language);
+  let inferredRoot = null;
+  for (const source of sources) {
+    const resolved = rootFromCanonicalSource(source.setting, source.path);
+    if (resolved.status === "unresolved") {
+      return resolved;
+    }
+    if (inferredRoot === null) {
+      inferredRoot = resolved.root;
+      continue;
+    }
+    if (resolved.root !== inferredRoot) {
+      return {
+        status: "unresolved",
+        reason: "inconsistent-language-roots",
+        detail: `configured canonical sources identify both "${inferredRoot}" and "${resolved.root}" as language roots; Workbench cannot choose between them safely.`
+      };
+    }
+  }
+  if (inferredRoot === null) {
+    throw new Error(
+      "LanguageConfig contained no canonical source from which to infer a root."
+    );
+  }
+  return {
+    status: "inferred",
+    root: inferredRoot
+  };
+}
+function validateCanonicalSourceWithinRoot(rootFolder, sourcePath) {
+  const rootResult = validateLanguageRoot(rootFolder);
+  if (rootResult.status === "invalid") {
+    return {
+      status: "invalid",
+      reason: "invalid-root",
+      detail: rootResult.detail
+    };
+  }
+  let safeSource;
+  try {
+    safeSource = validateVaultRelativePath(sourcePath);
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: "invalid-source",
+      detail: `canonical source "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  if (safeSource === rootResult.root) {
+    return {
+      status: "invalid",
+      reason: "outside-language-root",
+      detail: `canonical source "${safeSource}" must be inside language root "${rootResult.root}", not the root folder itself.`
+    };
+  }
+  if (!isPathWithinFolder(safeSource, rootResult.root)) {
+    return {
+      status: "invalid",
+      reason: "outside-language-root",
+      detail: `canonical source "${safeSource}" is outside language root "${rootResult.root}".`
+    };
+  }
+  return { status: "valid" };
+}
+function validateLanguageSourceChange(request) {
+  const { language, languages, setting, value, pathState } = request;
+  if (setting === "dictionaryFolder" && !(value == null ? void 0 : value.trim())) {
+    return {
+      status: "invalid",
+      reason: "blank-dictionary",
+      detail: "The dictionary folder cannot be blank."
+    };
+  }
+  if (setting !== "dictionaryFolder" && value === void 0) {
+    return { status: "valid" };
+  }
+  if (!language.rootFolder) {
+    return {
+      status: "invalid",
+      reason: "root-unresolved",
+      detail: `Language "${language.name}" has no established Languages/<root> ownership boundary. Repair the language root before changing its canonical source folders.`
+    };
+  }
+  const root = validateLanguageRoot(language.rootFolder);
+  if (root.status === "invalid") {
+    return {
+      status: "invalid",
+      reason: "invalid-root",
+      detail: root.detail
+    };
+  }
+  const rootState = pathState(root.root);
+  if (rootState === "missing") {
+    return {
+      status: "invalid",
+      reason: "missing-root",
+      detail: `Language root "${root.root}" does not exist. Repair the configured language root before changing canonical sources.`
+    };
+  }
+  if (rootState === "other") {
+    return {
+      status: "invalid",
+      reason: "root-not-folder",
+      detail: `Language root "${root.root}" exists but is not a folder.`
+    };
+  }
+  const conflict = findLanguageRootClaimConflict(
+    root.root,
+    language,
+    languages
+  );
+  if (conflict) {
+    return {
+      status: "invalid",
+      reason: "root-conflict",
+      detail: `Language root "${root.root}" conflicts with "${conflict.root}", already reserved by "${conflict.language}".`
+    };
+  }
+  const structural = validateCanonicalSourceWithinRoot(root.root, value);
+  if (structural.status === "invalid") {
+    return {
+      status: "invalid",
+      reason: structural.reason === "outside-language-root" ? "outside-language-root" : "invalid-source",
+      detail: structural.detail
+    };
+  }
+  const sourceState = pathState(value);
+  if (sourceState === "missing") {
+    return {
+      status: "invalid",
+      reason: "missing-source",
+      detail: `Canonical source folder "${value}" does not exist.`
+    };
+  }
+  if (sourceState === "other") {
+    return {
+      status: "invalid",
+      reason: "source-not-folder",
+      detail: `Canonical source path "${value}" exists but is not a folder.`
+    };
+  }
+  return { status: "valid" };
+}
+function languageRootsOverlap(firstRoot, secondRoot) {
+  return isPathWithinFolder(firstRoot, secondRoot) || isPathWithinFolder(secondRoot, firstRoot);
+}
+
+// language-creator.ts
+function configuredInventoryPaths(language) {
+  var _a, _b, _c;
+  const sources = [
+    {
+      inventory: "lexicon",
+      path: language.dictionaryFolder
+    }
+  ];
+  if ((_a = language.morphemeFolder) == null ? void 0 : _a.trim()) {
+    sources.push({
+      inventory: "morphemes",
+      path: language.morphemeFolder
+    });
+  }
+  if ((_b = language.exampleFolder) == null ? void 0 : _b.trim()) {
+    sources.push({
+      inventory: "examples",
+      path: language.exampleFolder
+    });
+  }
+  if ((_c = language.phonologyFolder) == null ? void 0 : _c.trim()) {
+    sources.push({
+      inventory: "phonology",
+      path: language.phonologyFolder
+    });
+  }
+  return sources;
+}
+function findCanonicalClaimConflict(candidate, existingLanguages) {
+  const candidateSources = configuredInventoryPaths(candidate);
+  for (const existingLanguage of existingLanguages) {
+    const existingSources = configuredInventoryPaths(existingLanguage);
+    for (const candidateSource of candidateSources) {
+      for (const existingSource of existingSources) {
+        if (candidateSource.inventory !== existingSource.inventory) {
+          continue;
+        }
+        const overlaps = isPathWithinFolder(candidateSource.path, existingSource.path) || isPathWithinFolder(existingSource.path, candidateSource.path);
+        if (!overlaps) {
+          continue;
+        }
+        return `${candidateSource.inventory} folder "${candidateSource.path}" overlaps "${existingSource.path}", already configured for "${existingLanguage.name}"`;
+      }
+    }
+  }
+  return null;
+}
+async function createStandardLanguage(app, languageName, existingLanguages) {
+  let paths;
+  try {
+    paths = buildStandardLanguagePaths(languageName);
+  } catch (error) {
+    return {
+      status: "blocked",
+      error: "invalid language destination: " + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  const language = {
+    name: languageName,
+    /*
+     * Record the structural ownership boundary independently from the display
+     * name. A later settings-controlled language rename therefore does not
+     * silently move authority to a different vault subtree.
+     */
+    rootFolder: paths.root,
+    dictionaryFolder: paths.lexicon,
+    morphemeFolder: paths.morphemes,
+    exampleFolder: paths.examples,
+    phonologyFolder: paths.phonology,
+    hoverEnabled: true,
+    sheets: []
+  };
+  for (const existingLanguage of existingLanguages) {
+    for (const claimedRoot of configuredLanguageRootClaims(existingLanguage)) {
+      if (languageRootsOverlap(paths.root, claimedRoot)) {
+        return {
+          status: "blocked",
+          error: `language root "${paths.root}" conflicts with "${claimedRoot}", already reserved by "${existingLanguage.name}"`
+        };
+      }
+    }
+  }
+  const conflict = findCanonicalClaimConflict(language, existingLanguages);
+  if (conflict) {
+    return {
+      status: "blocked",
+      error: conflict
+    };
+  }
+  const existingRoot = app.vault.getAbstractFileByPath(paths.root);
+  if (existingRoot instanceof import_obsidian24.TFolder) {
+    return {
+      status: "blocked",
+      error: `language root "${paths.root}" already exists but is not configured. Use Import Language to explicitly adopt an existing language root.`
+    };
+  }
+  if (existingRoot) {
+    return {
+      status: "blocked",
+      error: `language root "${paths.root}" exists but is not a folder`
+    };
+  }
+  const intendedFolders = [
+    paths.root,
+    paths.lexicon,
+    paths.morphemes,
+    paths.inflections,
+    paths.cyphers,
+    paths.examples,
+    paths.phonology
+  ];
+  const inspectionIssues = inspectVaultFolderPaths(app, intendedFolders);
+  if (inspectionIssues.length > 0) {
+    const issue = inspectionIssues[0];
+    return {
+      status: "blocked",
+      error: `folder preflight failed for "${issue.requestedPath}": ` + issue.detail
+    };
+  }
+  try {
+    for (const folder of intendedFolders) {
+      await ensureVaultFolderStrict(app, folder);
+    }
+  } catch (error) {
+    return {
+      status: "failed",
+      error: "couldn't establish the standard language folders: " + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  return {
+    status: "created",
+    language,
+    paths
+  };
+}
+
+// language-creation-state.ts
+function chooseUniqueLanguageName(languages) {
+  const names = new Set(languages.map((language) => language.name));
+  let i = languages.length + 1;
+  let name = `Language ${i}`;
+  while (names.has(name)) {
+    name = `Language ${++i}`;
+  }
+  return name;
+}
+async function applyLanguageCreationState(request) {
+  const name = chooseUniqueLanguageName(request.state.languages);
+  const creation = await request.create(name, request.state.languages);
+  if (creation.status !== "created") {
+    return {
+      status: creation.status,
+      name,
+      error: creation.error
+    };
+  }
+  const language = creation.language;
+  request.state.languages.push(language);
+  try {
+    await request.save();
+  } catch (error) {
+    const currentIndex = request.state.languages.indexOf(language);
+    if (currentIndex !== -1) {
+      request.state.languages.splice(currentIndex, 1);
+    }
+    return {
+      status: "save-failed",
+      name,
+      error,
+      foldersEstablished: true
+    };
+  }
+  return {
+    status: "created",
+    name,
+    language
+  };
+}
+
 // persisted-setting-state.ts
 async function applyPersistedSettingState(request) {
   const previous = request.read();
@@ -10671,6 +10712,41 @@ async function applyCaseSensitiveMatchingState(request) {
     };
   }
   request.state.caseSensitiveMatching = previousValue;
+  try {
+    await request.save();
+  } catch (error) {
+    return { status: "rollback-save-failed", error };
+  }
+  return { status: "blocked" };
+}
+
+// language-membership-state.ts
+async function applyLanguageMembershipState(request) {
+  const previousMembership = request.state.languageMembership;
+  const requestedMembership = request.languageMembership;
+  if (requestedMembership === previousMembership) {
+    return { status: "unchanged" };
+  }
+  request.state.languageMembership = requestedMembership;
+  try {
+    await request.save();
+  } catch (error) {
+    request.state.languageMembership = previousMembership;
+    return { status: "save-failed", error };
+  }
+  let reload;
+  try {
+    reload = await request.reload();
+  } catch (error) {
+    return { status: "reload-failed", error };
+  }
+  if (reload.status === "loaded") {
+    return {
+      status: "applied",
+      dictionaryCount: reload.dictionaryCount
+    };
+  }
+  request.state.languageMembership = previousMembership;
   try {
     await request.save();
   } catch (error) {
@@ -11320,6 +11396,77 @@ async function applyLanguageRenameState(request) {
   }
 }
 
+// language-removal-state.ts
+function restoreLanguageRemoval(state, snapshot) {
+  state.languages = [...snapshot.languages];
+  state.activeLanguages = [...snapshot.activeLanguages];
+  state.primaryLanguage = snapshot.primaryLanguage;
+}
+async function applyLanguageRemovalState(request) {
+  var _a, _b, _c;
+  const initialIndex = request.state.languages.indexOf(request.language);
+  if (initialIndex < 0) {
+    return { status: "target-missing" };
+  }
+  const approvedName = request.language.name;
+  const confirmed = await request.confirm(approvedName);
+  if (!confirmed) {
+    return { status: "cancelled", name: approvedName };
+  }
+  const currentIndex = request.state.languages.indexOf(request.language);
+  if (currentIndex < 0) {
+    return { status: "target-missing" };
+  }
+  if (request.language.name !== approvedName) {
+    return { status: "target-changed", name: approvedName };
+  }
+  const previous = {
+    languages: [...request.state.languages],
+    activeLanguages: [...request.state.activeLanguages],
+    primaryLanguage: request.state.primaryLanguage
+  };
+  request.state.languages.splice(currentIndex, 1);
+  request.state.activeLanguages = request.state.activeLanguages.filter(
+    (name) => name !== approvedName
+  );
+  if (request.state.languages.length > 0 && request.state.activeLanguages.length === 0) {
+    request.state.activeLanguages = [request.state.languages[0].name];
+  }
+  if (request.state.primaryLanguage === approvedName) {
+    request.state.primaryLanguage = (_c = (_b = request.state.activeLanguages[0]) != null ? _b : (_a = request.state.languages[0]) == null ? void 0 : _a.name) != null ? _c : "";
+  }
+  try {
+    await request.save();
+  } catch (error) {
+    restoreLanguageRemoval(request.state, previous);
+    return { status: "save-failed", name: approvedName, error };
+  }
+  let reload;
+  try {
+    reload = await request.reload();
+  } catch (error) {
+    return { status: "reload-failed", name: approvedName, error };
+  }
+  if (reload.status === "loaded") {
+    return {
+      status: "applied",
+      name: approvedName,
+      dictionaryCount: reload.dictionaryCount
+    };
+  }
+  restoreLanguageRemoval(request.state, previous);
+  try {
+    await request.save();
+  } catch (error) {
+    return {
+      status: "rollback-save-failed",
+      name: approvedName,
+      error
+    };
+  }
+  return { status: "blocked", name: approvedName };
+}
+
 // main.ts
 var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
   constructor() {
@@ -11346,6 +11493,20 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     // highlight-core.ts). Cleared whenever the dictionary reloads or settings
     // change, since either can alter what a word resolves to.
     this.classifyCache = /* @__PURE__ */ new Map();
+    /**
+     * Coordinate complete settings-authority transactions across transaction
+     * families.
+     *
+     * The coordinator must be entered before a transaction reads rollback state
+     * or installs provisional settings. Serializing saveSettings() alone would
+     * be too late because another transaction could already have captured that
+     * provisional state as though it were settled authority.
+     *
+     * H13 migration is intentionally incremental. Only transaction wrappers
+     * explicitly routed through this queue are protected by the common boundary
+     * until the remaining families have been reviewed and migrated.
+     */
+    this.settingsAuthorityQueue = new SettingsAuthorityQueue();
     /**
      * Serialize all H10 cypher/inflection authority changes across languages.
      *
@@ -11383,11 +11544,11 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     this.morphemes = new MorphemeInventory(this.app);
     this.phonology = new PhonologyInventory(this.app);
     this.app.workspace.onLayoutReady(async () => {
-      await this.reloadActiveLanguage();
+      await this.reloadSettledLanguageState();
       this.updateHoverActive();
       this.refreshPanel();
       this.refreshHighlights();
-      this.maybeShowWelcome();
+      await this.maybeShowWelcome();
     });
     this.registerEditorExtension(makeHighlightExtension(this));
     this.registerMarkdownPostProcessor((el) => highlightElement(this, el));
@@ -11444,7 +11605,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
       id: "reload-dictionary",
       name: "Reload dictionary",
       callback: async () => {
-        const result = await this.reloadActiveLanguage();
+        const result = await this.reloadSettledLanguageState();
         if (result.status === "blocked") return;
         this.refreshPanel();
         this.refreshHighlights();
@@ -11574,6 +11735,30 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     this.refreshHighlights();
   }
   /**
+   * Create and register one standard language as a complete settings-authority
+   * transaction.
+   *
+   * H5 remains responsible for filesystem authority: createStandardLanguage()
+   * preflights the complete standard folder structure and establishes missing
+   * folders additively without deleting creator data during failure recovery.
+   *
+   * H13 adds the ordering boundary around that existing operation. The queue
+   * must be entered before the generated language name is chosen because the
+   * current configured-language collection is itself settings authority.
+   * Keeping the queue through creation, provisional registration, persistence,
+   * and exact-object rollback prevents another settings transaction from
+   * observing or overwriting provisional new-language state.
+   */
+  async createLanguageState() {
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageCreationState({
+        state: this.settings,
+        create: (name, existingLanguages) => createStandardLanguage(this.app, name, existingLanguages),
+        save: () => this.saveSettings()
+      })
+    );
+  }
+  /**
    * Establish a requested active/primary-language configuration as one
    * authority transaction.
    *
@@ -11589,13 +11774,15 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    * testable without importing Obsidian.
    */
   async setActiveLanguageState(activeLanguages, primaryLanguage) {
-    return applyActiveLanguageState({
-      state: this.settings,
-      activeLanguages,
-      primaryLanguage,
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage()
-    });
+    return this.settingsAuthorityQueue.run(
+      () => applyActiveLanguageState({
+        state: this.settings,
+        activeLanguages,
+        primaryLanguage,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
   }
   /**
    * Establish a primary-language-only change without rebuilding linguistic
@@ -11610,11 +11797,13 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    * influencing runtime behavior after saveData() fails.
    */
   async setPrimaryLanguageState(primaryLanguage) {
-    return applyPrimaryLanguageState({
-      state: this.settings,
-      primaryLanguage,
-      save: () => this.saveSettings()
-    });
+    return this.settingsAuthorityQueue.run(
+      () => applyPrimaryLanguageState({
+        state: this.settings,
+        primaryLanguage,
+        save: () => this.saveSettings()
+      })
+    );
   }
   /**
    * Persist one ordinary settings preference without allowing a failed write
@@ -11630,12 +11819,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    * nested values such as LanguageConfig.hoverEnabled.
    */
   async setPersistedSettingState(read, write, requested) {
-    return applyPersistedSettingState({
-      read,
-      write,
-      requested,
-      save: () => this.saveSettings()
-    });
+    return this.settingsAuthorityQueue.run(
+      () => applyPersistedSettingState({
+        read,
+        write,
+        requested,
+        save: () => this.saveSettings()
+      })
+    );
   }
   /**
    * Establish one requested cypher/inflection edit as persisted runtime
@@ -11656,11 +11847,13 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    * the captured live LanguageConfig before calling this method.
    */
   async setLinguisticRuleState(language, edit) {
-    return this.linguisticRuleStateQueue.apply({
-      state: language,
-      edit,
-      save: () => this.saveSettings()
-    });
+    return this.settingsAuthorityQueue.run(
+      () => this.linguisticRuleStateQueue.apply({
+        state: language,
+        edit,
+        save: () => this.saveSettings()
+      })
+    );
   }
   /**
    * Establish the requested conlang case-matching policy as one authority
@@ -11681,12 +11874,32 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    *   claim that the old runtime had also been restored.
    */
   async setCaseSensitiveMatchingState(caseSensitiveMatching) {
-    return applyCaseSensitiveMatchingState({
-      state: this.settings,
-      caseSensitiveMatching,
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage()
-    });
+    return this.settingsAuthorityQueue.run(
+      () => applyCaseSensitiveMatchingState({
+        state: this.settings,
+        caseSensitiveMatching,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
+  }
+  /**
+   * Establish a requested language-membership policy as one authority
+   * transaction.
+   *
+   * Membership changes which creator-authored sources are accepted into the
+   * active linguistic runtime, so persistence and reload must remain one
+   * serialized authority operation.
+   */
+  async setLanguageMembershipState(languageMembership) {
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageMembershipState({
+        state: this.settings,
+        languageMembership,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
   }
   /**
    * Establish a requested canonical source-folder change as one authority
@@ -11702,25 +11915,27 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    * independently testable without importing Obsidian.
    */
   async setLanguageSourceState(language, setting, value) {
-    return applyLanguageSourceState({
-      language,
-      activeLanguages: this.settings.activeLanguages,
-      setting,
-      value,
-      validate: () => validateLanguageSourceChange({
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageSourceState({
         language,
-        languages: this.settings.languages,
+        activeLanguages: this.settings.activeLanguages,
         setting,
         value,
-        pathState: (path) => {
-          const existing = this.app.vault.getAbstractFileByPath(path);
-          if (!existing) return "missing";
-          return existing instanceof import_obsidian25.TFolder ? "folder" : "other";
-        }
-      }),
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage()
-    });
+        validate: () => validateLanguageSourceChange({
+          language,
+          languages: this.settings.languages,
+          setting,
+          value,
+          pathState: (path) => {
+            const existing = this.app.vault.getAbstractFileByPath(path);
+            if (!existing) return "missing";
+            return existing instanceof import_obsidian25.TFolder ? "folder" : "other";
+          }
+        }),
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
   }
   /**
    * Commit one optional canonical Language Profile path through the shared H11
@@ -11737,14 +11952,16 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    * a valid persisted change can wait until normal activation performs the load.
    */
   async setLanguageProfileState(language, profilePath) {
-    return applyLanguageProfileState({
-      language,
-      activeLanguages: this.settings.activeLanguages,
-      profilePath,
-      validate: () => validateLanguageProfilePath(this.app, profilePath),
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage()
-    });
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageProfileState({
+        language,
+        activeLanguages: this.settings.activeLanguages,
+        profilePath,
+        validate: () => validateLanguageProfilePath(this.app, profilePath),
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
   }
   /**
    * Repair one language's configured structural root and canonical source
@@ -11768,25 +11985,55 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
       if (!existing) return "missing";
       return existing instanceof import_obsidian25.TFolder ? "folder" : "other";
     };
-    return applyLanguageRootRepairState({
-      language,
-      activeLanguages: this.settings.activeLanguages,
-      // plan() is intentionally called by the transaction itself immediately
-      // before any folder or configuration mutation.
-      plan: () => planLanguageRootRepair({
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageRootRepairState({
         language,
-        languages: this.settings.languages,
-        rootFolder,
-        pathState
-      }),
-      createMissingFolders: async (plan) => {
-        for (const folder of plan.foldersToCreate) {
-          await ensureVaultFolderStrict(this.app, folder);
-        }
-      },
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage()
-    });
+        activeLanguages: this.settings.activeLanguages,
+        // plan() is intentionally called by the transaction itself immediately
+        // before any folder or configuration mutation.
+        plan: () => planLanguageRootRepair({
+          language,
+          languages: this.settings.languages,
+          rootFolder,
+          pathState
+        }),
+        createMissingFolders: async (plan) => {
+          for (const folder of plan.foldersToCreate) {
+            await ensureVaultFolderStrict(this.app, folder);
+          }
+        },
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
+  }
+  /**
+   * Remove one configured language as one serialized settings/runtime
+   * authority transaction.
+   *
+   * H13 requires the common settings-authority queue to be acquired before we
+   * even read the language identity that will be presented for confirmation.
+   * The queue deliberately remains held while the creator decides. Otherwise a
+   * different settings transaction could change the meaning of the pending
+   * destructive decision underneath them.
+   *
+   * The specialized state module owns exact-object revalidation, settings
+   * mutation, persistence, reload, and the limited safe rollback boundary.
+   * This wrapper supplies only plugin services and cross-family serialization.
+   *
+   * Removal affects Workbench configuration only. No vault folder or
+   * creator-authored file is deleted, renamed, or otherwise modified here.
+   */
+  async removeLanguageState(language, confirm) {
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageRemovalState({
+        state: this.settings,
+        language,
+        confirm,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
   }
   /**
    * Rename one configured language and its already-owned structural root as one
@@ -11817,40 +12064,42 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
       if (!existing) return "missing";
       return existing instanceof import_obsidian25.TFolder ? "folder" : "other";
     };
-    return applyLanguageRenameState({
-      language,
-      /*
-       * LanguageConfig.name is still the inherited alpha identity used by
-       * activeLanguages and primaryLanguage. The shared transaction migrates
-       * these settings together rather than allowing the settings UI to update
-       * them independently.
-       */
-      settings: this.settings,
-      // Recalculate complete rename authority immediately before any mutation.
-      plan: () => planLanguageRename({
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageRenameState({
         language,
-        languages: this.settings.languages,
-        proposedName,
-        pathState
-      }),
-      renameRoot: async (from, to) => {
-        const source = this.app.vault.getAbstractFileByPath(from);
-        if (!(source instanceof import_obsidian25.TFolder)) {
-          throw new Error(
-            `Cannot rename language root "${from}": it is no longer a folder.`
-          );
-        }
-        const destination = this.app.vault.getAbstractFileByPath(to);
-        if (destination !== null) {
-          throw new Error(
-            `Cannot rename language root to "${to}": the destination is now occupied.`
-          );
-        }
-        await this.app.fileManager.renameFile(source, to);
-      },
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage()
-    });
+        /*
+         * LanguageConfig.name is still the inherited alpha identity used by
+         * activeLanguages and primaryLanguage. The shared transaction migrates
+         * these settings together rather than allowing the settings UI to update
+         * them independently.
+         */
+        settings: this.settings,
+        // Recalculate complete rename authority immediately before any mutation.
+        plan: () => planLanguageRename({
+          language,
+          languages: this.settings.languages,
+          proposedName,
+          pathState
+        }),
+        renameRoot: async (from, to) => {
+          const source = this.app.vault.getAbstractFileByPath(from);
+          if (!(source instanceof import_obsidian25.TFolder)) {
+            throw new Error(
+              `Cannot rename language root "${from}": it is no longer a folder.`
+            );
+          }
+          const destination = this.app.vault.getAbstractFileByPath(to);
+          if (destination !== null) {
+            throw new Error(
+              `Cannot rename language root to "${to}": the destination is now occupied.`
+            );
+          }
+          await this.app.fileManager.renameFile(source, to);
+        },
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
   }
   /**
    * Show a one-time welcome notice if this is the user's first time loading
@@ -11859,10 +12108,26 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
    *
    * The flag persists in settings so the message only shows once per install.
    */
-  maybeShowWelcome() {
-    if (this.settings.hasSeenWelcome) return;
-    this.settings.hasSeenWelcome = true;
-    void this.saveData(this.settings);
+  async maybeShowWelcome() {
+    const result = await this.settingsAuthorityQueue.run(
+      () => applyPersistedSettingState({
+        read: () => this.settings.hasSeenWelcome,
+        write: (value) => {
+          this.settings.hasSeenWelcome = value;
+        },
+        requested: true,
+        save: () => this.saveData(this.settings)
+      })
+    );
+    if (result.status === "unchanged") {
+      return;
+    }
+    if (result.status === "save-failed") {
+      console.error(
+        "Made Up Words: failed to persist the welcome-notice flag:",
+        result.error
+      );
+    }
     const message = "Made Up Words is loaded. Open the side panel via the book-open icon in the left ribbon, or via the command palette \u2192 'Made Up Words: Open panel'.";
     new import_obsidian25.Notice(message, 12e3);
   }
@@ -11913,6 +12178,25 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
   getPrimaryLanguageProfile() {
     const lang = this.getPrimaryLanguage();
     return lang ? this.getLanguageProfile(lang) : null;
+  }
+  /**
+   * Reload linguistic runtime state only from settled settings authority.
+   *
+   * H13 transactions temporarily install requested settings while persistence,
+   * runtime reload, and possible rollback are still in progress. A manual,
+   * event-driven, startup, or post-entry reload must not observe that
+   * provisional state and rebuild runtime indexes from it.
+   *
+   * This wrapper therefore waits for the plugin-wide settings-authority queue
+   * before calling the raw reload primitive.
+   *
+   * IMPORTANT: transaction modules that already hold settingsAuthorityQueue
+   * must continue calling reloadActiveLanguage() directly. Calling this wrapper
+   * from inside an existing settings-authority transaction would wait on the
+   * transaction itself and deadlock.
+   */
+  async reloadSettledLanguageState() {
+    return this.settingsAuthorityQueue.run(() => this.reloadActiveLanguage());
   }
   async reloadActiveLanguage() {
     const issues = preflightLanguageSources(
@@ -12077,7 +12361,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     }
     this.reloadInFlight = true;
     try {
-      await this.reloadActiveLanguage();
+      await this.reloadSettledLanguageState();
       this.refreshPanel();
       this.refreshHighlights();
     } finally {
@@ -12474,7 +12758,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
   }
   /** Reload the dictionary + refresh UI after entries were added/changed. */
   async afterEntriesChanged() {
-    await this.reloadActiveLanguage();
+    await this.reloadSettledLanguageState();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
@@ -12676,7 +12960,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     const file = result.file;
     await this.app.workspace.getLeaf(false).openFile(file);
     await this.waitForFrontmatter(file);
-    await this.reloadActiveLanguage();
+    await this.reloadSettledLanguageState();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
@@ -12878,7 +13162,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian25.Plugin {
     const file = writeResult.file;
     await this.app.workspace.getLeaf(false).openFile(file);
     await this.waitForFrontmatter(file);
-    await this.reloadActiveLanguage();
+    await this.reloadSettledLanguageState();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;

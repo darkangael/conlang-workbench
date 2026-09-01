@@ -8,16 +8,21 @@ import { pathToFileURL } from "node:url";
 const tempDir = await mkdtemp(join(tmpdir(), "conlang-language-rename-state-"));
 
 try {
-  const outputFile = join(tempDir, "language-rename-state.mjs");
-
   await build({
-    entryPoints: ["language-rename-state.ts"],
+    entryPoints: [
+      "language-rename-state.ts",
+      "persisted-setting-state.ts",
+      "settings-authority-queue.ts",
+    ],
     bundle: true,
     platform: "node",
     format: "esm",
-    outfile: outputFile,
+    outdir: tempDir,
+    outExtension: { ".js": ".mjs" },
     logLevel: "silent",
   });
+
+  const outputFile = join(tempDir, "language-rename-state.mjs");
 
   // Verify the bundle exists before dynamic import so build failures surface as
   // direct regression failures rather than confusing module-loader errors.
@@ -25,6 +30,29 @@ try {
 
   const { applyLanguageRenameState } = await import(
     `${pathToFileURL(outputFile).href}?t=${Date.now()}`
+  );
+
+  const persistedModulePath = join(tempDir, "persisted-setting-state.mjs");
+  await readFile(persistedModulePath, "utf8");
+
+  const { applyPersistedSettingState } = await import(
+    `${pathToFileURL(persistedModulePath).href}?t=${Date.now()}`
+  );
+
+  /*
+   * H13 coordinates H7 rename with unrelated whole-settings transactions
+   * through the same plugin-wide queue. Keeping the coordinator independent
+   * lets this pure regression verify the intended transaction composition
+   * without importing the Obsidian-dependent plugin host.
+   */
+  const authorityQueueModulePath = join(
+    tempDir,
+    "settings-authority-queue.mjs",
+  );
+  await readFile(authorityQueueModulePath, "utf8");
+
+  const { SettingsAuthorityQueue } = await import(
+    `${pathToFileURL(authorityQueueModulePath).href}?t=${Date.now()}`
   );
 
   const oldName = "Old Language";
@@ -475,6 +503,125 @@ try {
     );
   }
 
+  /*
+   * H13: the plugin-wide authority queue must cover the complete H7 rename
+   * transaction, beginning before the physical root move.
+   *
+   * Rename derives its rollback snapshot before filesystem mutation. An
+   * unrelated settings transaction must therefore remain excluded while that
+   * structural move is still in flight; otherwise shared authority can change
+   * between H7's authorization/snapshot and its later settings persistence.
+   *
+   * This pure regression exercises the production composition:
+   *
+   *   SettingsAuthorityQueue -> applyLanguageRenameState()
+   *
+   * It intentionally does not claim to import or test main.ts itself.
+   */
+  async function testCommonAuthorityQueueExcludesOrdinarySettingDuringRename() {
+    const language = makeLanguage();
+    const settings = makeSettings(false, false);
+    const original = snapshot(language, settings);
+    const authorityQueue = new SettingsAuthorityQueue();
+
+    let releaseRename;
+    const renameHeld = new Promise((resolve) => {
+      releaseRename = resolve;
+    });
+
+    let renameStarted;
+    const renameEntered = new Promise((resolve) => {
+      renameStarted = resolve;
+    });
+
+    let renameCalls = 0;
+    let renameSaveCalls = 0;
+
+    const renamePromise = authorityQueue.run(() =>
+      applyLanguageRenameState({
+        language,
+        settings,
+        plan: () => makePlan(),
+        renameRoot: async () => {
+          renameCalls++;
+          renameStarted();
+          await renameHeld;
+        },
+        save: async () => {
+          renameSaveCalls++;
+        },
+        reload: async () => {
+          throw new Error("inactive rename must not reload");
+        },
+      }),
+    );
+
+    await renameEntered;
+
+    const ordinaryState = { enabled: false };
+    let ordinaryWriteCalls = 0;
+    let ordinarySaveCalls = 0;
+
+    const ordinaryPromise = authorityQueue.run(() =>
+      applyPersistedSettingState({
+        read: () => ordinaryState.enabled,
+        write: (value) => {
+          ordinaryWriteCalls++;
+          ordinaryState.enabled = value;
+        },
+        requested: true,
+        save: async () => {
+          ordinarySaveCalls++;
+        },
+      }),
+    );
+
+    /*
+     * Correct common coordination keeps the unrelated transaction dormant
+     * while the structural rename is still unresolved.
+     */
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(
+      snapshot(language, settings),
+      original,
+      "settings must remain at the old identity while the root move is held",
+    );
+    assert.equal(renameCalls, 1);
+    assert.equal(
+      ordinaryWriteCalls,
+      0,
+      "ordinary settings must not write while H7 owns rename authority",
+    );
+    assert.equal(
+      ordinarySaveCalls,
+      0,
+      "ordinary settings must not save while H7 owns rename authority",
+    );
+
+    releaseRename();
+
+    const renameResult = await renamePromise;
+    const ordinaryResult = await ordinaryPromise;
+
+    assert.deepEqual(renameResult, {
+      status: "applied",
+      rootRenamed: true,
+    });
+    assert.equal(renameSaveCalls, 1);
+    assert.deepEqual(
+      snapshot(language, settings),
+      expectedRenamed(false, false),
+    );
+
+    assert.deepEqual(ordinaryResult, { status: "applied" });
+    assert.equal(ordinaryState.enabled, true);
+    assert.equal(ordinaryWriteCalls, 1);
+    assert.equal(ordinarySaveCalls, 1);
+  }
+
+  await testCommonAuthorityQueueExcludesOrdinarySettingDuringRename();
   await testPlannerBlockPreventsEverything();
   await testForwardRenameFailureLeavesEverythingUntouched();
   await testSaveFailureReversesRootAndRestoresMemory();

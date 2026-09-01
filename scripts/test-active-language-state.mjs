@@ -9,7 +9,7 @@ const temp = await mkdtemp(join(tmpdir(), "conlang-active-language-state-"));
 
 try {
   await build({
-    entryPoints: ["active-language-state.ts"],
+    entryPoints: ["active-language-state.ts", "settings-authority-queue.ts"],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -22,6 +22,13 @@ try {
 
   const { applyActiveLanguageState } = await import(
     `${pathToFileURL(modulePath).href}?v=${Date.now()}`
+  );
+
+  const queueModulePath = join(temp, "settings-authority-queue.mjs");
+  await readFile(queueModulePath, "utf8");
+
+  const { SettingsAuthorityQueue } = await import(
+    `${pathToFileURL(queueModulePath).href}?v=${Date.now()}`
   );
 
   const makeState = () => ({
@@ -89,6 +96,139 @@ try {
       reloadCalls,
       0,
       "reload must not run when the requested settings were never saved",
+    );
+  }
+
+  {
+    /*
+     * Reproduce the H13 ordering through the common authority coordinator.
+     *
+     * T1 installs provisional [B]/B and holds its initial save open. T2 asks
+     * for [A, B]/A while T1 is still provisional, but its callback must remain
+     * queued and therefore cannot snapshot that provisional state.
+     *
+     * After T1 fails, H6 restores settled [A]/A. T2 may then begin, snapshot
+     * that settled compound state, install its own request, and attempt its
+     * own save. If T2 also fails, it must restore [A]/A rather than T1's
+     * rejected provisional [B]/B.
+     */
+    const state = makeState();
+    const queue = new SettingsAuthorityQueue();
+    let reloadCalls = 0;
+
+    let rejectFirstSave;
+    const firstSave = new Promise((_, reject) => {
+      rejectFirstSave = reject;
+    });
+
+    let rejectSecondSave;
+    const secondSave = new Promise((_, reject) => {
+      rejectSecondSave = reject;
+    });
+
+    let secondSaveCalls = 0;
+
+    const firstResultPromise = queue.run(() =>
+      applyActiveLanguageState({
+        state,
+        activeLanguages: ["Language B"],
+        primaryLanguage: "Language B",
+        save: async () => {
+          await firstSave;
+        },
+        reload: async () => {
+          reloadCalls++;
+          return { status: "loaded", dictionaryCount: 0 };
+        },
+      }),
+    );
+
+    await Promise.resolve();
+
+    assert.deepEqual(
+      state,
+      {
+        activeLanguages: ["Language B"],
+        primaryLanguage: "Language B",
+      },
+      "the first queued request should install its provisional compound state",
+    );
+
+    const secondResultPromise = queue.run(() =>
+      applyActiveLanguageState({
+        state,
+        activeLanguages: ["Language A", "Language B"],
+        primaryLanguage: "Language A",
+        save: async () => {
+          secondSaveCalls++;
+          await secondSave;
+        },
+        reload: async () => {
+          reloadCalls++;
+          return { status: "loaded", dictionaryCount: 0 };
+        },
+      }),
+    );
+
+    await Promise.resolve();
+
+    assert.deepEqual(
+      state,
+      {
+        activeLanguages: ["Language B"],
+        primaryLanguage: "Language B",
+      },
+      "the second request must not begin while T1 owns the authority boundary",
+    );
+    assert.equal(
+      secondSaveCalls,
+      0,
+      "the second request must not persist before T1 settles",
+    );
+
+    rejectFirstSave(new Error("first save failed"));
+    const firstResult = await firstResultPromise;
+
+    assert.equal(firstResult.status, "save-failed");
+    assert.deepEqual(
+      state,
+      makeState(),
+      "failed T1 must restore the original settled compound state",
+    );
+
+    /*
+     * T2 is released by the queue after T1 settles. Yield once so it can
+     * snapshot settled [A]/A, install [A, B]/A, and reach its held save.
+     */
+    await Promise.resolve();
+
+    assert.equal(
+      secondSaveCalls,
+      1,
+      "T2 should begin its own persistence only after T1 settles",
+    );
+    assert.deepEqual(
+      state,
+      {
+        activeLanguages: ["Language A", "Language B"],
+        primaryLanguage: "Language A",
+      },
+      "T2 should install its request only after settled rollback state is available",
+    );
+
+    rejectSecondSave(new Error("second save failed"));
+    const secondResult = await secondResultPromise;
+
+    assert.equal(secondResult.status, "save-failed");
+    assert.deepEqual(
+      state,
+      makeState(),
+      "two failed queued requests must restore the original settled compound state",
+    );
+    assert.equal(
+      reloadCalls,
+      0,
+      "neither failed initial persistence attempt may reach runtime reload",
     );
   }
 

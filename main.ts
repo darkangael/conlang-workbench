@@ -81,6 +81,12 @@ import {
   applyPrimaryLanguageState,
   type PrimaryLanguageStateResult,
 } from "./primary-language-state";
+import { SettingsAuthorityQueue } from "./settings-authority-queue";
+import { createStandardLanguage } from "./language-creator";
+import {
+  applyLanguageCreationState,
+  type LanguageCreationStateResult,
+} from "./language-creation-state";
 import {
   applyPersistedSettingState,
   type PersistedSettingStateResult,
@@ -89,6 +95,10 @@ import {
   applyCaseSensitiveMatchingState,
   type CaseSensitiveMatchingStateResult,
 } from "./case-sensitive-state";
+import {
+  applyLanguageMembershipState,
+  type LanguageMembershipStateResult,
+} from "./language-membership-state";
 import {
   LinguisticRuleStateQueue,
   type LinguisticRuleCandidate,
@@ -117,6 +127,10 @@ import {
   applyLanguageRenameState,
   type LanguageRenameStateResult,
 } from "./language-rename-state";
+import {
+  applyLanguageRemovalState,
+  type LanguageRemovalStateResult,
+} from "./language-removal-state";
 import { ensureVaultFolderStrict } from "./vault-folder-writer";
 import { EditorView } from "@codemirror/view";
 
@@ -149,6 +163,21 @@ export default class ConlangPlugin extends Plugin {
   // highlight-core.ts). Cleared whenever the dictionary reloads or settings
   // change, since either can alter what a word resolves to.
   readonly classifyCache: Map<string, HighlightKind | null> = new Map();
+
+  /**
+   * Coordinate complete settings-authority transactions across transaction
+   * families.
+   *
+   * The coordinator must be entered before a transaction reads rollback state
+   * or installs provisional settings. Serializing saveSettings() alone would
+   * be too late because another transaction could already have captured that
+   * provisional state as though it were settled authority.
+   *
+   * H13 migration is intentionally incremental. Only transaction wrappers
+   * explicitly routed through this queue are protected by the common boundary
+   * until the remaining families have been reviewed and migrated.
+   */
+  private readonly settingsAuthorityQueue = new SettingsAuthorityQueue();
 
   /**
    * Serialize all H10 cypher/inflection authority changes across languages.
@@ -185,11 +214,11 @@ export default class ConlangPlugin extends Plugin {
     this.phonology = new PhonologyInventory(this.app);
 
     this.app.workspace.onLayoutReady(async () => {
-      await this.reloadActiveLanguage();
+      await this.reloadSettledLanguageState();
       this.updateHoverActive();
       this.refreshPanel();
       this.refreshHighlights();
-      this.maybeShowWelcome();
+      await this.maybeShowWelcome();
     });
 
     // Known-word highlighting: a CM6 editor extension for Live Preview /
@@ -269,7 +298,7 @@ export default class ConlangPlugin extends Plugin {
       id: "reload-dictionary",
       name: "Reload dictionary",
       callback: async () => {
-        const result = await this.reloadActiveLanguage();
+        const result = await this.reloadSettledLanguageState();
         if (result.status === "blocked") return;
 
         this.refreshPanel();
@@ -473,6 +502,32 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
+   * Create and register one standard language as a complete settings-authority
+   * transaction.
+   *
+   * H5 remains responsible for filesystem authority: createStandardLanguage()
+   * preflights the complete standard folder structure and establishes missing
+   * folders additively without deleting creator data during failure recovery.
+   *
+   * H13 adds the ordering boundary around that existing operation. The queue
+   * must be entered before the generated language name is chosen because the
+   * current configured-language collection is itself settings authority.
+   * Keeping the queue through creation, provisional registration, persistence,
+   * and exact-object rollback prevents another settings transaction from
+   * observing or overwriting provisional new-language state.
+   */
+  async createLanguageState(): Promise<LanguageCreationStateResult> {
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageCreationState({
+        state: this.settings,
+        create: (name, existingLanguages) =>
+          createStandardLanguage(this.app, name, existingLanguages),
+        save: () => this.saveSettings(),
+      }),
+    );
+  }
+
+  /**
    * Establish a requested active/primary-language configuration as one
    * authority transaction.
    *
@@ -491,13 +546,21 @@ export default class ConlangPlugin extends Plugin {
     activeLanguages: string[],
     primaryLanguage: string,
   ): Promise<ActiveLanguageStateResult> {
-    return applyActiveLanguageState({
-      state: this.settings,
-      activeLanguages,
-      primaryLanguage,
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage(),
-    });
+    /*
+     * The complete H6 transaction must enter the common authority boundary
+     * before it snapshots activeLanguages and primaryLanguage. The queue then
+     * remains held through persistence, runtime reload, and any safe rollback
+     * or compensating save performed by applyActiveLanguageState().
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyActiveLanguageState({
+        state: this.settings,
+        activeLanguages,
+        primaryLanguage,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
   }
 
   /**
@@ -515,11 +578,19 @@ export default class ConlangPlugin extends Plugin {
   async setPrimaryLanguageState(
     primaryLanguage: string,
   ): Promise<PrimaryLanguageStateResult> {
-    return applyPrimaryLanguageState({
-      state: this.settings,
-      primaryLanguage,
-      save: () => this.saveSettings(),
-    });
+    /*
+     * Enter the common authority boundary before applyPrimaryLanguageState()
+     * reads the current primary language. That guarantees its rollback value
+     * comes from settled state rather than another transaction's provisional
+     * settings.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyPrimaryLanguageState({
+        state: this.settings,
+        primaryLanguage,
+        save: () => this.saveSettings(),
+      }),
+    );
   }
 
   /**
@@ -540,12 +611,19 @@ export default class ConlangPlugin extends Plugin {
     write: (value: T) => void,
     requested: T,
   ): Promise<PersistedSettingStateResult> {
-    return applyPersistedSettingState({
-      read,
-      write,
-      requested,
-      save: () => this.saveSettings(),
-    });
+    /*
+     * H12 shares the same mutable whole-settings authority as H6, H8, and H9.
+     * Enter the common boundary before applyPersistedSettingState() performs
+     * its read so rollback state can only come from settled authority.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyPersistedSettingState({
+        read,
+        write,
+        requested,
+        save: () => this.saveSettings(),
+      }),
+    );
   }
 
   /**
@@ -570,11 +648,29 @@ export default class ConlangPlugin extends Plugin {
     language: LanguageConfig,
     edit: (candidate: LinguisticRuleCandidate) => void,
   ): Promise<LinguisticRuleStateResult> {
-    return this.linguisticRuleStateQueue.apply({
-      state: language,
-      edit,
-      save: () => this.saveSettings(),
-    });
+    /*
+     * H10 keeps its specialized queue because that queue owns delayed candidate
+     * cloning, target reconciliation, and stable object identity across rapid
+     * linguistic-rule edits.
+     *
+     * H13 adds the plugin-wide authority boundary outside that specialized
+     * queue. The common queue must be acquired first so unrelated settings
+     * transactions cannot begin while H10 has detached candidate arrays
+     * provisionally installed for persistence.
+     *
+     * Lock order is therefore always:
+     *
+     *   settingsAuthorityQueue -> linguisticRuleStateQueue
+     *
+     * No production path acquires these queues in the reverse order.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      this.linguisticRuleStateQueue.apply({
+        state: language,
+        edit,
+        save: () => this.saveSettings(),
+      }),
+    );
   }
 
   /**
@@ -598,12 +694,45 @@ export default class ConlangPlugin extends Plugin {
   async setCaseSensitiveMatchingState(
     caseSensitiveMatching: boolean,
   ): Promise<CaseSensitiveMatchingStateResult> {
-    return applyCaseSensitiveMatchingState({
-      state: this.settings,
-      caseSensitiveMatching,
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage(),
-    });
+    /*
+     * Enter the common authority boundary before H9 reads the previous policy
+     * or installs the requested one. The queue remains held through initial
+     * persistence, runtime reload, and any safe rollback/compensating save
+     * performed by the specialized case-sensitive transaction.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyCaseSensitiveMatchingState({
+        state: this.settings,
+        caseSensitiveMatching,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
+  }
+
+  /**
+   * Establish a requested language-membership policy as one authority
+   * transaction.
+   *
+   * Membership changes which creator-authored sources are accepted into the
+   * active linguistic runtime, so persistence and reload must remain one
+   * serialized authority operation.
+   */
+  async setLanguageMembershipState(
+    languageMembership: ConlangSettings["languageMembership"],
+  ): Promise<LanguageMembershipStateResult> {
+    /*
+     * Enter the common H13 boundary before the specialized transaction reads
+     * previous membership state or installs its provisional replacement.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageMembershipState({
+        state: this.settings,
+        languageMembership,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
   }
 
   /**
@@ -624,27 +753,39 @@ export default class ConlangPlugin extends Plugin {
     setting: CanonicalFolderSetting,
     value: string | undefined,
   ): Promise<LanguageSourceStateResult> {
-    return applyLanguageSourceState({
-      language,
-      activeLanguages: this.settings.activeLanguages,
-      setting,
-      value,
-      validate: () =>
-        validateLanguageSourceChange({
-          language,
-          languages: this.settings.languages,
-          setting,
-          value,
-          pathState: (path) => {
-            const existing = this.app.vault.getAbstractFileByPath(path);
+    /*
+     * H3 must enter the common authority boundary before constructing its
+     * transaction request. In particular, activeLanguages and the configured
+     * language collection used by validation are shared settings authority.
+     *
+     * Holding the queue through validation, provisional source mutation,
+     * persistence, runtime reload, and any safe rollback/compensating save
+     * prevents another settings transaction from observing or restoring H3's
+     * provisional source state as though it were settled authority.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageSourceState({
+        language,
+        activeLanguages: this.settings.activeLanguages,
+        setting,
+        value,
+        validate: () =>
+          validateLanguageSourceChange({
+            language,
+            languages: this.settings.languages,
+            setting,
+            value,
+            pathState: (path) => {
+              const existing = this.app.vault.getAbstractFileByPath(path);
 
-            if (!existing) return "missing";
-            return existing instanceof TFolder ? "folder" : "other";
-          },
-        }),
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage(),
-    });
+              if (!existing) return "missing";
+              return existing instanceof TFolder ? "folder" : "other";
+            },
+          }),
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
   }
 
   /**
@@ -665,14 +806,26 @@ export default class ConlangPlugin extends Plugin {
     language: LanguageConfig,
     profilePath: string | undefined,
   ): Promise<LanguageProfileStateResult> {
-    return applyLanguageProfileState({
-      language,
-      activeLanguages: this.settings.activeLanguages,
-      profilePath,
-      validate: () => validateLanguageProfilePath(this.app, profilePath),
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage(),
-    });
+    /*
+     * H11 shares the same complete settings authority as the other migrated
+     * transaction families. Enter the common boundary before the transaction
+     * reads active-language state or captures the previous profile path.
+     *
+     * The queue remains held through validation, provisional profile mutation,
+     * persistence, active-runtime reload, and any safe rollback/compensating
+     * save. A second settings transaction therefore cannot adopt H11's
+     * provisional profile path as settled rollback authority.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageProfileState({
+        language,
+        activeLanguages: this.settings.activeLanguages,
+        profilePath,
+        validate: () => validateLanguageProfilePath(this.app, profilePath),
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
   }
 
   /**
@@ -704,38 +857,86 @@ export default class ConlangPlugin extends Plugin {
         : ("other" as const);
     };
 
-    return applyLanguageRootRepairState({
-      language,
-      activeLanguages: this.settings.activeLanguages,
+    /*
+     * H13: acquire the plugin-wide settings-authority boundary before H7
+     * performs its fresh plan, captures rollback state, or establishes folders.
+     *
+     * Root repair spans both vault structure and whole-settings persistence.
+     * Holding the common queue around the complete specialized transaction
+     * prevents another settings operation from changing shared authority after
+     * H7 plans from it, persisting H7's provisional configuration, or capturing
+     * that provisional state as its own rollback authority.
+     *
+     * language-root-repair-state.ts still owns all H7-specific semantics:
+     * additive folder creation, configuration snapshots, persistence, reload,
+     * and the limited safe rollback/compensating-save boundary.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageRootRepairState({
+        language,
+        activeLanguages: this.settings.activeLanguages,
 
-      // plan() is intentionally called by the transaction itself immediately
-      // before any folder or configuration mutation.
-      plan: () =>
-        planLanguageRootRepair({
-          language,
-          languages: this.settings.languages,
-          rootFolder,
-          pathState,
-        }),
+        // plan() is intentionally called by the transaction itself immediately
+        // before any folder or configuration mutation.
+        plan: () =>
+          planLanguageRootRepair({
+            language,
+            languages: this.settings.languages,
+            rootFolder,
+            pathState,
+          }),
 
-      createMissingFolders: async (plan) => {
-        /*
-         * Do not create the root itself or infer additional paths here.
-         * The planner requires the selected root to exist already and returns
-         * the complete, preflighted set of missing direct standard children.
-         *
-         * ensureVaultFolderStrict() re-checks each path during mutation, so a
-         * concurrent folder creation is safely reused while a newly appearing
-         * non-folder collision still fails closed.
-         */
-        for (const folder of plan.foldersToCreate) {
-          await ensureVaultFolderStrict(this.app, folder);
-        }
-      },
+        createMissingFolders: async (plan) => {
+          /*
+           * Do not create the root itself or infer additional paths here.
+           * The planner requires the selected root to exist already and returns
+           * the complete, preflighted set of missing direct standard children.
+           *
+           * ensureVaultFolderStrict() re-checks each path during mutation, so a
+           * concurrent folder creation is safely reused while a newly appearing
+           * non-folder collision still fails closed.
+           */
+          for (const folder of plan.foldersToCreate) {
+            await ensureVaultFolderStrict(this.app, folder);
+          }
+        },
 
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage(),
-    });
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
+  }
+
+  /**
+   * Remove one configured language as one serialized settings/runtime
+   * authority transaction.
+   *
+   * H13 requires the common settings-authority queue to be acquired before we
+   * even read the language identity that will be presented for confirmation.
+   * The queue deliberately remains held while the creator decides. Otherwise a
+   * different settings transaction could change the meaning of the pending
+   * destructive decision underneath them.
+   *
+   * The specialized state module owns exact-object revalidation, settings
+   * mutation, persistence, reload, and the limited safe rollback boundary.
+   * This wrapper supplies only plugin services and cross-family serialization.
+   *
+   * Removal affects Workbench configuration only. No vault folder or
+   * creator-authored file is deleted, renamed, or otherwise modified here.
+   */
+  async removeLanguageState(
+    language: LanguageConfig,
+    confirm: (name: string) => Promise<boolean>,
+  ): Promise<LanguageRemovalStateResult> {
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageRemovalState({
+        state: this.settings,
+        language,
+        confirm,
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
   }
 
   /**
@@ -774,60 +975,75 @@ export default class ConlangPlugin extends Plugin {
         : ("other" as const);
     };
 
-    return applyLanguageRenameState({
-      language,
-
-      /*
-       * LanguageConfig.name is still the inherited alpha identity used by
-       * activeLanguages and primaryLanguage. The shared transaction migrates
-       * these settings together rather than allowing the settings UI to update
-       * them independently.
-       */
-      settings: this.settings,
-
-      // Recalculate complete rename authority immediately before any mutation.
-      plan: () =>
-        planLanguageRename({
-          language,
-          languages: this.settings.languages,
-          proposedName,
-          pathState,
-        }),
-
-      renameRoot: async (from, to) => {
-        /*
-         * The planner has already authorized these exact paths, but vault state
-         * can change between planning and mutation. Resolve both paths again at
-         * the last responsible moment instead of trusting stale TFolder
-         * references.
-         */
-        const source = this.app.vault.getAbstractFileByPath(from);
-
-        if (!(source instanceof TFolder)) {
-          throw new Error(
-            `Cannot rename language root "${from}": it is no longer a folder.`,
-          );
-        }
-
-        const destination = this.app.vault.getAbstractFileByPath(to);
-
-        if (destination !== null) {
-          throw new Error(
-            `Cannot rename language root to "${to}": the destination is now occupied.`,
-          );
-        }
+    /*
+     * H13: acquire the plugin-wide settings-authority boundary before H7
+     * recalculates rename authority, captures rollback state, or moves the root.
+     *
+     * Rename crosses both vault structure and whole-settings persistence. The
+     * common queue therefore remains held through the forward root move,
+     * provisional identity/path changes, persistence, runtime reload, and any
+     * authorized filesystem/settings compensation performed by the specialized
+     * rename transaction.
+     *
+     * language-rename-state.ts continues to own all H7-specific rename and
+     * rollback semantics; this wrapper adds only cross-family ordering.
+     */
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageRenameState({
+        language,
 
         /*
-         * FileManager.renameFile() is preferred over Vault.rename() because it
-         * performs Obsidian's normal safe rename/move behavior, including link
-         * updates when the creator has enabled that Obsidian preference.
+         * LanguageConfig.name is still the inherited alpha identity used by
+         * activeLanguages and primaryLanguage. The shared transaction migrates
+         * these settings together rather than allowing the settings UI to update
+         * them independently.
          */
-        await this.app.fileManager.renameFile(source, to);
-      },
+        settings: this.settings,
 
-      save: () => this.saveSettings(),
-      reload: () => this.reloadActiveLanguage(),
-    });
+        // Recalculate complete rename authority immediately before any mutation.
+        plan: () =>
+          planLanguageRename({
+            language,
+            languages: this.settings.languages,
+            proposedName,
+            pathState,
+          }),
+
+        renameRoot: async (from, to) => {
+          /*
+           * The planner has already authorized these exact paths, but vault state
+           * can change between planning and mutation. Resolve both paths again at
+           * the last responsible moment instead of trusting stale TFolder
+           * references.
+           */
+          const source = this.app.vault.getAbstractFileByPath(from);
+
+          if (!(source instanceof TFolder)) {
+            throw new Error(
+              `Cannot rename language root "${from}": it is no longer a folder.`,
+            );
+          }
+
+          const destination = this.app.vault.getAbstractFileByPath(to);
+
+          if (destination !== null) {
+            throw new Error(
+              `Cannot rename language root to "${to}": the destination is now occupied.`,
+            );
+          }
+
+          /*
+           * FileManager.renameFile() is preferred over Vault.rename() because it
+           * performs Obsidian's normal safe rename/move behavior, including link
+           * updates when the creator has enabled that Obsidian preference.
+           */
+          await this.app.fileManager.renameFile(source, to);
+        },
+
+        save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
   }
 
   /**
@@ -837,12 +1053,47 @@ export default class ConlangPlugin extends Plugin {
    *
    * The flag persists in settings so the message only shows once per install.
    */
-  private maybeShowWelcome() {
-    if (this.settings.hasSeenWelcome) return;
-    // Mark as seen immediately so we don't double-show even if something
-    // below throws.
-    this.settings.hasSeenWelcome = true;
-    void this.saveData(this.settings);
+  private async maybeShowWelcome(): Promise<void> {
+    /*
+     * hasSeenWelcome is ordinary persisted settings authority. Although this
+     * startup write is not triggered by a settings control, saveData() still
+     * persists the complete settings object. It therefore must share H13's
+     * common serialization boundary so it cannot capture another transaction's
+     * provisional settings while that transaction is awaiting persistence,
+     * reload, confirmation, or rollback.
+     *
+     * Use the same pure H12 persistence primitive as ordinary settings, but
+     * retain this startup path's direct saveData() call. Unlike saveSettings(),
+     * showing the welcome notice does not need to refresh panels, highlights,
+     * or hover state merely because the one-time flag was persisted.
+     */
+    const result = await this.settingsAuthorityQueue.run(() =>
+      applyPersistedSettingState({
+        read: () => this.settings.hasSeenWelcome,
+        write: (value) => {
+          this.settings.hasSeenWelcome = value;
+        },
+        requested: true,
+        save: () => this.saveData(this.settings),
+      }),
+    );
+
+    if (result.status === "unchanged") {
+      return;
+    }
+
+    if (result.status === "save-failed") {
+      /*
+       * Persistence did not establish the flag, so the H12 primitive restored
+       * its previous in-memory value. Still show the welcome message for this
+       * startup; a later startup may show it again if persistence continues to
+       * fail rather than silently claiming that the notice was durably seen.
+       */
+      console.error(
+        "Made Up Words: failed to persist the welcome-notice flag:",
+        result.error,
+      );
+    }
 
     // Use a longer-than-default duration since we have meaningful content.
     // 12 seconds is enough to read without being intrusive.
@@ -901,6 +1152,28 @@ export default class ConlangPlugin extends Plugin {
   getPrimaryLanguageProfile(): LanguageProfile | null {
     const lang = this.getPrimaryLanguage();
     return lang ? this.getLanguageProfile(lang) : null;
+  }
+
+  /**
+   * Reload linguistic runtime state only from settled settings authority.
+   *
+   * H13 transactions temporarily install requested settings while persistence,
+   * runtime reload, and possible rollback are still in progress. A manual,
+   * event-driven, startup, or post-entry reload must not observe that
+   * provisional state and rebuild runtime indexes from it.
+   *
+   * This wrapper therefore waits for the plugin-wide settings-authority queue
+   * before calling the raw reload primitive.
+   *
+   * IMPORTANT: transaction modules that already hold settingsAuthorityQueue
+   * must continue calling reloadActiveLanguage() directly. Calling this wrapper
+   * from inside an existing settings-authority transaction would wait on the
+   * transaction itself and deadlock.
+   */
+  async reloadSettledLanguageState(): Promise<
+    { status: "loaded"; dictionaryCount: number } | { status: "blocked" }
+  > {
+    return this.settingsAuthorityQueue.run(() => this.reloadActiveLanguage());
   }
 
   async reloadActiveLanguage(): Promise<
@@ -1111,7 +1384,7 @@ export default class ConlangPlugin extends Plugin {
     }
     this.reloadInFlight = true;
     try {
-      await this.reloadActiveLanguage();
+      await this.reloadSettledLanguageState();
       this.refreshPanel();
       this.refreshHighlights();
     } finally {
@@ -1674,7 +1947,7 @@ export default class ConlangPlugin extends Plugin {
 
   /** Reload the dictionary + refresh UI after entries were added/changed. */
   private async afterEntriesChanged() {
-    await this.reloadActiveLanguage();
+    await this.reloadSettledLanguageState();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
@@ -1944,7 +2217,7 @@ export default class ConlangPlugin extends Plugin {
     // creation. Wait for this specific file before rebuilding Dictionary so
     // the new lexical source is not temporarily omitted from the index.
     await this.waitForFrontmatter(file);
-    await this.reloadActiveLanguage();
+    await this.reloadSettledLanguageState();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
@@ -2199,7 +2472,7 @@ export default class ConlangPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file);
 
     await this.waitForFrontmatter(file);
-    await this.reloadActiveLanguage();
+    await this.reloadSettledLanguageState();
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;

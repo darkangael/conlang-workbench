@@ -9,7 +9,11 @@ const temp = await mkdtemp(join(tmpdir(), "conlang-linguistic-rule-state-"));
 
 try {
   await build({
-    entryPoints: ["linguistic-rule-state.ts"],
+    entryPoints: [
+      "linguistic-rule-state.ts",
+      "persisted-setting-state.ts",
+      "settings-authority-queue.ts",
+    ],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -28,6 +32,26 @@ try {
     LinguisticRuleStateQueue,
     LinguisticRuleTargetMissingError,
   } = await import(`${pathToFileURL(modulePath).href}?v=${Date.now()}`);
+
+  const persistedModulePath = join(temp, "persisted-setting-state.mjs");
+  await readFile(persistedModulePath, "utf8");
+
+  const { applyPersistedSettingState } = await import(
+    `${pathToFileURL(persistedModulePath).href}?v=${Date.now()}`
+  );
+
+  /*
+   * The H13 cross-family regression composes H10 and an ordinary persisted
+   * setting through the same plugin-wide authority queue. Bundling the
+   * coordinator here lets the test exercise that production lock ordering
+   * without coupling the regression to the Obsidian plugin host.
+   */
+  const authorityQueueModulePath = join(temp, "settings-authority-queue.mjs");
+  await readFile(authorityQueueModulePath, "utf8");
+
+  const { SettingsAuthorityQueue } = await import(
+    `${pathToFileURL(authorityQueueModulePath).href}?v=${Date.now()}`
+  );
 
   const makeState = () => ({
     sheets: [
@@ -770,6 +794,132 @@ try {
     assert.deepEqual(later, { status: "applied" });
     assert.equal(saveCalls, 1);
     assert.equal(state.sheets[0].name, "Later valid edit");
+  }
+
+  {
+    /*
+     * H13 regression: H10's specialized queue still owns linguistic-rule
+     * candidate construction and reconciliation, while the plugin-wide
+     * SettingsAuthorityQueue now coordinates H10 with unrelated settings
+     * transaction families.
+     *
+     * Hold an H10 save after its detached candidate has been installed as
+     * provisional live state. Then submit an ordinary persisted-setting
+     * transaction through the same common authority queue.
+     *
+     * The ordinary transaction must remain completely excluded until H10 has
+     * persisted and reconciled its candidate back into settled authoritative
+     * objects. This protects whole-settings persistence from observing another
+     * transaction family's provisional state.
+     */
+    const language = makeState();
+    const originalSheets = language.sheets;
+    const settings = {
+      hoverModifier: "Shift",
+      language,
+    };
+
+    const authorityQueue = new SettingsAuthorityQueue();
+    const linguisticQueue = new LinguisticRuleStateQueue();
+
+    let releaseLinguisticSave;
+    let ordinaryWriteCalls = 0;
+    let ordinarySaveCalls = 0;
+    let ordinarySawProvisionalSheets = false;
+
+    const heldLinguisticSave = new Promise((resolve) => {
+      releaseLinguisticSave = resolve;
+    });
+
+    /*
+     * Production lock order is plugin-wide authority first, then H10's
+     * specialized queue. The outer queue prevents other settings families from
+     * entering while H10 owns provisional linguistic-rule authority.
+     */
+    const linguistic = authorityQueue.run(() =>
+      linguisticQueue.apply({
+        state: language,
+        edit: (candidate) => {
+          candidate.sheets[0].name = "Provisional H10 edit";
+        },
+        save: () => heldLinguisticSave,
+      }),
+    );
+
+    /*
+     * SettingsAuthorityQueue and LinguisticRuleStateQueue each begin work on a
+     * Promise microtask. Yield twice so H10 reaches its held save with the
+     * detached candidate installed.
+     */
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.notEqual(
+      language.sheets,
+      originalSheets,
+      "H10 should have its detached candidate provisionally installed",
+    );
+    assert.equal(language.sheets[0].name, "Provisional H10 edit");
+
+    const ordinary = authorityQueue.run(() =>
+      applyPersistedSettingState({
+        read: () => settings.hoverModifier,
+        write: (value) => {
+          ordinaryWriteCalls++;
+          settings.hoverModifier = value;
+        },
+        requested: "Control",
+        save: async () => {
+          ordinarySaveCalls++;
+          ordinarySawProvisionalSheets =
+            settings.language.sheets !== originalSheets;
+        },
+      }),
+    );
+
+    /*
+     * The ordinary request has been submitted, but H10 still owns the common
+     * authority boundary. It must therefore remain completely outside its
+     * authority-sensitive read/write/save transaction until H10 settles.
+     */
+    await Promise.resolve();
+
+    assert.equal(
+      ordinaryWriteCalls,
+      0,
+      "an unrelated settings transaction must not install provisional state while H10 is in flight",
+    );
+    assert.equal(
+      ordinarySaveCalls,
+      0,
+      "an unrelated settings transaction must not reach persistence while H10 state is provisional",
+    );
+
+    releaseLinguisticSave();
+
+    const linguisticResult = await linguistic;
+    const ordinaryResult = await ordinary;
+
+    assert.equal(linguisticResult.status, "applied");
+    assert.equal(ordinaryResult.status, "applied");
+    assert.equal(ordinaryWriteCalls, 1);
+    assert.equal(ordinarySaveCalls, 1);
+    assert.equal(settings.hoverModifier, "Control");
+    assert.equal(
+      ordinarySawProvisionalSheets,
+      false,
+      "the later ordinary save must begin only after H10 has reconciled its candidate into settled authority",
+    );
+    assert.equal(
+      settings.language.sheets,
+      originalSheets,
+      "successful H10 reconciliation should preserve the original authoritative sheet-array identity",
+    );
+    assert.equal(
+      settings.language.sheets[0].name,
+      "Provisional H10 edit",
+      "the successfully persisted H10 value should remain authoritative after reconciliation",
+    );
   }
 
   console.log("linguistic-rule state regression tests passed");
