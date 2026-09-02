@@ -185,34 +185,89 @@ Safety review.
 
 ### Read-Only Features
 
-Inventory features that only inspect, index, search, or display data.
+The audit inventoried the primary passive data paths used by Conlang Workbench.
+
+Read-only behavior includes:
+
+- dictionary, morpheme, linguistic-example, phonology, and language-profile
+  loading;
+- cached frontmatter and Markdown-body reads used to build runtime indexes;
+- source parsing and malformed-source diagnostics;
+- translation preview;
+- dictionary lookup;
+- hover tooltips;
+- known-word classification and highlighting;
+- panel display and refresh behavior;
+- metadata/vault event handling that schedules runtime reloads; and
+- manual dictionary reload.
+
+These paths read creator-authored Markdown, cached metadata, or in-memory
+settings and rebuild runtime/UI state without rewriting the source material
+being inspected.
 
 ### Mutating Features
 
-Inventory features capable of changing notes, settings, files, or metadata.
+The audit identified separate, intentional mutation boundaries for:
+
+- creating missing configured folders through `ensureVaultFolderStrict()`;
+- creating new lexical-entry Markdown notes through `writeDictionaryEntry()`;
+- renaming an explicitly authorized language root through
+  `FileManager.renameFile()`;
+- replacing an explicitly approved editor selection through
+  `Editor.replaceRange()`; and
+- persisting plugin configuration through `saveData()` / the settings-authority
+  transaction helpers.
+
+In-memory `Map`, `Set`, cache, inventory, and UI-state mutations were
+distinguished from creator-file or plugin-settings persistence.
 
 ### Boundary Clarity
 
-Check whether source code and UI make the difference between read-only and
-mutating behavior clear.
+The source and command/UI structure make the principal distinction between
+read-only and mutating behavior clear.
+
+Commands intended only to inspect or preview data are named and routed
+separately from commands that create entries or replace editor text. Persistent
+dictionary creation, folder creation, language-root rename, editor replacement,
+and settings persistence each pass through recognizable mutation boundaries
+rather than being embedded inside ordinary parsing or display routines.
 
 ### Accidental Mutation
 
-Verify that parsing, searching, loading, and diagnostics do not rewrite source
-material merely by reading it.
+No accidental creator-data mutation was found in the inspected passive paths.
+
+Dictionary, morpheme, linguistic-example, and phonology loaders rebuild
+in-memory inventories from configured vault sources. Dictionary body metadata
+uses `Vault.cachedRead()` where body content is needed; other source adapters
+use Obsidian's metadata cache. Runtime language-membership inheritance changes
+only parsed in-memory objects and does not rewrite creator-authored YAML.
+
+Metadata-cache changes and vault delete/rename events may schedule a debounced
+runtime reload. That reload waits for settled settings authority, preflights
+configured sources, rebuilds runtime inventories, and refreshes UI/highlighting.
+The passive reload chain does not call settings persistence, creator-file
+creation, file rename, frontmatter processing, or editor replacement APIs.
+
+No `processFrontMatter()` use and no low-level vault-adapter/filesystem write
+path were found in the TypeScript source during this review.
 
 ### Future Mutation Points
 
-Identify read-only features that may later gain editing behavior and therefore
-need re-audit.
+Read-only features such as lookup, hover, highlighting, diagnostics, source
+adapters, and inventory views must be re-audited if they later gain direct
+editing or repair behavior.
+
+In particular, any future feature that turns diagnostics or source views into
+an automatic fixer must preserve the current distinction between observation
+and explicit creator-authorized mutation.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
