@@ -2,13 +2,29 @@
 
 .conlang-panel-tabs {
   display: flex;
+
+  /*
+   * Feature tabs must remain reachable in a narrow Obsidian sidebar. Let the
+   * strip form additional rows instead of allowing later tabs to extend beyond
+   * the panel's visible width.
+   */
+  flex-wrap: wrap;
   gap: 0;
   margin-bottom: 12px;
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .conlang-tab {
+  /*
+   * About 22% gives four tabs a comfortable preferred row at ordinary sidebar
+   * widths without hard-coding an exact four-column grid. Flex may use more or
+   * fewer columns as the sidebar changes width, while max-content keeps labels
+   * readable instead of squeezing them into clipped text.
+   */
+  flex: 1 1 22%;
+  min-width: max-content;
   padding: 6px 12px;
+  text-align: center;
   cursor: pointer;
   color: var(--text-muted);
   font-size: 0.9em;
