@@ -815,38 +815,174 @@ source data.
 
 ### Current Normalization
 
-Inventory any current automatic or manual normalization.
+Current production behavior separates derived/runtime normalization, Workbench
+configuration migration, structural path changes, and creator-authored source
+mutation rather than treating them as one generic rewrite mechanism.
+
+Lexical normalization is derived-only. `normalizeLexicalKey()` applies the
+current case policy and Unicode NFC normalization when producing comparison and
+index keys. Morpheme and phonology ID lookups similarly trim and lowercase
+derived lookup keys. These operations do not replace the creator-authored
+spelling, frontmatter value, selected text, or displayed linguistic form.
+
+Persisted Workbench settings have a narrower automatic normalization and
+migration boundary. `decodePersistedSettings()` first structurally validates
+untrusted persisted data and clones the accepted representation before
+`normalizeClosedChoiceSettings()` restores invalid closed-choice preferences to
+documented defaults. Free-form creator configuration such as language names,
+folders, and linguistic rules is explicitly outside that normalization
+authority.
+
+After successful decoding, `migrateSettings()` performs compatibility migration
+over Workbench configuration. It may infer a legacy `rootFolder` only when the
+already-configured canonical source paths establish that root unambiguously,
+migrate the legacy single `activeLanguage` representation into
+`activeLanguages`, remove unknown active-language names, and establish a valid
+primary language. Ambiguous legacy roots are left untouched for explicit
+repair rather than guessed.
+
+Those startup normalization and migration steps initially change the in-memory
+Workbench settings representation rather than immediately writing the settings
+file. Because later authorized settings persistence writes the complete
+settings object, including the one-time welcome-state persistence path, the
+migrated representation may subsequently become persisted as part of a normal
+whole-settings save. This behavior concerns Workbench configuration and does
+not grant authority to normalize creator linguistic Markdown.
+
+Language rename also uses functions named `rewrite*`, but those functions
+rewrite only configured vault-path strings that must follow an explicitly
+authorized root move. Descendant suffixes are copied verbatim so custom
+organization beneath the root is preserved. The physical operation passes the
+existing `TFolder` to Obsidian's `FileManager.renameFile()` rather than
+reconstructing contained notes.
+
+The only current production operation identified that replaces content inside
+an existing creator note is translation commit through `editor.replaceRange()`.
+That is an explicitly requested semantic transformation of an exact editor
+range, not an automatic formatting or normalization pass.
 
 ### Explicit Invocation
 
-Normalization should be opt-in rather than silently triggered by reading data.
+No production command automatically normalizes or reformats existing
+creator-authored linguistic Markdown merely because Workbench reads, indexes,
+diagnoses, or reloads it.
+
+Derived lexical and ID normalization is automatic only within runtime
+comparison keys and does not write back to the source. Settings compatibility
+normalization occurs automatically at the validated configuration boundary but
+is restricted to Workbench-owned configuration.
+
+Operations that can change creator-visible structure or content require their
+own explicit authority. Language-root rename requires creator confirmation of
+the named language and destination identity before moving the established root.
+Translation replacement is exposed separately from translation preview and
+requires explicit confirmation of the proposed replacement before the exact
+editor range is changed.
 
 ### Scope
 
-Default to the narrowest practical scope, preferably the current note when
-appropriate.
+Current normalization scopes remain narrower than a general creator-note
+rewrite.
+
+Derived lexical normalization is scoped to individual comparison/index keys.
+Closed-choice normalization is scoped to the enumerated Workbench settings for
+which the plugin defines a finite valid set. Legacy settings migration is
+scoped to Workbench configuration fields and uses existing configured
+authority rather than linguistic-source contents as permission to rewrite
+notes.
+
+Language rename is scoped to one explicitly established language root and the
+configured paths that belong to that root. Paths outside the root are preserved
+or cause the rename to block according to their authority rules.
+
+Translation commit is scoped to the exact captured file, path, editor range,
+original text, and proposed replacement. Those values are revalidated
+immediately before mutation so authorization for one selection cannot silently
+expand to another range or note.
+
+There is no current folder-wide, language-wide, or vault-wide normalization
+operation over creator-authored Markdown.
 
 ### Preview
 
-Determine whether the user can inspect intended changes before broader
-rewriting.
+There is no broad creator-source normalization operation for which Workbench
+currently needs a bulk rewrite preview.
+
+Language rename presents an explicit confirmation describing the old and new
+language names, the existing owned root move, configured-path updates, and the
+fact that Workbench itself does not rewrite the contained Markdown or YAML.
+Unsafe or stale rename authority blocks the operation rather than falling back
+to an inferred destination.
+
+Translation provides a dedicated preview command, while the separate commit
+path presents the proposed semantic replacement for authorization and then
+revalidates the original file and exact source text before
+`editor.replaceRange()`.
+
+Automatic settings compatibility normalization does not present a creator
+preview because it operates on Workbench-owned closed-choice/runtime
+configuration rather than linguistic source content. Structural validation
+failure blocks startup and preserves the rejected persisted representation
+instead of partially normalizing malformed settings.
 
 ### Semantic Preservation
 
-Formatting normalization must not change linguistic meaning or analytical
-status.
+Creator-authored linguistic spelling remains authoritative. Unicode NFC and
+case handling are applied only to derived lexical comparison keys; the
+normalized key is not promoted into replacement authority over the original
+word, frontmatter value, selection, or displayed form.
+
+Likewise, ID lookup normalization affects lookup representation rather than
+stored linguistic identity. This section does not establish new casing or ID
+semantics; those remain subject to their existing compatibility rules and any
+later dedicated review.
+
+Language rename preserves the suffix of creator-chosen descendant paths
+verbatim instead of rebuilding canonical sources from standard folder names.
+Its structural rewrite therefore follows the physical root move without
+normalizing the creator's organization underneath it.
+
+Translation replacement is intentionally semantic rather than
+format-normalizing: the creator explicitly authorizes the proposed transformed
+text. Its separate mutation boundary prevents that transformation from being
+treated as permission to normalize surrounding source content.
 
 ### Unknown Fields
 
-Ensure normalization does not remove unrelated metadata.
+The production mutation inventory contains no existing-note frontmatter
+normalizer or generic source rewrite service. Current production code does not
+use `processFrontMatter()`, `Vault.modify()`, `Vault.append()`, or an equivalent
+read-modify-write operation that reconstructs a creator note from Workbench's
+known-field model.
+
+Unknown, third-party, or future frontmatter fields therefore cannot be dropped
+as a side effect of a current normalization pass because no such existing-note
+normalization pass exists. New-note serialization through
+`renderMarkdownNote()` remains the separate creation boundary reviewed in Data
+Safety §2.
+
+Language-root rename moves existing vault objects rather than serializing their
+contents, so unmodeled metadata is not filtered through Workbench's runtime
+models during the rename. Exact-range translation replacement has authority
+only over the creator-approved range and receives no authority over unrelated
+frontmatter or body content elsewhere in the note.
+
+The untracked `source-frontmatter-writer.ts` file present in the development
+working tree is a comment-only architectural skeleton for a possible future
+explicit portable-ID backfill operation. It is not production behavior, is not
+part of the built mutation inventory, and was deliberately excluded from this
+section's production writer searches. Any future implementation that begins
+rewriting existing frontmatter must receive its own explicit preservation,
+scope, preview, and revalidation review before this Pass can be carried
+forward.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
