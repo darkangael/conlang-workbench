@@ -10,6 +10,7 @@
     "test:vault-paths": "node scripts/test-vault-paths.mjs",
     "test:frontmatter": "node scripts/test-frontmatter-parsing.mjs",
     "test:body-preview": "node scripts/test-body-preview.mjs",
+    "test:markdown-note-renderer": "node scripts/test-markdown-note-renderer.mjs",
     "test:lexical-senses": "node scripts/test-lexical-senses.mjs",
     "test:selection-lookup": "node scripts/test-selection-lookup.mjs",
     "test:gloss-rendering": "node scripts/test-gloss-rendering.mjs",

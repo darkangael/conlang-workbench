@@ -26,6 +26,7 @@ import {
   writeDictionaryEntry,
   type DictionaryEntryWriteResult,
 } from "./dictionary-entry-writer";
+import { renderMarkdownNote } from "./markdown-note-renderer";
 import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
@@ -1946,24 +1947,28 @@ export default class ConlangPlugin extends Plugin {
       dictionaryFolder: p.lang.dictionaryFolder,
 
       // The writer decides whether a same-spelling lexical source requires a
-      // homograph. It then tells this callback whether the real spelling needs
-      // an explicit `word:` override in the generated Markdown.
+      // homograph. This creation flow retains authority over exactly which
+      // metadata and body belong to its note; the shared renderer only encodes
+      // those already-decided values safely as YAML + Markdown.
       buildContent: ({ wordOverride }) =>
-        [
-          "---",
-          ...(wordOverride ? [`word: ${form}`] : []),
-          `definition: ${p.englishText}`,
-          `language: ${p.lang.name}`,
-          `partOfSpeech: ${p.partOfSpeech}`,
-          "ipa: ",
-          "etymology: ",
-          "---",
-          "",
-          `# ${form}`,
-          "",
-          `Translates *${p.englishText}*.`,
-          "",
-        ].join("\n"),
+        renderMarkdownNote({
+          frontmatter: {
+            ...(wordOverride ? { word: form } : {}),
+            definition: p.englishText,
+            language: p.lang.name,
+            ...(p.partOfSpeech ? { partOfSpeech: p.partOfSpeech } : {}),
+          },
+          blankFrontmatter: p.partOfSpeech
+            ? ["ipa", "etymology"]
+            : ["partOfSpeech", "ipa", "etymology"],
+          body: [
+            "",
+            `# ${form}`,
+            "",
+            `Translates *${p.englishText}*.`,
+            "",
+          ].join("\n"),
+        }),
     });
 
     if (result.status === "created") {
@@ -2206,24 +2211,32 @@ export default class ConlangPlugin extends Plugin {
       partOfSpeech: opts.partOfSpeech,
       dictionaryFolder: folder,
 
-      // Keep this command's established Markdown template here. The writer owns
-      // persistence safety, not the linguistic/document presentation.
+      // Keep this command's established linguistic/document template here.
+      // Vocabulary repair retains authority over exactly which metadata and
+      // explanatory body this translation workflow may create. The persistence
+      // writer owns whether/where creation is safe, while the shared renderer
+      // only encodes these already-authorized values as YAML + Markdown.
       buildContent: ({ wordOverride }) =>
-        [
-          "---",
-          ...(wordOverride ? [`word: ${translated}`] : []),
-          `definition: ${englishText}`,
-          `language: ${lang.name}`,
-          `partOfSpeech: ${opts.partOfSpeech}`,
-          "ipa: ",
-          "etymology: ",
-          "---",
-          "",
-          `# ${translated}`,
-          "",
-          `Translates *${englishText}*.`,
-          "",
-        ].join("\n"),
+        renderMarkdownNote({
+          frontmatter: {
+            ...(wordOverride ? { word: translated } : {}),
+            definition: englishText,
+            language: lang.name,
+            ...(opts.partOfSpeech
+              ? { partOfSpeech: opts.partOfSpeech }
+              : {}),
+          },
+          blankFrontmatter: opts.partOfSpeech
+            ? ["ipa", "etymology"]
+            : ["partOfSpeech", "ipa", "etymology"],
+          body: [
+            "",
+            `# ${translated}`,
+            "",
+            `Translates *${englishText}*.`,
+            "",
+          ].join("\n"),
+        }),
     });
 
     if (result.status === "blocked" || result.status === "failed") {
@@ -2347,32 +2360,25 @@ export default class ConlangPlugin extends Plugin {
       // The writer owns persistence safety, while this callback owns the
       // ordinary-word Markdown schema. Keeping those responsibilities separate
       // lets names and other lexical source types retain their own metadata.
-      buildContent: ({ wordOverride }) => {
-        const fmLines = [
-          "---",
-          ...(wordOverride ? [`word: ${result.conlangWord}`] : []),
-          `definition: ${result.englishDefinition}`,
-          `language: ${lang.name}`,
-        ];
-
-        if (result.partOfSpeech) {
-          fmLines.push(`partOfSpeech: ${result.partOfSpeech}`);
-        } else {
-          fmLines.push("partOfSpeech: ");
-        }
-
-        fmLines.push(
-          "ipa: ",
-          "etymology: ",
-          "---",
-          "",
-          `# ${result.conlangWord}`,
-          "",
-          "",
-        );
-
-        return fmLines.join("\n");
-      },
+      //
+      // An omitted part of speech deliberately remains a visible blank
+      // `partOfSpeech:` prompt. A supplied value instead belongs to semantic
+      // frontmatter and must be serialized safely as the creator's string.
+      buildContent: ({ wordOverride }) =>
+        renderMarkdownNote({
+          frontmatter: {
+            ...(wordOverride ? { word: result.conlangWord } : {}),
+            definition: result.englishDefinition,
+            language: lang.name,
+            ...(result.partOfSpeech
+              ? { partOfSpeech: result.partOfSpeech }
+              : {}),
+          },
+          blankFrontmatter: result.partOfSpeech
+            ? ["ipa", "etymology"]
+            : ["partOfSpeech", "ipa", "etymology"],
+          body: ["", `# ${result.conlangWord}`, "", ""].join("\n"),
+        }),
     });
 
     if (writeResult.status === "created") {
@@ -2465,26 +2471,35 @@ export default class ConlangPlugin extends Plugin {
 
       // Keep Name-specific metadata and body layout in the Name command. The
       // shared writer owns only persistence safety and tells us whether the
-      // generated note needs an explicit spelling override.
+      // generated note needs an explicit spelling override. The renderer has
+      // no authority to infer Name metadata or merge this policy with ordinary
+      // lexical-entry creation.
+      //
+      // An exactly empty category preserves the existing visible
+      // `nameCategory:` placeholder. Any nonempty creator value is semantic
+      // frontmatter and is serialized without interpreting YAML-like text.
       buildContent: ({ wordOverride }) =>
-        [
-          "---",
-          ...(wordOverride ? [`word: ${result.conlangForm}`] : []),
-          `definition: ${referent}`,
-          `language: ${lang.name}`,
-          "partOfSpeech: proper-noun",
-          `nameCategory: ${result.category}`,
-          "ipa: ",
-          "etymology: ",
-          "---",
-          "",
-          `# ${result.conlangForm}`,
-          "",
-          // Empty placeholder paragraph — the user fills this in to describe
-          // who/what this name refers to in their world. Dictionary uses it as
-          // the body preview on hover.
-          "",
-        ].join("\n"),
+        renderMarkdownNote({
+          frontmatter: {
+            ...(wordOverride ? { word: result.conlangForm } : {}),
+            definition: referent,
+            language: lang.name,
+            partOfSpeech: "proper-noun",
+            ...(result.category ? { nameCategory: result.category } : {}),
+          },
+          blankFrontmatter: result.category
+            ? ["ipa", "etymology"]
+            : ["nameCategory", "ipa", "etymology"],
+          body: [
+            "",
+            `# ${result.conlangForm}`,
+            "",
+            // Empty placeholder paragraph — the user fills this in to describe
+            // who/what this name refers to in their world. Dictionary uses it
+            // as the body preview on hover.
+            "",
+          ].join("\n"),
+        }),
     });
 
     if (writeResult.status === "blocked" || writeResult.status === "failed") {

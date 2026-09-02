@@ -275,32 +275,164 @@ None.
 
 ### File Creation
 
-Review all code that creates new notes or files.
+The production TypeScript source was reviewed for Obsidian vault/file mutation
+APIs and generated-note construction.
+
+Current file-creation authority is narrow:
+
+- `ensureVaultFolderStrict()` creates missing folders required by an explicitly
+  authorized destination hierarchy;
+- `writeDictionaryEntry()` performs lexical-entry file creation through
+  `Vault.create()` after destination and source-authority checks; and
+- the four current dictionary-entry creation flows supply their own
+  independently authorized metadata and Markdown body to that shared
+  persistence boundary.
+
+No second creator-note creation path, low-level adapter write, `Vault.modify()`,
+append, copy, delete/trash, or general-purpose overwrite mechanism was found in
+the reviewed TypeScript source.
+
+The four entry-generation flows remain separate semantic authorities:
+multi-language entry creation, translation vocabulary repair, ordinary word
+creation, and Name creation each decide the fields and document body they are
+allowed to generate. Only low-level YAML/Markdown representation mechanics are
+shared.
 
 ### Existing Destination
 
-Determine behavior when the target already exists.
+`writeDictionaryEntry()` performs a fresh destination analysis before the final
+create operation.
+
+An absent exact destination may proceed. An occupied destination is interpreted
+conservatively:
+
+- a non-file object blocks creation;
+- unavailable or uninterpretable source authority blocks creation;
+- an explicitly non-lexical source blocks lexical creation;
+- a confirmed same-definition lexical entry is returned as the existing entry;
+  and
+- only a confirmed different lexical meaning may authorize allocation of a
+  homograph filename.
+
+Uncertainty is therefore not treated as permission to create beside or through
+an existing source.
 
 ### Overwrite Protection
 
-Check whether existing user files can be replaced unintentionally.
+New lexical notes are persisted with `Vault.create()` rather than an API that
+rewrites an existing creator file.
+
+The writer rechecks the destination immediately before creation. If the target
+becomes occupied after earlier inspection, Obsidian's create operation fails
+rather than replacing the existing file, and the writer reports failure.
+
+Content generation also occurs before folder creation, so an exception while
+building the new note cannot leave newly created destination folders behind.
+
+Existing creator-authored lexical and non-lexical notes are not rewritten as
+part of collision handling.
 
 ### Naming Collisions
 
-Review collisions caused by identical lemmas, IDs, filenames, or generated
-names.
+The exact lexical destination is checked before creation.
+
+When a confirmed different lexical meaning requires a homograph, the writer
+allocates a separate filename using the creation flow's supplied
+part-of-speech/category disambiguator. Occupied homograph candidates advance to
+another candidate rather than being reused as overwrite targets.
+
+The ordinary numbered fallback candidates are checked for occupancy. A final
+timestamp fallback is still created through `Vault.create()`, so a coincidental
+collision fails rather than overwriting an existing object.
+
+Filename-invalid characters are replaced only for the generated filename
+component. This filename sanitization does not rewrite the lexical form stored
+inside the creator note.
 
 ### Destination Scope
 
-Verify that generated files are written only to the intended location.
+Generated lexical paths are constructed beneath the configured dictionary
+folder and validated as vault-relative paths.
+
+Folder establishment uses `ensureVaultFolderStrict()`, which walks the intended
+hierarchy conservatively, reuses existing folders, and stops if a required path
+component is occupied by a non-folder object.
+
+The reviewed entry-creation flows do not have authority to write generated
+lexical notes outside their supplied configured dictionary destination.
+
+### Generated Frontmatter Integrity
+
+During this review, the four generated dictionary-note templates were found to
+interpolate creator/workflow strings directly into YAML source.
+
+Ordinary text accepted by Workbench can contain syntax that YAML interprets
+specially. Runtime characterization demonstrated, for example, that direct
+interpolation of a definition such as `river: flowing water` produces invalid
+YAML, while strings such as `true`, `null`, `123`, list-like text, aliases, and
+quoted text can be assigned a different YAML type or meaning.
+
+The required invariant is:
+
+> A creator-supplied string accepted by Workbench and written to generated
+> frontmatter must parse back as the same string.
+
+The four creation flows now pass their already-authorized semantic frontmatter
+values to a representation-only `renderMarkdownNote()` helper. That helper uses
+Obsidian's public `stringifyYaml()` API rather than constructing dynamic
+`key: value` YAML lines.
+
+Runtime characterization in the supported Obsidian API confirmed that
+`stringifyYaml()` preserves YAML-looking creator values as strings while
+retaining deliberately supplied booleans, numbers, arrays, and other semantic
+types as those types.
+
+Intentionally blank template prompts such as `ipa:`, `etymology:`,
+`partOfSpeech:`, and `nameCategory:` remain separate from serialized semantic
+values, preserving the existing generated-note convention when those optional
+creator values are absent.
+
+The renderer has representation authority only. It does not decide which
+linguistic fields exist, infer values, merge creation policies, choose
+destinations, or authorize persistence.
 
 ### Findings
 
-None recorded yet.
+#### DS-002-H1 — Generated frontmatter did not safely serialize creator strings
+
+- **Severity:** Medium
+- **Impact radius:** Note
+- **Status:** Remediated and verified
+
+Generated dictionary-entry templates directly interpolated creator/workflow
+strings into YAML frontmatter. Accepted linguistic text containing
+YAML-significant syntax could therefore become malformed, truncated, or parsed
+as the wrong data type in the newly created note.
+
+The remediation introduced the representation-only `renderMarkdownNote()`
+boundary using Obsidian's `stringifyYaml()` API. The four creation flows retain
+their separate semantic authority and supply only the metadata/body each is
+authorized to create.
+
+Verification included:
+
+- real Obsidian `stringifyYaml()` / `parseYaml()` runtime characterization with
+  YAML-significant strings and deliberately typed values;
+- `test:markdown-note-renderer`;
+- `test:dictionary-entry-writer`;
+- `test:translation-vocabulary-repair`;
+- `test:frontmatter`;
+- the relevant lexical, lookup, gloss, body-preview, and vault-path regression
+  suites;
+- production build;
+- lint at the established baseline of 0 errors and 14 warnings;
+- broad source searches confirming no remaining generated creator-note
+  frontmatter interpolation path; and
+- clean `git diff --check`.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
@@ -1001,6 +1133,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-002-H1   | Data Safety §2 / generated dictionary frontmatter                 | Remediated and verified | Medium    | Note; newly generated lexical-entry frontmatter                                                        | Generated dictionary templates directly interpolated creator/workflow strings into YAML, so accepted YAML-significant linguistic text could become malformed or acquire the wrong parsed value/type. | Data Safety §2; real Obsidian `stringifyYaml()` / `parseYaml()` characterization; `test:markdown-note-renderer`; dictionary writer and translation-repair regressions; production build; lint baseline | Generated semantic frontmatter now passes through a representation-only renderer using Obsidian `stringifyYaml()`. The four creation flows retain separate semantic authority, intentionally blank fields remain blank placeholders, and existing destination/overwrite protections are unchanged. |
 | SEC-004-H9  | Security §4 / query interpretation                             | Remediated and verified | Hardening | Explicit selected query only; no source mutation                                                                                         | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query, including loss of Unicode combining marks.                                                                        | Security Audit SEC-004-H9; `test:lookup-query`; runtime phrase, rejection, and Unicode-equivalence verification                                                                                                                     | Lookup now establishes lexical authority before searching and rejects unsafe internal material rather than deleting it. Creator-authored source text remains unchanged.                                                                                                                                                                                      |
 | SEC-004-H10 | Security §4 / lexical range scanning                           | Remediated and verified | Hardening | Cursor/hover lexical range; indirect mutation relevance where cursor-derived ranges feed mutation-capable commands                       | UTF-16 code-unit scanning could split valid supplementary-plane Unicode letters and produce an incorrect lexical range.                                                                                              | Security Audit SEC-004-H10; `test:word-scan`; production build; runtime verification of complete `var𐐀u` cursor lookup and Reading View hover                                                                                       | Shared scanning now iterates complete Unicode code points while preserving UTF-16 coordinates required by editor and DOM APIs. Creator-authored text is not normalized or rewritten, and existing lexical-boundary semantics remain unchanged.                                                                                                               |
 | SEC-004-H11 | Security §4 / dictionary mutation authority                    | Remediated and verified | Hardening | Existing same-spelling dictionary source and any new homograph source that creation logic might persist                                  | Unavailable or uninterpretable existing dictionary metadata could be collapsed with a confirmed different meaning and incorrectly authorize creation of a persistent homograph.                                      | Security Audit SEC-004-H11; `test:frontmatter`; production build; Obsidian `+ Word` runtime verification with malformed `h11test.md`                                                                                                | Existing-definition comparison is now tri-state. Uncertainty produces `"unknown"` and stops mutation; only a successfully interpreted and confirmed `"different"` meaning may authorize homograph creation. The existing source is not rewritten.                                                                                                            |
