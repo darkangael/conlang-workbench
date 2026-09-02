@@ -990,38 +990,154 @@ None.
 
 ### Available Scopes
 
-Identify whether commands operate on:
+Current production mutation authority is divided among narrowly named
+operations rather than exposed through a generic note, folder, language, or
+vault writer.
 
-- field
-- note
-- folder
-- language
-- multiple languages
-- entire vault
+Translation commit is the only identified production operation that replaces
+content inside an existing creator-authored note. Its authority is limited to
+one exact editor range in one identified note.
+
+Dictionary persistence creates one new lexical source at an independently
+authorized destination. It does not overwrite an existing creator-authored
+note. Existing same-meaning entries are reused, uncertain or nonlexical
+collisions block creation, and only a confirmed different meaning can authorize
+allocation of a separate homograph path.
+
+Canonical source-folder controls change one named Workbench configuration field
+for one configured language. They change where Workbench reads a canonical
+source collection; they do not thereby mutate the notes contained in that
+folder.
+
+Language-root repair operates on one already-established language root. Its
+planner considers only the six expected standard direct-child folders, reuses
+existing folders, may create missing folders additively, and preserves unrelated
+or nested creator structure. It cannot adopt an unrelated existing language
+root.
+
+Language rename operates on one explicitly selected configured language and its
+already-owned root. It moves that existing root and rewrites only configured
+path strings that descend from it. It does not reconstruct or rewrite the
+creator-authored notes contained in the root.
+
+Language removal removes one exact Workbench language configuration. It does
+not delete that language's configured vault folders or files.
+
+Ordinary settings operations affect their corresponding Workbench
+configuration fields through specialized settings transactions. No current
+production command was identified that rewrites all notes in a folder, all
+notes belonging to a language, multiple languages' source notes, or the entire
+vault.
 
 ### Default Scope
 
-Verify that defaults favor narrow changes.
+Current mutation defaults favor the narrowest authority appropriate to the
+operation.
+
+Editor replacement starts from the creator's explicit selection or, when there
+is no selection, the single lexical word under the cursor. The resulting
+replacement authority is still captured as one exact range rather than
+expanding to the surrounding note.
+
+Lexical persistence re-analyzes one intended destination immediately before
+creation and uses `vault.create()` rather than an overwrite operation.
+
+Canonical source changes are committed per named source field. Root repair is
+limited to the exact language's existing owned root and standard direct
+children. Rename and removal each target one exact configured language rather
+than applying implicitly to other languages.
+
+No current creator-note mutation defaults to folder-wide, language-wide,
+multi-language, or vault-wide scope.
 
 ### Scope Visibility
 
-The user should understand the expected blast radius before execution.
+Creator-facing controls communicate the material scope of the current broader
+operations before execution.
+
+Translation replacement presents the original text, translated text, and exact
+replacement string before the creator can choose Replace.
+
+Language rename presents the old and new language names and explains that the
+operation renames the existing owned root and updates configured paths beneath
+it. The confirmation also states that Workbench does not rewrite
+creator-authored Markdown or YAML metadata and that Obsidian may update links
+according to the creator's normal link-update preference.
+
+Language removal presents the exact language configuration being removed and
+explicitly states that its configured vault folders and files will not be
+deleted. Its destructive confirmation succeeds only through the explicit
+Remove language button.
+
+Language-root repair is exposed as a separately named Repair language root
+control whose description states that it restores standard folders and
+canonical source paths inside the language's existing owned root. Canonical
+source-folder controls are individually labeled Dictionary folder, Morpheme
+folder, Examples folder, and Phonology folder rather than presenting an
+ambiguous general folder mutation.
 
 ### Selection Errors
 
-Check behavior when no active note, wrong language, or wrong folder is selected.
+Mutation boundaries fail closed when their required target cannot be
+established or becomes stale.
+
+Translation replacement stops when there is no explicit selection or lexical
+word under the cursor, when the originating note cannot be identified, or when
+there is no active target language. After confirmation it revalidates the
+captured target language, file object, file path, editor range, and exact
+original text. A changed target or unusable stale range therefore cancels the
+replacement instead of searching for a similar target elsewhere.
+
+Dictionary persistence performs a fresh destination analysis for the actual
+write attempt. An earlier UI inspection is informational only and cannot
+authorize a later write after vault state changes.
+
+Language removal rejects a stale or missing `LanguageConfig` target and
+revalidates the exact object/name relationship around confirmation. Language
+rename similarly checks that the selected language still has the captured old
+name after its asynchronous confirmation and then recalculates the authoritative
+rename plan immediately before mutation.
+
+Canonical source changes and language-root repair pass through their
+specialized source/root authority planners and transactions. Invalid,
+conflicting, missing, unrelated, or structurally unsafe source/root targets
+block rather than broadening the requested scope.
 
 ### Broad Operations
 
-Require stronger safeguards for folder-wide or vault-wide mutation.
+No current production operation performs a broad rewrite of creator-authored
+notes across a folder, language, multiple languages, or the entire vault.
+
+The structurally broadest current creator-visible operation is language-root
+rename, but its filesystem authority is restricted to moving one already-owned
+root as an existing vault object. Workbench does not enumerate and regenerate
+the notes beneath that root.
+
+Language-root repair is likewise structural rather than a bulk content rewrite.
+The complete repair plan is calculated before mutation, another configured
+language may not reserve the target root, an unrelated existing root cannot be
+silently adopted, and a non-folder object at any required standard direct-child
+path blocks the repair before folder creation begins. Missing approved folders
+are created additively; unrelated and nested creator folders are ignored and
+preserved.
+
+Removal is broader than an ordinary settings toggle because it removes one
+language configuration, so it requires an explicit destructive confirmation.
+That confirmation clearly distinguishes configuration removal from creator-file
+deletion.
+
+A future folder-wide, language-wide, multi-language, or vault-wide source
+mutation would require a new scope review with safeguards proportionate to that
+larger blast radius. This Pass does not authorize future bulk mutation merely
+because current narrow operations have been reviewed.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
