@@ -706,7 +706,38 @@ longer apply.
 
 ### Findings
 
-None recorded yet.
+#### DS-005-H1 — Retained source diagnostics are not persistently exposed to the creator
+
+- **Severity:** Medium
+- **Impact radius:** Note
+- **Status:** Open
+
+Workbench already preserves recognized malformed linguistic sources through
+Workbench-owned source identity and `WorkbenchSourceRecord` objects. A source
+that cannot safely become a complete feature object can therefore remain known
+with its path, Workbench identity, and structured diagnostics instead of being
+silently converted into invented linguistic data or rewritten on disk.
+
+Those retained diagnostics are not currently exposed through a persistent
+creator-facing diagnostic surface. The existing language-source diagnostics
+modal reports canonical source-configuration and preflight problems, but the
+diagnostics retained by dictionary, morpheme, phonology, and
+linguistic-example source records are not aggregated for creator inspection.
+A malformed source can therefore remain safely preserved while the creator
+lacks a durable Workbench explanation of why it was rejected or only partially
+interpreted.
+
+The same unfinished diagnostic boundary affects semantic relationships that
+cannot be validated by an individual source parser. For example, a
+phonological realization with a malformed or missing `unit_id` is already
+retained with a parser diagnostic, while a structurally valid `unit_id` that
+does not resolve to a loaded canonical unit is deliberately preserved and
+indexed without a corresponding unresolved-reference diagnostic.
+
+This is a diagnosability and repairability finding, not evidence of creator-data
+destruction. Current source interpretation does not authorize rewriting the
+malformed note, and recognized malformed records are deliberately retained so
+they can be reparsed after creator repair.
 
 ### Status
 
@@ -1277,6 +1308,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Open                    | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed sources retain Workbench identity and structured diagnostics, but those diagnostics are not persistently exposed to the creator; structurally valid unresolved phonology references likewise lack a relationship diagnostic. | Data Safety §5; `WorkbenchSourceRecord` diagnostic model; dictionary, morpheme, phonology, and linguistic-example source adapters and inventory loaders; source-diagnostics UI trace; malformed-source parser regressions | Preserve the existing non-destructive source-record model and add a persistent creator-facing diagnostic layer that aggregates retained source diagnostics and semantic relationship diagnostics without granting authority to rewrite creator-authored source data. |
 | DS-002-H1   | Data Safety §2 / generated dictionary frontmatter                 | Remediated and verified | Medium    | Note; newly generated lexical-entry frontmatter                                                        | Generated dictionary templates directly interpolated creator/workflow strings into YAML, so accepted YAML-significant linguistic text could become malformed or acquire the wrong parsed value/type. | Data Safety §2; real Obsidian `stringifyYaml()` / `parseYaml()` characterization; `test:markdown-note-renderer`; dictionary writer and translation-repair regressions; production build; lint baseline | Generated semantic frontmatter now passes through a representation-only renderer using Obsidian `stringifyYaml()`. The four creation flows retain separate semantic authority, intentionally blank fields remain blank placeholders, and existing destination/overwrite protections are unchanged. |
 | SEC-004-H9  | Security §4 / query interpretation                             | Remediated and verified | Hardening | Explicit selected query only; no source mutation                                                                                         | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query, including loss of Unicode combining marks.                                                                        | Security Audit SEC-004-H9; `test:lookup-query`; runtime phrase, rejection, and Unicode-equivalence verification                                                                                                                     | Lookup now establishes lexical authority before searching and rejects unsafe internal material rather than deleting it. Creator-authored source text remains unchanged.                                                                                                                                                                                      |
 | SEC-004-H10 | Security §4 / lexical range scanning                           | Remediated and verified | Hardening | Cursor/hover lexical range; indirect mutation relevance where cursor-derived ranges feed mutation-capable commands                       | UTF-16 code-unit scanning could split valid supplementary-plane Unicode letters and produce an incorrect lexical range.                                                                                              | Security Audit SEC-004-H10; `test:word-scan`; production build; runtime verification of complete `var𐐀u` cursor lookup and Reading View hover                                                                                       | Shared scanning now iterates complete Unicode code points while preserving UTF-16 coordinates required by editor and DOM APIs. Creator-authored text is not normalized or rewritten, and existing lexical-boundary semantics remain unchanged.                                                                                                               |
