@@ -440,33 +440,113 @@ Verification included:
 
 ### Read Behavior
 
-Determine how frontmatter is read and represented internally.
+Existing creator-authored frontmatter is read through Obsidian's metadata cache
+and passed to feature-specific source adapters. Dictionary, morpheme,
+phonology, linguistic-example, and Language Profile adapters interpret that
+cached representation into runtime objects without modifying the source note.
+
+Those adapters may normalize values for runtime use, select the first usable
+supported compatibility alias, derive a fallback such as a lexical headword or
+morpheme form from the filename, or retain a recognized malformed source with
+diagnostics. These are interpretation decisions only. The normalized runtime
+representation is not serialized back over the creator's existing
+frontmatter.
+
+Unsupported or malformed values therefore remain in the Markdown as authored
+even when Workbench cannot use them. Depending on the feature and field,
+Workbench may leave the value uninterpreted, report a diagnostic, reject the
+source from a clean feature index, or continue to a documented compatibility
+fallback.
 
 ### Write Behavior
 
-Inventory any code that writes or rewrites frontmatter.
+The production TypeScript source was searched for existing-note frontmatter
+mutation APIs and equivalent vault mutation paths. No current production path
+uses `processFrontMatter()`, `Vault.modify()`, `Vault.append()`, or another
+read-modify-write operation to replace existing frontmatter.
+
+The representation-only `renderMarkdownNote()` boundary reviewed in Data
+Safety §2 is used when constructing new dictionary-entry notes. It is not an
+existing-note frontmatter rewrite mechanism.
+
+Other current mutation authorities do not create a hidden frontmatter
+round-trip. Dictionary persistence creates a new file through the dedicated
+writer, folder establishment creates folders, language-root movement uses
+Obsidian's file rename operation, and translation commit replaces an explicitly
+authorized editor range. None reads cached frontmatter into a normalized object
+and then writes that object back over the existing YAML block.
 
 ### Existing Keys
 
-Verify whether unrelated existing fields survive a rewrite.
+Because Workbench does not currently serialize parsed frontmatter back over an
+existing note, unrelated existing keys are not removed merely because a source
+adapter does not understand or expose them in its runtime model.
+
+This is preservation by non-mutation, not a claim that Workbench has a generic
+lossless YAML round-trip serializer. A field may be absent from a
+feature-facing runtime object while remaining intact in the creator-authored
+Markdown.
+
+Detailed review of unknown, future, and third-party metadata is retained for
+Data Safety §4 rather than treating runtime-model coverage as ownership of
+those fields.
 
 ### Ordering and Formatting
 
-Document whether rewriting changes formatting, comments, quoting, or key order
-and whether that matters to users.
+Current Workbench frontmatter reads do not rewrite the original YAML text.
+Consequently, Workbench does not currently reorder existing keys, normalize
+their quoting, remove YAML comments, or reformat existing frontmatter as a
+side effect of interpreting it.
+
+This conclusion depends on the absence of an existing-frontmatter rewrite
+path. It does not assume that Obsidian's parsed metadata-cache representation
+retains comments, original quoting, whitespace, or key-layout information.
+Future template editing or other frontmatter mutation features will require a
+new preservation review before they may rely on parse-and-reserialize behavior.
 
 ### Explicit Values
 
-Ensure explicit metadata is not silently replaced merely because folder or
-profile defaults disagree.
+Language membership has two deliberate runtime authority policies.
+
+The default and recommended `folder` policy treats each configured canonical
+source folder as the authority for runtime language membership. If a note has
+no usable `language:` value, the configured language can therefore supply the
+runtime membership without writing inferred metadata into the note. If an
+existing `language:` value disagrees with the configured folder, folder mode
+uses the configured language at runtime while leaving the contradictory
+creator-authored value unchanged on disk. The settings UI describes this
+policy explicitly.
+
+The `respect-explicit` compatibility policy preserves the older behavior. When
+both the configured language and an explicit `language:` value exist and
+disagree, the source is rejected from that configured language rather than
+silently relabeled.
+
+Morpheme, phonology, and linguistic-example inventories also receive the stable
+Language Profile ID associated with their configured source when available.
+A missing `language_id` may inherit that ID in the runtime object. If both the
+configured source and the note provide nonblank IDs and they disagree, the
+source is rejected rather than having its explicit ID replaced.
+
+Language Profile loading itself is read-only. Profile validation requires the
+configured path to resolve to a readable Markdown `language-profile` with
+nonblank `language_id` and `language` fields, but does not rewrite those fields
+or require the profile's display-language value to equal the settings display
+name.
+
+Regression verification included the shared language-membership policy,
+dictionary language scoping, frontmatter parsing, and persisted-settings
+decoder behavior. The closed-choice persisted membership setting normalizes an
+unsupported value to the known `folder` default rather than introducing an
+undefined third authority policy.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
