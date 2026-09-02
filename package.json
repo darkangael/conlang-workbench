@@ -19,6 +19,7 @@
     "test:source-diagnostics": "node scripts/test-source-diagnostics.mjs",
     "test:source-language-authority": "node scripts/test-source-language-authority.mjs",
     "test:language-source-watch": "node scripts/test-language-source-watch.mjs",
+    "test:language-runtime": "node scripts/test-language-runtime.mjs",
     "test:word-scan": "node scripts/test-word-scan.mjs",
     "test:settings-validation": "node scripts/test-settings-validation.mjs",
     "test:persisted-settings-decoder": "node scripts/test-persisted-settings-decoder.mjs",

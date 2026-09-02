@@ -2022,18 +2022,16 @@ export class TranslationPanelView extends ItemView {
   /**
    * Build the container for the standalone linguistic example browser.
    *
-   * The panel only provides the host element and passes the already-loaded
-   * shared inventory into the feature-specific tab renderer.
+   * The panel only provides the host element and plugin runtime owner. The
+   * feature tab resolves the currently committed example inventory when it
+   * renders, so an atomic runtime swap cannot leave the tab on stale data.
    */
   private buildExampleTab() {
     this.exampleEl = this.tabContentEl.createDiv({
       cls: "conlang-example-tab conlang-hidden",
     });
 
-    this.exampleTab = new LinguisticExampleTab(
-      this.app,
-      this.plugin.linguisticExamples,
-    );
+    this.exampleTab = new LinguisticExampleTab(this.plugin);
 
     this.exampleTab.render(this.exampleEl);
   }

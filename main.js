@@ -2958,6 +2958,85 @@ function loadLanguageProfile(app, config) {
   return parseLanguageProfileFrontmatter(abstractFile.path, cache.frontmatter);
 }
 
+// language-runtime.ts
+async function prepareLanguageRuntime(request) {
+  const profiles = /* @__PURE__ */ new Map();
+  for (const lang of request.activeLanguages) {
+    const profile = loadLanguageProfile(request.app, lang);
+    if (profile) {
+      profiles.set(lang.name, profile);
+    }
+  }
+  const dictionary = new Dictionary(request.app);
+  const morphemes = new MorphemeInventory(request.app);
+  const linguisticExamples = new LinguisticExampleInventory(request.app);
+  const phonology = new PhonologyInventory(request.app);
+  dictionary.setCaseSensitive(request.caseSensitiveMatching);
+  if (request.activeLanguages.length === 0) {
+    return {
+      profiles,
+      dictionary,
+      morphemes,
+      linguisticExamples,
+      phonology,
+      dictionaryCount: 0
+    };
+  }
+  const profileId = (lang) => {
+    var _a;
+    return (_a = profiles.get(lang.name)) == null ? void 0 : _a.id;
+  };
+  const dictionaryCount = await dictionary.loadFromFolders(
+    request.activeLanguages.map((lang) => ({
+      folder: lang.dictionaryFolder,
+      language: lang.name,
+      languageId: profileId(lang)
+    })),
+    request.languageMembership
+  );
+  await morphemes.loadFromFolders(
+    request.activeLanguages.filter((lang) => {
+      var _a;
+      return Boolean((_a = lang.morphemeFolder) == null ? void 0 : _a.trim());
+    }).map((lang) => ({
+      folder: lang.morphemeFolder.trim(),
+      language: lang.name,
+      languageId: profileId(lang)
+    })),
+    request.languageMembership
+  );
+  await linguisticExamples.loadFromFolders(
+    request.activeLanguages.filter((lang) => {
+      var _a;
+      return Boolean((_a = lang.exampleFolder) == null ? void 0 : _a.trim());
+    }).map((lang) => ({
+      folder: lang.exampleFolder.trim(),
+      language: lang.name,
+      languageId: profileId(lang)
+    })),
+    request.languageMembership
+  );
+  await phonology.loadFromFolders(
+    request.activeLanguages.filter((lang) => {
+      var _a;
+      return Boolean((_a = lang.phonologyFolder) == null ? void 0 : _a.trim());
+    }).map((lang) => ({
+      folder: lang.phonologyFolder.trim(),
+      language: lang.name,
+      languageId: profileId(lang)
+    })),
+    request.languageMembership
+  );
+  return {
+    profiles,
+    dictionary,
+    morphemes,
+    linguisticExamples,
+    phonology,
+    dictionaryCount
+  };
+}
+
 // language-source-watch.ts
 function isWatchedLanguageSourcePath(path, activeLanguages) {
   return activeLanguages.some((language) => {
@@ -6868,9 +6947,8 @@ var MorphemeTab = class {
 // linguistic-example-tab.ts
 var import_obsidian17 = require("obsidian");
 var LinguisticExampleTab = class {
-  constructor(app, inventory) {
-    this.app = app;
-    this.inventory = inventory;
+  constructor(plugin) {
+    this.plugin = plugin;
     this.searchQuery = "";
   }
   /**
@@ -6935,7 +7013,7 @@ var LinguisticExampleTab = class {
    * original wording, a gloss, the natural translation, or contextual notes.
    */
   filteredExamples() {
-    const examples = this.inventory.allExamples();
+    const examples = this.plugin.linguisticExamples.allExamples();
     const query = this.searchQuery.trim().toLocaleLowerCase();
     if (!query) return examples;
     return examples.filter((example) => {
@@ -7064,9 +7142,9 @@ var LinguisticExampleTab = class {
    * here, so the UI does not need to know anything about vault organization.
    */
   async openSourceNote(path) {
-    const file = this.app.vault.getAbstractFileByPath(path);
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof import_obsidian17.TFile)) return;
-    await this.app.workspace.getLeaf(false).openFile(file);
+    await this.plugin.app.workspace.getLeaf(false).openFile(file);
   }
 };
 
@@ -9096,17 +9174,15 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
   /**
    * Build the container for the standalone linguistic example browser.
    *
-   * The panel only provides the host element and passes the already-loaded
-   * shared inventory into the feature-specific tab renderer.
+   * The panel only provides the host element and plugin runtime owner. The
+   * feature tab resolves the currently committed example inventory when it
+   * renders, so an atomic runtime swap cannot leave the tab on stale data.
    */
   buildExampleTab() {
     this.exampleEl = this.tabContentEl.createDiv({
       cls: "conlang-example-tab conlang-hidden"
     });
-    this.exampleTab = new LinguisticExampleTab(
-      this.app,
-      this.plugin.linguisticExamples
-    );
+    this.exampleTab = new LinguisticExampleTab(this.plugin);
     this.exampleTab.render(this.exampleEl);
   }
   /**
@@ -13090,77 +13166,52 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       return { status: "blocked" };
     }
     const active = this.getActiveLanguages();
+    const candidate = await prepareLanguageRuntime({
+      app: this.app,
+      activeLanguages: active,
+      caseSensitiveMatching: this.settings.caseSensitiveMatching,
+      languageMembership: this.settings.languageMembership
+    });
+    this.commitLanguageRuntime(candidate);
+    return {
+      status: "loaded",
+      dictionaryCount: candidate.dictionaryCount
+    };
+  }
+  /**
+   * Install one completely prepared linguistic runtime.
+   *
+   * No source reads, awaits, persistence, or other fallible preparation belongs
+   * inside this method. The candidate has already finished every such step, so
+   * commit is a short synchronous replacement of runtime references.
+   *
+   * Inventories are replaced as whole objects rather than copied field by
+   * field. That preserves the internal relationships and indexes each inventory
+   * built for itself and prevents this coordinator from needing knowledge of
+   * feature-private state.
+   *
+   * languageProfiles remains a stable Map because callers may retain the map
+   * object itself. Its candidate contents are therefore copied synchronously
+   * at the same commit boundary. Classification cache entries belong to the
+   * previous runtime generation and are invalid only after the new generation
+   * becomes authoritative.
+   *
+   * FUTURE CANONICAL RUNTIME MODULES:
+   * A new active-language-dependent inventory must be added to
+   * LanguageRuntimeCandidate, prepared before this method is called, and
+   * installed here with the existing inventories. It must not introduce an
+   * awaited or progressive live-state load into reloadActiveLanguage().
+   */
+  commitLanguageRuntime(candidate) {
     this.languageProfiles.clear();
-    for (const lang of active) {
-      const profile = loadLanguageProfile(this.app, lang);
-      if (profile) {
-        this.languageProfiles.set(lang.name, profile);
-      }
+    for (const [name, profile] of candidate.profiles) {
+      this.languageProfiles.set(name, profile);
     }
-    this.dictionary.setCaseSensitive(this.settings.caseSensitiveMatching);
-    if (active.length === 0) {
-      this.dictionary.clear();
-      this.morphemes.clear();
-      this.linguisticExamples.clear();
-      this.phonology.clear();
-      this.classifyCache.clear();
-      return { status: "loaded", dictionaryCount: 0 };
-    }
-    const count = await this.dictionary.loadFromFolders(
-      active.map((l) => {
-        var _a;
-        return {
-          folder: l.dictionaryFolder,
-          language: l.name,
-          languageId: (_a = this.getLanguageProfile(l)) == null ? void 0 : _a.id
-        };
-      }),
-      this.settings.languageMembership
-    );
-    await this.morphemes.loadFromFolders(
-      active.filter((l) => {
-        var _a;
-        return Boolean((_a = l.morphemeFolder) == null ? void 0 : _a.trim());
-      }).map((l) => {
-        var _a;
-        return {
-          folder: l.morphemeFolder.trim(),
-          language: l.name,
-          languageId: (_a = this.getLanguageProfile(l)) == null ? void 0 : _a.id
-        };
-      }),
-      this.settings.languageMembership
-    );
-    await this.linguisticExamples.loadFromFolders(
-      active.filter((l) => {
-        var _a;
-        return Boolean((_a = l.exampleFolder) == null ? void 0 : _a.trim());
-      }).map((l) => {
-        var _a;
-        return {
-          folder: l.exampleFolder.trim(),
-          language: l.name,
-          languageId: (_a = this.getLanguageProfile(l)) == null ? void 0 : _a.id
-        };
-      }),
-      this.settings.languageMembership
-    );
-    await this.phonology.loadFromFolders(
-      active.filter((l) => {
-        var _a;
-        return Boolean((_a = l.phonologyFolder) == null ? void 0 : _a.trim());
-      }).map((l) => {
-        var _a;
-        return {
-          folder: l.phonologyFolder.trim(),
-          language: l.name,
-          languageId: (_a = this.getLanguageProfile(l)) == null ? void 0 : _a.id
-        };
-      }),
-      this.settings.languageMembership
-    );
+    this.dictionary = candidate.dictionary;
+    this.morphemes = candidate.morphemes;
+    this.linguisticExamples = candidate.linguisticExamples;
+    this.phonology = candidate.phonology;
     this.classifyCache.clear();
-    return { status: "loaded", dictionaryCount: count };
   }
   // === Panel management ===
   async openPanel() {

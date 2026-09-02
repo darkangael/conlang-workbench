@@ -1,8 +1,6 @@
-import { App, TFile } from "obsidian";
-import {
-  LinguisticExample,
-  LinguisticExampleInventory,
-} from "./linguistic-examples";
+import { TFile } from "obsidian";
+import type ConlangPlugin from "./main";
+import type { LinguisticExample } from "./linguistic-examples";
 
 /**
  * Owns the user interface for browsing standalone linguistic examples.
@@ -14,10 +12,7 @@ import {
 export class LinguisticExampleTab {
   private searchQuery = "";
 
-  constructor(
-    private app: App,
-    private inventory: LinguisticExampleInventory,
-  ) {}
+  constructor(private plugin: ConlangPlugin) {}
 
   /**
    * Render the complete Examples tab into the supplied container.
@@ -97,7 +92,12 @@ export class LinguisticExampleTab {
    * original wording, a gloss, the natural translation, or contextual notes.
    */
   private filteredExamples(): LinguisticExample[] {
-    const examples = this.inventory.allExamples();
+    /*
+     * Read through the plugin each time rather than retaining one inventory
+     * instance. Atomic runtime reload replaces the complete inventory object,
+     * so a long-lived tab must follow the currently committed generation.
+     */
+    const examples = this.plugin.linguisticExamples.allExamples();
     const query = this.searchQuery.trim().toLocaleLowerCase();
 
     if (!query) return examples;
@@ -291,10 +291,10 @@ export class LinguisticExampleTab {
    * here, so the UI does not need to know anything about vault organization.
    */
   private async openSourceNote(path: string): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(path);
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
 
     if (!(file instanceof TFile)) return;
 
-    await this.app.workspace.getLeaf(false).openFile(file);
+    await this.plugin.app.workspace.getLeaf(false).openFile(file);
   }
 }

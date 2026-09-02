@@ -31,6 +31,10 @@ import { MorphemeInventory } from "./morphemes";
 import { LinguisticExampleInventory } from "./linguistic-examples";
 import { PhonologyInventory } from "./phonology";
 import {
+  prepareLanguageRuntime,
+  type LanguageRuntimeCandidate,
+} from "./language-runtime";
+import {
   loadLanguageProfile,
   validateLanguageProfilePath,
 } from "./language-profile";
@@ -1347,12 +1351,8 @@ export default class ConlangPlugin extends Plugin {
     { status: "loaded"; dictionaryCount: number } | { status: "blocked" }
   > {
     /*
-     * Establish source authority before touching ANY currently loaded state.
-     *
-     * A malformed path, missing configured folder, non-folder collision, or
-     * cross-language overlap must not result in a half-cleared/half-rebuilt
-     * runtime. The existing indexes remain authoritative until a complete
-     * replacement load has passed this gate.
+     * Source preflight remains the first authority boundary. A blocked request
+     * must return before even detached runtime preparation begins.
      */
     const issues = preflightLanguageSources(
       this.settings.languages,
@@ -1369,88 +1369,71 @@ export default class ConlangPlugin extends Plugin {
       return { status: "blocked" };
     }
 
-    // With multi-active languages, this loads ALL active dictionaries
-    // into the single Dictionary index. Each entry carries its `language`
-    // field so callers can distinguish source.
     const active = this.getActiveLanguages();
 
-    // Language Profiles are canonical linguistic data stored in Markdown.
-    // Refresh the in-memory view whenever active-language data is reloaded.
+    /*
+     * Build the complete next runtime away from the live plugin.
+     *
+     * prepareLanguageRuntime() owns every asynchronous/fallible inventory load.
+     * If profile or inventory preparation throws, this method exits before
+     * commit and the previously settled live runtime remains intact.
+     *
+     * Each candidate inventory is a complete instance of its feature class.
+     * We deliberately do not flatten or reconstruct its private indexes,
+     * source records, phrase indexes, realization relationships, or other
+     * derived state here.
+     */
+    const candidate = await prepareLanguageRuntime({
+      app: this.app,
+      activeLanguages: active,
+      caseSensitiveMatching: this.settings.caseSensitiveMatching,
+      languageMembership: this.settings.languageMembership,
+    });
+
+    this.commitLanguageRuntime(candidate);
+
+    return {
+      status: "loaded",
+      dictionaryCount: candidate.dictionaryCount,
+    };
+  }
+
+  /**
+   * Install one completely prepared linguistic runtime.
+   *
+   * No source reads, awaits, persistence, or other fallible preparation belongs
+   * inside this method. The candidate has already finished every such step, so
+   * commit is a short synchronous replacement of runtime references.
+   *
+   * Inventories are replaced as whole objects rather than copied field by
+   * field. That preserves the internal relationships and indexes each inventory
+   * built for itself and prevents this coordinator from needing knowledge of
+   * feature-private state.
+   *
+   * languageProfiles remains a stable Map because callers may retain the map
+   * object itself. Its candidate contents are therefore copied synchronously
+   * at the same commit boundary. Classification cache entries belong to the
+   * previous runtime generation and are invalid only after the new generation
+   * becomes authoritative.
+   *
+   * FUTURE CANONICAL RUNTIME MODULES:
+   * A new active-language-dependent inventory must be added to
+   * LanguageRuntimeCandidate, prepared before this method is called, and
+   * installed here with the existing inventories. It must not introduce an
+   * awaited or progressive live-state load into reloadActiveLanguage().
+   */
+  private commitLanguageRuntime(candidate: LanguageRuntimeCandidate): void {
     this.languageProfiles.clear();
-    for (const lang of active) {
-      const profile = loadLanguageProfile(this.app, lang);
-      if (profile) {
-        this.languageProfiles.set(lang.name, profile);
-      }
+    for (const [name, profile] of candidate.profiles) {
+      this.languageProfiles.set(name, profile);
     }
 
-    // Index case mode is a load-time decision — set it before (re)loading.
-    this.dictionary.setCaseSensitive(this.settings.caseSensitiveMatching);
+    this.dictionary = candidate.dictionary;
+    this.morphemes = candidate.morphemes;
+    this.linguisticExamples = candidate.linguisticExamples;
+    this.phonology = candidate.phonology;
 
-    if (active.length === 0) {
-      this.dictionary.clear();
-      this.morphemes.clear();
-      this.linguisticExamples.clear();
-      this.phonology.clear();
-      this.classifyCache.clear();
-      return { status: "loaded", dictionaryCount: 0 };
-    }
-
-    const count = await this.dictionary.loadFromFolders(
-      active.map((l) => ({
-        folder: l.dictionaryFolder,
-        language: l.name,
-        languageId: this.getLanguageProfile(l)?.id,
-      })),
-      this.settings.languageMembership,
-    );
-
-    // Morphemes are loaded from their own optional canonical folders and remain
-    // separate from Dictionary. Languages without a configured morpheme folder
-    // simply contribute no morpheme source.
-    await this.morphemes.loadFromFolders(
-      active
-        .filter((l) => Boolean(l.morphemeFolder?.trim()))
-        .map((l) => ({
-          folder: l.morphemeFolder!.trim(),
-          language: l.name,
-          languageId: this.getLanguageProfile(l)?.id,
-        })),
-      this.settings.languageMembership,
-    );
-
-    // Standalone linguistic examples are loaded from their own optional canonical
-    // folders. The inventory handles parsing and validation; main.ts only supplies
-    // the configured sources for the currently active languages.
-    await this.linguisticExamples.loadFromFolders(
-      active
-        .filter((l) => Boolean(l.exampleFolder?.trim()))
-        .map((l) => ({
-          folder: l.exampleFolder!.trim(),
-          language: l.name,
-          languageId: this.getLanguageProfile(l)?.id,
-        })),
-      this.settings.languageMembership,
-    );
-
-    // Canonical phonological units are loaded from each active language's
-    // optional phonology folder. The phonology module owns parsing and indexing;
-    // main.ts only provides the configured source and canonical language identity.
-    await this.phonology.loadFromFolders(
-      active
-        .filter((l) => Boolean(l.phonologyFolder?.trim()))
-        .map((l) => ({
-          folder: l.phonologyFolder!.trim(),
-          language: l.name,
-          languageId: this.getLanguageProfile(l)?.id,
-        })),
-      this.settings.languageMembership,
-    );
-
-    // The dictionary changed, so cached word classifications are stale.
-    // Morphemes do not yet participate in classification.
     this.classifyCache.clear();
-    return { status: "loaded", dictionaryCount: count };
   }
 
   // === Panel management ===
