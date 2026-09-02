@@ -137,6 +137,12 @@ export interface DictionaryEntry {
   etymology?: string;
   notes?: string;
   language?: string;
+  // Stable identity of the owning canonical Language Profile when available.
+  //
+  // This is separate from lexical identity (`lexeme_id`). Legacy lexical notes
+  // may omit `language_id`; a configured language can supply this value to the
+  // runtime object without rewriting creator-authored Markdown.
+  languageId?: string;
   // File modification time, used for "recently added" sorting in the browser
   mtime?: number;
   // For proper-noun entries: what category of named thing (character, place,
@@ -257,6 +263,24 @@ export interface LanguageConfig {
   sheets: CypherSheet[];
   // If true, hovering a recognised conlang word shows its English definition
   hoverEnabled: boolean;
+
+  /**
+   * Controls automatic portable linguistic-ID generation for FUTURE notes
+   * created for this language.
+   *
+   * This field is optional so settings written before portable IDs existed
+   * remain valid. A missing value behaves like false for automatic generation.
+   *
+   * This preference does not control whether Workbench recognizes IDs already
+   * present in creator-authored sources. Existing IDs remain creator data and
+   * are honored regardless of this setting.
+   *
+   * Changing this preference never authorizes rewriting existing notes.
+   * Creator-requested backfill is a separate existing-note mutation operation
+   * with its own authority and preservation requirements.
+   */
+  includePortableIds?: boolean;
+
   // Optional morphological rules used when a direct dictionary lookup misses.
   // Tried in order; first match wins.
   inflections?: InflectionRule[];

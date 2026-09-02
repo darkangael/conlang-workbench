@@ -186,6 +186,15 @@ function validateLanguage(
   validateRequiredString(value, "name", path, issues);
   validateRequiredString(value, "dictionaryFolder", path, issues);
   validateRequiredBoolean(value, "hoverEnabled", path, issues);
+
+  // Older persisted language configurations legitimately omit this preference.
+  // When it is present, however, require an actual boolean rather than
+  // coercing another representation into configuration that can later affect
+  // what Workbench writes into newly generated creator notes.
+  if (value.includePortableIds !== undefined) {
+    validateRequiredBoolean(value, "includePortableIds", path, issues);
+  }
+
   validateOptionalString(value, "rootFolder", path, issues);
   validateOptionalString(value, "morphemeFolder", path, issues);
   validateOptionalString(value, "exampleFolder", path, issues);

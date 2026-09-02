@@ -102,6 +102,59 @@ const older = decodePersistedSettings({
 assert.equal(older.status, "valid");
 assert.equal(older.settings.hoverModifier, "shift");
 
+// Portable linguistic IDs are an optional per-language generation policy.
+// Older language configurations may omit the field entirely. Workbench must
+// not invent a persisted value merely while decoding those settings; the
+// feature boundary treats absence as automatic generation being disabled.
+const portableIdsAbsent = decodePersistedSettings({
+  languages: [makeLanguage()],
+});
+assert.equal(portableIdsAbsent.status, "valid");
+assert.equal(
+  portableIdsAbsent.settings.languages[0].includePortableIds,
+  undefined,
+  "legacy language settings should remain valid without inventing an ID policy",
+);
+
+// Both actual boolean choices are valid creator configuration and must survive
+// decoding exactly. The setting controls FUTURE automatic ID generation only;
+// these decoder tests deliberately grant no authority to modify source notes.
+const portableIdsEnabled = decodePersistedSettings({
+  languages: [makeLanguage({ includePortableIds: true })],
+});
+assert.equal(portableIdsEnabled.status, "valid");
+assert.equal(portableIdsEnabled.settings.languages[0].includePortableIds, true);
+
+const portableIdsDisabled = decodePersistedSettings({
+  languages: [makeLanguage({ includePortableIds: false })],
+});
+assert.equal(portableIdsDisabled.status, "valid");
+assert.equal(
+  portableIdsDisabled.settings.languages[0].includePortableIds,
+  false,
+);
+
+// A representation such as the string "true" must not be coerced into an
+// authority-bearing boolean preference. Persisted structural uncertainty fails
+// closed at the exact language field.
+const malformedPortableIds = {
+  languages: [makeLanguage({ includePortableIds: "true" })],
+};
+const malformedPortableIdsSnapshot = JSON.stringify(malformedPortableIds);
+const portableIdsBlocked = decodePersistedSettings(malformedPortableIds);
+assert.equal(portableIdsBlocked.status, "blocked");
+assert.ok(
+  portableIdsBlocked.issues.some(
+    (issue) => issue.path === "settings.languages[0].includePortableIds",
+  ),
+  "malformed portable-ID policy should identify the exact language field",
+);
+assert.equal(
+  JSON.stringify(malformedPortableIds),
+  malformedPortableIdsSnapshot,
+  "rejecting a malformed portable-ID policy must not mutate persisted input",
+);
+
 // Closed-choice UI preferences retain the existing narrow normalization rule.
 const closedChoice = decodePersistedSettings({
   languageMembership: "future-mode",

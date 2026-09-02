@@ -22,6 +22,7 @@ import {
   showLanguageRenameBlocked,
 } from "./language-rename-modal";
 import { confirmDeletion } from "./delete-confirm-modal";
+import { choosePortableIdsForNewLanguage } from "./portable-id-choice-modal";
 import type { CanonicalFolderSetting } from "./language-source-state";
 import { LinguisticRuleTargetMissingError } from "./linguistic-rule-state";
 
@@ -295,11 +296,30 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             /*
-             * The plugin owns the complete H13 authority transaction. Settings
-             * handles presentation only, so no provisional language mutation
-             * can escape the shared serialization boundary through this UI.
+             * Portable linguistic IDs are recommended for new languages, but
+             * they remain a creator choice. Ask before entering the H13
+             * settings transaction so the queue is never held open while
+             * waiting for human input.
+             *
+             * The modal owns presentation only. It cannot choose a language
+             * name, inspect settings authority, or mutate the vault.
              */
-            const result = await this.plugin.createLanguageState();
+            const includePortableIds = await choosePortableIdsForNewLanguage(
+              this.app,
+            );
+
+            if (includePortableIds === null) {
+              return;
+            }
+
+            /*
+             * The plugin owns the complete H13 authority transaction. Settings
+             * passes only the already-resolved boolean choice, so no
+             * provisional language mutation can escape the shared
+             * serialization boundary through this UI.
+             */
+            const result =
+              await this.plugin.createLanguageState(includePortableIds);
 
             if (result.status === "blocked" || result.status === "failed") {
               new Notice(`Could not add "${result.name}": ${result.error}`);
@@ -1658,6 +1678,37 @@ export class ConlangSettingTab extends PluginSettingTab {
             );
             new Notice(
               `Made Up Words: could not save hover settings for "${lang.name}".`,
+            );
+            this.rerender();
+          }
+        }),
+      );
+
+    new Setting(body)
+      .setName("Portable linguistic IDs")
+      .setDesc(
+        "Include stable portable IDs in future notes generated for this language. Existing notes are never changed automatically.",
+      )
+      .addToggle((tg) =>
+        tg.setValue(lang.includePortableIds ?? false).onChange(async (v) => {
+          // This is an ordinary persisted preference. Use the same guarded
+          // settings transaction as the neighboring language preferences so a
+          // failed save cannot leave provisional in-memory state authoritative.
+          const result = await this.plugin.setPersistedSettingState(
+            () => lang.includePortableIds ?? false,
+            (next) => {
+              lang.includePortableIds = next;
+            },
+            v,
+          );
+
+          if (result.status === "save-failed") {
+            console.error(
+              `Made Up Words: failed to save portable-ID preference for "${lang.name}"`,
+              result.error,
+            );
+            new Notice(
+              `Made Up Words: could not save portable-ID settings for "${lang.name}".`,
             );
             this.rerender();
           }

@@ -89,6 +89,7 @@ try {
     new TFile("Languages/Mer/Lexicon/sense-word.md"),
     new TFile("Languages/Mer/Lexicon/ambiguous-a.md"),
     new TFile("Languages/Mer/Lexicon/ambiguous-b.md"),
+    new TFile("Languages/Mer/Lexicon/conflicting-language-id.md"),
   ];
 
   const testFiles = [
@@ -172,6 +173,14 @@ try {
       },
     ],
     [
+      "Languages/Mer/Lexicon/conflicting-language-id.md",
+      {
+        definition: "must not load under Mer",
+        language: "Mer",
+        language_id: "test-language",
+      },
+    ],
+    [
       "Languages/Unscoped/Lexicon/orphan.md",
       {
         definition: "orphan meaning",
@@ -238,15 +247,59 @@ definition: ordinary test definition
   const dictionary = new Dictionary(app);
 
   const loaded = await dictionary.loadFromFolders([
-    { folder: "Languages/Mer/Lexicon", language: "Mer" },
+    {
+      folder: "Languages/Mer/Lexicon",
+      language: "Mer",
+      languageId: "mer-language",
+    },
     {
       folder: "Languages/Test Language/Lexicon",
       language: "Test Language",
+      languageId: "test-language",
     },
     { folder: "Languages/Unscoped/Lexicon" },
   ]);
 
-  assert.equal(loaded, 9);
+  assert.equal(
+    loaded,
+    9,
+    "an explicit conflicting language_id must not enter the configured language",
+  );
+  assert.equal(
+    dictionary.lookup("conflicting-language-id"),
+    undefined,
+    "stable parent-language identity mismatch must fail closed",
+  );
+
+  // Rejection from the clean Dictionary must not erase a source that Workbench
+  // positively recognized as lexical data. Keep the parsed source available
+  // with a contextual warning so the creator can diagnose the mismatch later.
+  const conflictingSource = dictionary
+    .allSourceRecords()
+    .find(
+      (record) =>
+        record.path ===
+        "Languages/Mer/Lexicon/conflicting-language-id.md",
+    );
+
+  assert.ok(
+    conflictingSource,
+    "a recognized source rejected by language authority must remain retained",
+  );
+  assert.notEqual(
+    conflictingSource.value,
+    null,
+    "contextual rejection must not pretend a successfully parsed source is malformed",
+  );
+  assert.ok(
+    conflictingSource.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "language.id-mismatch" &&
+        diagnostic.severity === "warning" &&
+        diagnostic.field === "language_id",
+    ),
+    "the retained source should explain the stable language-ID rejection",
+  );
 
   // -------------------------------------------------------------------------
   // Runtime language assignment
@@ -259,6 +312,16 @@ definition: ordinary test definition
   assert.ok(testShared);
   assert.equal(merShared.language, "Mer");
   assert.equal(testShared.language, "Test Language");
+  assert.equal(
+    merShared.languageId,
+    "mer-language",
+    "legacy lexical notes may inherit canonical language identity in runtime",
+  );
+  assert.equal(
+    testShared.languageId,
+    "test-language",
+    "configured language identity should scope the runtime lexical object",
+  );
 
   // The source notes did not declare `language:`. These assertions therefore
   // prove that configured Lexicon membership established effective runtime

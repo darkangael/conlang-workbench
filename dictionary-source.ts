@@ -10,10 +10,7 @@ import type {
   WorkbenchDiagnostic,
   WorkbenchSourceRecord,
 } from "./workbench-source";
-import {
-  parseInflectedForms,
-  parseStringList,
-} from "./word-tokens";
+import { parseInflectedForms, parseStringList } from "./word-tokens";
 
 /**
  * Raw source information needed to interpret one possible lexical-entry note.
@@ -46,10 +43,7 @@ export interface DictionarySourceInput {
  * Failure to read creator-authored data must never become permission to create
  * another persistent entry.
  */
-export type DictionaryDefinitionComparison =
-  | "same"
-  | "different"
-  | "unknown";
+export type DictionaryDefinitionComparison = "same" | "different" | "unknown";
 
 /**
  * Which feature, if any, has enough evidence to claim a Markdown source as a
@@ -65,10 +59,7 @@ export type DictionaryDefinitionComparison =
  * - "unknown" means frontmatter itself is unavailable.
  */
 export type DictionarySourceAuthority =
-  | "lexical"
-  | "other-source"
-  | "unclaimed"
-  | "unknown";
+  "lexical" | "other-source" | "unclaimed" | "unknown";
 
 /**
  * Fields that strongly indicate a note is intended to describe a lexical
@@ -87,10 +78,7 @@ const LEXICAL_SIGNAL_FIELDS = [
   "inflections",
 ] as const;
 
-function hasOwn(
-  record: Record<string, unknown>,
-  key: string,
-): boolean {
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
   // Function.call() is typed broadly enough that ESLint sees its result as
   // `any`. Converting it explicitly to Boolean preserves the own-property
   // check while making the runtime and TypeScript return type agree.
@@ -115,13 +103,10 @@ export function classifyDictionarySourceAuthority(
 ): DictionarySourceAuthority {
   if (!frontmatter) return "unknown";
 
-  const declaredType =
-    parseNonBlankYamlString(frontmatter.type)?.toLowerCase();
+  const declaredType = parseNonBlankYamlString(frontmatter.type)?.toLowerCase();
 
   if (declaredType) {
-    return declaredType === "lexeme"
-      ? "lexical"
-      : "other-source";
+    return declaredType === "lexeme" ? "lexical" : "other-source";
   }
 
   const hasLexicalSignal = LEXICAL_SIGNAL_FIELDS.some((key) =>
@@ -149,15 +134,53 @@ function addRejectedAliasDiagnostics(
 }
 
 /**
+ * Parse one optional scalar field while preserving the dictionary's existing
+ * tolerant scalar semantics.
+ *
+ * Missing/null fields are simply absent optional metadata. A present array or
+ * object is different: Workbench cannot safely manufacture scalar text from
+ * that structure, so the clean entry keeps the field undefined while a
+ * warning preserves the reason for creator-facing diagnostics.
+ *
+ * This helper is observational only. It never changes the raw frontmatter.
+ */
+function parseOptionalScalarWithDiagnostic(
+  frontmatter: Record<string, unknown>,
+  field: string,
+  diagnostics: WorkbenchDiagnostic[],
+): string | undefined {
+  const raw = frontmatter[field];
+
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+
+  const parsed = parseYamlScalarText(raw);
+
+  if (parsed !== undefined) {
+    return parsed;
+  }
+
+  diagnostics.push({
+    code: "frontmatter.unusable-value",
+    severity: "warning",
+    field,
+    message:
+      `Frontmatter field "${field}" was present but could not be ` +
+      "interpreted as supported scalar text. The source file was not modified.",
+  });
+
+  return undefined;
+}
+
+/**
  * Read the first usable dictionary-definition alias.
  *
  * This is shared by ordinary source parsing and mutation-authority checks so
  * they cannot silently disagree about which creator-authored values count as
  * a usable definition.
  */
-function parseDictionaryDefinition(
-  frontmatter: Record<string, unknown>,
-) {
+function parseDictionaryDefinition(frontmatter: Record<string, unknown>) {
   return firstParsedFrontmatterValue(
     [
       { key: "definition", value: frontmatter.definition },
@@ -238,10 +261,7 @@ export function parseDictionarySource(
   // the first value that can actually be interpreted rather than the first
   // value that merely happens to be non-null.
   const definitionResult = parseDictionaryDefinition(fm);
-  addRejectedAliasDiagnostics(
-    diagnostics,
-    definitionResult.rejectedKeys,
-  );
+  addRejectedAliasDiagnostics(diagnostics, definitionResult.rejectedKeys);
 
   // `word` is the older Workbench name and `lemma` is the common
   // lexicographic name. If neither is usable, preserve the existing filename
@@ -257,11 +277,42 @@ export function parseDictionarySource(
 
   const word = wordResult.value ?? input.basename;
 
-  // The resolved lexical headword is a creator-facing linguistic identity.
-  // Workbench/source identity remains independently derived from source path.
+  /*
+   * Lexical identity is deliberately independent from the current surface
+   * form. A lemma may be corrected, respelled, or renamed without meaning that
+   * the creator intended to describe a different lexical object.
+   *
+   * `lexeme_id` is optional for compatibility with existing dictionaries. A
+   * legacy source without it remains fully usable under Workbench/source
+   * identity; Workbench must not manufacture a linguistic ID while reading.
+   *
+   * When the field is present but structurally unusable, retain that fact as a
+   * diagnostic rather than silently substituting the lemma or filename.
+   */
+  const lexemeId = parseOptionalScalarWithDiagnostic(
+    fm,
+    "lexeme_id",
+    diagnostics,
+  );
+  const normalizedLexemeId =
+    lexemeId !== undefined && lexemeId.trim().length > 0
+      ? lexemeId.trim()
+      : undefined;
+
+  if (lexemeId !== undefined && normalizedLexemeId === undefined) {
+    diagnostics.push({
+      code: "dictionary.lexeme.unusable-id",
+      severity: "warning",
+      field: "lexeme_id",
+      message:
+        'Frontmatter field "lexeme_id" was blank and therefore could not ' +
+        "establish portable linguistic identity. The source file was not modified.",
+    });
+  }
+
   const identity = createObsidianWorkbenchIdentity(
     input.path,
-    word,
+    normalizedLexemeId,
   );
 
   if (!definitionResult.value) {
@@ -290,10 +341,7 @@ export function parseDictionarySource(
     ],
     parseNonBlankYamlScalarText,
   );
-  addRejectedAliasDiagnostics(
-    diagnostics,
-    partOfSpeechResult.rejectedKeys,
-  );
+  addRejectedAliasDiagnostics(diagnostics, partOfSpeechResult.rejectedKeys);
 
   const nameCategoryResult = firstParsedFrontmatterValue(
     [
@@ -302,10 +350,7 @@ export function parseDictionarySource(
     ],
     parseNonBlankYamlScalarText,
   );
-  addRejectedAliasDiagnostics(
-    diagnostics,
-    nameCategoryResult.rejectedKeys,
-  );
+  addRejectedAliasDiagnostics(diagnostics, nameCategoryResult.rejectedKeys);
 
   // `forms` has deliberately richer input semantics than ordinary scalar
   // fields: lists, maps, and lists of single-key maps are all supported.
@@ -322,11 +367,25 @@ export function parseDictionarySource(
 
   // These direct optional fields preserve the dictionary's previous tolerant
   // scalar semantics. Structured values remain uninterpreted rather than being
-  // converted to implementation-generated strings.
-  const ipa = parseYamlScalarText(fm.ipa);
-  const etymology = parseYamlScalarText(fm.etymology);
-  const notes = parseYamlScalarText(fm.notes);
-  const language = parseYamlScalarText(fm.language);
+  // converted to implementation-generated strings, but they now leave a
+  // source-facing warning instead of disappearing silently from interpretation.
+  const ipa = parseOptionalScalarWithDiagnostic(fm, "ipa", diagnostics);
+  const etymology = parseOptionalScalarWithDiagnostic(
+    fm,
+    "etymology",
+    diagnostics,
+  );
+  const notes = parseOptionalScalarWithDiagnostic(fm, "notes", diagnostics);
+  const language = parseOptionalScalarWithDiagnostic(
+    fm,
+    "language",
+    diagnostics,
+  );
+  const languageId = parseOptionalScalarWithDiagnostic(
+    fm,
+    "language_id",
+    diagnostics,
+  );
 
   const parts = parseStringList(fm.parts);
   const aliases = parseStringList(fm.aliases);
@@ -335,8 +394,7 @@ export function parseDictionarySource(
   const isPhrase = /\s/.test(word);
   const wordCount = word
     .split(/\s+/)
-    .filter((piece) => piece.length > 0)
-    .length;
+    .filter((piece) => piece.length > 0).length;
 
   const entry: DictionaryEntry = {
     word,
@@ -347,6 +405,7 @@ export function parseDictionarySource(
     etymology,
     notes,
     language,
+    languageId,
     mtime: input.mtime,
     nameCategory: nameCategoryResult.value,
     isPhrase,

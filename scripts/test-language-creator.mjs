@@ -123,7 +123,7 @@ assert.deepEqual(
 {
   const { app, objects } = makeApp();
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], true);
 
   assert.equal(result.status, "created");
 
@@ -142,8 +142,23 @@ assert.deepEqual(
     exampleFolder: expected.examples,
     phonologyFolder: expected.phonology,
     hoverEnabled: true,
+    includePortableIds: true,
     sheets: [],
   });
+}
+
+/*
+ * Portable IDs are recommended, not mandatory. An explicit false choice still
+ * creates the language and is recorded on the returned configuration so later
+ * note creation has a settled per-language policy to consult.
+ */
+{
+  const { app } = makeApp();
+
+  const result = await createStandardLanguage(app, "Language 1", [], false);
+
+  assert.equal(result.status, "created");
+  assert.equal(result.language.includePortableIds, false);
 }
 
 /*
@@ -165,7 +180,7 @@ assert.deepEqual(
   const originalRoot = objects.get(expected.root);
   const originalLexicon = objects.get(expected.lexicon);
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], false);
 
   assert.equal(result.status, "blocked");
   assert.match(result.error, /Import Language/);
@@ -202,7 +217,7 @@ assert.deepEqual(
     files: [languageNote],
   });
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], false);
 
   assert.equal(result.status, "created");
   assert.ok(objects.get(languageNote) instanceof TFile);
@@ -219,7 +234,7 @@ assert.deepEqual(
     files: [expected.morphemes],
   });
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], false);
 
   assert.equal(result.status, "blocked");
   assert.match(result.error, /exists but is not a folder/);
@@ -236,7 +251,7 @@ assert.deepEqual(
     files: [expected.root],
   });
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], false);
 
   assert.equal(result.status, "blocked");
   assert.deepEqual(created, []);
@@ -249,7 +264,7 @@ assert.deepEqual(
 {
   const { app, created } = makeApp();
 
-  const result = await createStandardLanguage(app, "../Outside", []);
+  const result = await createStandardLanguage(app, "../Outside", [], false);
 
   assert.equal(result.status, "blocked");
   assert.deepEqual(created, []);
@@ -262,14 +277,19 @@ assert.deepEqual(
 {
   const { app, created } = makeApp();
 
-  const result = await createStandardLanguage(app, "Language 1", [
-    {
-      name: "Existing Language",
-      dictionaryFolder: expected.lexicon,
-      hoverEnabled: true,
-      sheets: [],
-    },
-  ]);
+  const result = await createStandardLanguage(
+    app,
+    "Language 1",
+    [
+      {
+        name: "Existing Language",
+        dictionaryFolder: expected.lexicon,
+        hoverEnabled: true,
+        sheets: [],
+      },
+    ],
+    false,
+  );
 
   assert.equal(result.status, "blocked");
   /*
@@ -295,15 +315,20 @@ assert.deepEqual(
 {
   const { app, created } = makeApp();
 
-  const result = await createStandardLanguage(app, "Language 1", [
-    {
-      name: "Existing Language",
-      rootFolder: "Languages/Existing Language",
-      dictionaryFolder: `${expected.lexicon}/Historical Dictionary`,
-      hoverEnabled: true,
-      sheets: [],
-    },
-  ]);
+  const result = await createStandardLanguage(
+    app,
+    "Language 1",
+    [
+      {
+        name: "Existing Language",
+        rootFolder: "Languages/Existing Language",
+        dictionaryFolder: `${expected.lexicon}/Historical Dictionary`,
+        hoverEnabled: true,
+        sheets: [],
+      },
+    ],
+    false,
+  );
 
   assert.equal(result.status, "blocked");
   assert.match(result.error, /lexicon folder/);
@@ -321,14 +346,19 @@ assert.deepEqual(
 {
   const { app, created } = makeApp();
 
-  const result = await createStandardLanguage(app, "Language 1", [
-    {
-      name: "Inactive Existing Language",
-      dictionaryFolder: "Languages/Language 1/Missing Lexicon",
-      hoverEnabled: true,
-      sheets: [],
-    },
-  ]);
+  const result = await createStandardLanguage(
+    app,
+    "Language 1",
+    [
+      {
+        name: "Inactive Existing Language",
+        dictionaryFolder: "Languages/Language 1/Missing Lexicon",
+        hoverEnabled: true,
+        sheets: [],
+      },
+    ],
+    false,
+  );
 
   assert.equal(result.status, "blocked");
   assert.match(result.error, /language root/i);
@@ -352,7 +382,7 @@ assert.deepEqual(
     return ordinaryCreateFolder(path);
   };
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], false);
 
   assert.equal(result.status, "failed");
   assert.match(result.error, /simulated permission failure/);
@@ -383,7 +413,7 @@ assert.deepEqual(
     return ordinaryCreateFolder(path);
   };
 
-  const result = await createStandardLanguage(app, "Language 1", []);
+  const result = await createStandardLanguage(app, "Language 1", [], false);
 
   assert.equal(result.status, "created");
   assert.ok(objects.get(expected.cyphers) instanceof TFolder);

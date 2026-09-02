@@ -781,6 +781,41 @@
   color: var(--text-normal);
 }
 
+.conlang-panel-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.conlang-panel-mode {
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.conlang-panel-mode:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conlang-panel-mode:hover:not(.is-active) {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.conlang-panel-mode.is-active {
+  color: var(--text-accent);
+  background: var(--background-secondary);
+  border-color: var(--background-modifier-border);
+}
+
 .conlang-panel-subtitle {
   font-size: 0.8em;
   color: var(--text-muted);
@@ -1148,6 +1183,96 @@
 /* Panel header actions row */
 
 .conlang-panel-header-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* ===== Creator-facing source diagnostics ===== */
+
+.conlang-diagnostics-heading {
+  margin-bottom: 12px;
+}
+
+.conlang-diagnostics-title {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.conlang-diagnostics-summary {
+  margin-top: 2px;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.conlang-diagnostic-card {
+  margin-bottom: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+
+.conlang-diagnostic-card.is-error {
+  border-left-color: var(--text-error);
+}
+
+.conlang-diagnostic-card.is-warning {
+  border-left-color: var(--color-yellow, var(--text-warning));
+}
+
+.conlang-diagnostic-card-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.conlang-diagnostic-card-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.conlang-diagnostic-card-count {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.conlang-diagnostic-card-body {
+  padding: 0 10px 10px;
+}
+
+.conlang-diagnostic-path {
+  margin-bottom: 8px;
+  font-size: 0.75em;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.conlang-diagnostic-issue {
+  padding: 7px 8px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background: var(--background-primary);
+}
+
+.conlang-diagnostic-field {
+  margin-bottom: 2px;
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.conlang-diagnostic-message {
+  color: var(--text-normal);
+  line-height: 1.35;
+}
+
+.conlang-diagnostic-actions {
   display: flex;
   gap: 6px;
   margin-top: 8px;

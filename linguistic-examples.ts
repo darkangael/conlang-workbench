@@ -1,8 +1,6 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
-import {
-  resolveLanguageMembership,
-  type LanguageMembershipMode,
-} from "./language-membership";
+import type { LanguageMembershipMode } from "./language-membership";
+import { resolveSourceLanguageAuthority } from "./source-language-authority";
 import { parseLinguisticExampleSource } from "./linguistic-example-source";
 import type { LinguisticExampleSourceInput } from "./linguistic-example-source";
 import type { WorkbenchSourceRecord } from "./workbench-source";
@@ -159,9 +157,10 @@ export class LinguisticExampleInventory {
   /**
    * Rebuild the example inventory from one or more configured folders.
    *
-   * Explicit language metadata on the note takes precedence. If the note does
-   * not declare language identity, it may inherit it from the configured
-   * source, just as the morpheme inventory does.
+   * Readable `language:` membership follows the configured membership policy,
+   * while explicit conflicting stable `language_id` identity always rejects.
+   * Missing accepted scope may inherit from the configured language in runtime
+   * only; this loader never rewrites creator-authored Markdown.
    */
   async loadFromFolders(
     sources: LinguisticExampleSource[],
@@ -194,30 +193,34 @@ export class LinguisticExampleInventory {
 
         const example = record.value;
 
-        const membership = resolveLanguageMembership(
-          source.language,
-          example.language,
+        const authority = resolveSourceLanguageAuthority({
+          configuredLanguage: source.language,
+          configuredLanguageId: source.languageId,
+          explicitLanguage: example.language,
+          explicitLanguageId: example.languageId,
           membershipMode,
-        );
-        if (!membership.accepted) continue;
+        });
 
-        if (
-          source.languageId &&
-          example.languageId &&
-          example.languageId !== source.languageId
-        ) {
+        if (!authority.accepted) {
+          // The parser successfully recognized and interpreted this example.
+          // Contextual language rejection therefore must not make the creator's
+          // source disappear from diagnostic accounting.
+          //
+          // Retain the parsed value and derive a new diagnostic array rather
+          // than mutating the parser-owned diagnostics in place. The rejected
+          // example deliberately does not enter the clean collection below.
+          this.addSourceRecord({
+            ...record,
+            diagnostics: [...record.diagnostics, authority.diagnostic],
+          });
           continue;
         }
 
-        // Assign runtime membership without rewriting source metadata.
-        example.language = membership.runtimeLanguage;
+        // Apply inherited or validated language scope to runtime state only.
+        // This does not grant authority to add or repair frontmatter fields.
+        example.language = authority.runtimeLanguage;
+        example.languageId = authority.runtimeLanguageId;
 
-        if (!example.languageId && source.languageId) {
-          example.languageId = source.languageId;
-        }
-
-        // Store the source record only after valid language filtering, matching
-        // the existing overlapping-folder behavior used by other inventories.
         this.addSourceRecord(record);
         this.all.push(example);
         count++;

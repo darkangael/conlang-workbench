@@ -1,8 +1,6 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
-import {
-  resolveLanguageMembership,
-  type LanguageMembershipMode,
-} from "./language-membership";
+import type { LanguageMembershipMode } from "./language-membership";
+import { resolveSourceLanguageAuthority } from "./source-language-authority";
 import { Morpheme } from "./types";
 import { MorphemeSourceInput, parseMorphemeSource } from "./morpheme-source";
 import { WorkbenchSourceRecord } from "./workbench-source";
@@ -150,32 +148,40 @@ export class MorphemeInventory {
         const morpheme = record.value;
 
         if (morpheme) {
-          const membership = resolveLanguageMembership(
-            source.language,
-            morpheme.language,
+          const authority = resolveSourceLanguageAuthority({
+            configuredLanguage: source.language,
+            configuredLanguageId: source.languageId,
+            explicitLanguage: morpheme.language,
+            explicitLanguageId: morpheme.languageId,
             membershipMode,
-          );
-          if (!membership.accepted) continue;
+          });
 
-          if (
-            source.languageId &&
-            morpheme.languageId &&
-            morpheme.languageId !== source.languageId
-          ) {
+          if (!authority.accepted) {
+            // The parser successfully recognized and interpreted this
+            // morpheme. Contextual rejection from this configured language
+            // therefore must not make the creator's source disappear from
+            // Workbench's diagnostic accounting.
+            //
+            // Keep the parsed value and derive a new diagnostic array rather
+            // than mutating parser-owned diagnostics in place. The rejected
+            // morpheme deliberately does not reach addMorpheme() below.
+            this.addSourceRecord({
+              ...record,
+              diagnostics: [...record.diagnostics, authority.diagnostic],
+            });
             continue;
           }
 
-          // Assign runtime membership without modifying the canonical note.
-          morpheme.language = membership.runtimeLanguage;
-
-          if (!morpheme.languageId && source.languageId) {
-            morpheme.languageId = source.languageId;
-          }
+          // Runtime language scope is contextual only. Inherited values help
+          // the in-memory inventory participate in stable language scoping but
+          // never authorize writing those values back to the canonical note.
+          morpheme.language = authority.runtimeLanguage;
+          morpheme.languageId = authority.runtimeLanguageId;
         }
 
-        // Store the source record even when it could not become a complete
-        // Morpheme. That is what keeps malformed-but-recognized user work
-        // visible to Workbench rather than silently discarding it.
+        // Store malformed recognized sources as well as accepted usable ones.
+        // Contextually rejected usable sources are retained in the rejection
+        // branch above and intentionally excluded from the clean inventory.
         this.addSourceRecord(record);
 
         if (!morpheme) continue;

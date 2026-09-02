@@ -669,40 +669,108 @@ frontmatter to contain only Workbench-owned fields.
 
 ### Wrong Types
 
-Test strings, arrays, objects, numbers, booleans, and null values in unexpected
-places.
+Malformed-value regression coverage exercises strings, arrays, objects,
+numbers, booleans, and null values at source fields whose parsers require more
+specific representations.
+
+Dictionary scalar fields now retain warnings when a present array or object
+cannot safely be interpreted as the expected scalar value. Phonology status
+parsing likewise distinguishes supported status strings from unsupported
+strings and non-string values. These diagnostics describe the unusable field
+without coercing it into invented linguistic data or rewriting the source note.
 
 ### Missing Required Fields
 
-Ensure incomplete records are skipped or diagnosed without damaging source
-notes.
+Recognized Workbench sources retain source identity even when malformed or
+incomplete data prevents them from becoming clean feature objects.
+
+Dictionary, morpheme, phonology, and linguistic-example inventories retain
+`WorkbenchSourceRecord` entries for recognized malformed sources. A parser may
+therefore return `value: null` together with structured diagnostics while the
+creator-authored Markdown remains untouched and the malformed object stays out
+of clean feature indexes.
+
+Usable sources rejected by language authority are retained similarly: their
+parsed value remains available for diagnostic interpretation, an authority
+diagnostic is appended, and the source is excluded from the clean inventory.
+The shared source-language authority boundary preserves legacy readable
+language behavior while rejecting conflicting stable `language_id` authority.
 
 ### Invalid Relationships
 
-Check behavior for missing IDs, malformed references, and impossible values.
+Relationship validation is separated from single-source parsing where the
+relationship cannot be known from one note alone.
+
+The persistent diagnostic aggregator validates structurally usable phonological
+realization `unit_id` references against the currently loaded canonical unit
+records using the same language-scoping rules as phonology lookup. An
+unresolved reference is attached to the realization source as a warning.
+Malformed realizations that cannot establish a trustworthy relationship are
+not given speculative secondary relationship diagnostics.
+
+Portable lexical identity was also corrected during this review so dictionary
+source identity no longer promotes a word/headword into `linguisticID`.
+Portable lexical identity comes only from an explicit `lexeme_id`; when absent,
+the source remains operationally identifiable through its Workbench/source
+identity without manufacturing creator-facing linguistic identity.
 
 ### Preservation
 
-Malformed data should remain available for user repair rather than being
-silently discarded from disk.
+Malformed or contextually rejected creator sources are preserved on disk and
+remain identifiable for repair and later reparsing.
+
+The diagnostic path is observational. Parser diagnostics, language-authority
+diagnostics, and supported semantic relationship diagnostics do not grant
+authority to repair, normalize, or rewrite the creator's Markdown. Clean
+feature indexes consume only accepted usable objects, while recognized rejected
+sources remain represented by their `WorkbenchSourceRecord`.
+
+This preserves the distinction between source recognition and feature
+acceptance: Workbench can explain why a recognized source is unusable without
+pretending that the source became valid and without making the source disappear
+from diagnostic accounting.
 
 ### Diagnostics
 
-Record whether the user receives enough information to locate and repair the
-problem.
+Current retained source diagnostics are aggregated into a persistent
+creator-facing Diagnostics workspace in the Workbench panel.
 
-A diagnostic must not depend solely on a short-lived transient notice.
-Source-level diagnostics should remain available for as long as the underlying
-malformed source remains unresolved.
+Diagnostic groups are keyed internally by Workbench source identity and display
+the affected source path, highest severity, issue count, field when available,
+and individual diagnostic messages. Error-bearing groups sort before
+warning-only groups, and each card can be expanded without granting the UI any
+source-mutation authority. The creator may open the exact source note directly
+from its diagnostic card.
 
-When Workbench later provides contextual notice resurfacing, a diagnostic for a
-malformed source should be resurfaced when the user meaningfully interacts with
-the affected source note, such as opening or switching to that note. Background
-indexing, metadata refresh, vault reload, or interaction with unrelated notes
-should not repeatedly surface that warning.
+The header reports the number of affected source notes rather than the number
+of individual issues. Diagnostics remain visible for as long as they remain in
+the currently loaded source model and naturally disappear after the creator
+repairs the source and it is successfully reparsed.
 
-Correcting and reparsing the source should naturally remove diagnostics that no
-longer apply.
+A registered workspace `file-open` observer also provides the planned brief
+contextual resurfacing. Meaningfully switching to a currently diagnosed source
+shows an approximately two-second Notice with that note's diagnostic count.
+Repeated workspace activity while remaining on the same diagnosed note is
+suppressed; moving to an unaffected note resets that suppression so a later
+return may notify again. This observer reads the current diagnostic model and
+does not poll, reload, or mutate creator data.
+
+Runtime verification confirmed that the Diagnostics workspace displayed the
+expected three affected Test Language source notes, including a two-error
+malformed lexical fixture and warning-only fixtures; expandable details and
+Open note navigation resolved to the expected source. Diagnostics remained the
+visible top-level workspace while an ordinary selected editor range was
+translated through the Workbench panel, demonstrating that diagnostic
+presentation does not acquire or disable unrelated translation authority.
+Contextual Notice testing also confirmed initial notification, same-note
+suppression, no notification on an unaffected note, renewed notification after
+return, and correct singular/plural issue counts.
+
+Automatic event-driven refresh for every non-dictionary linguistic source
+folder is a separate reload/watch boundary and is not claimed as part of this
+finding's remediation. The persistent diagnostic model reviewed here describes
+the currently loaded inventory state; broader source-change watching is tracked
+for separate correction after this finding is closed.
 
 ### Findings
 
@@ -710,38 +778,36 @@ longer apply.
 
 - **Severity:** Medium
 - **Impact radius:** Note
-- **Status:** Open
+- **Status:** Remediated and verified
 
-Workbench already preserves recognized malformed linguistic sources through
-Workbench-owned source identity and `WorkbenchSourceRecord` objects. A source
-that cannot safely become a complete feature object can therefore remain known
-with its path, Workbench identity, and structured diagnostics instead of being
-silently converted into invented linguistic data or rewritten on disk.
+Workbench now preserves recognized malformed and contextually rejected
+linguistic sources in diagnostic accounting while excluding them from clean
+feature indexes. Parser diagnostics and shared language-authority diagnostics
+are retained with the recognized source, and cross-record phonology validation
+adds an unresolved-reference diagnostic when a structurally usable
+realization-to-unit relationship cannot resolve.
 
-Those retained diagnostics are not currently exposed through a persistent
-creator-facing diagnostic surface. The existing language-source diagnostics
-modal reports canonical source-configuration and preflight problems, but the
-diagnostics retained by dictionary, morpheme, phonology, and
-linguistic-example source records are not aggregated for creator inspection.
-A malformed source can therefore remain safely preserved while the creator
-lacks a durable Workbench explanation of why it was rejected or only partially
-interpreted.
+`buildSourceDiagnosticGroups()` provides a pure aggregation boundary over the
+retained source records. `DiagnosticsTab` presents those groups persistently in
+the Workbench panel with source navigation but no generic writer or repair
+authority. A separate `file-open` observer briefly resurfaces the current issue
+count when the creator meaningfully switches to an affected note and suppresses
+duplicate same-note notifications.
 
-The same unfinished diagnostic boundary affects semantic relationships that
-cannot be validated by an individual source parser. For example, a
-phonological realization with a malformed or missing `unit_id` is already
-retained with a parser diagnostic, while a structurally valid `unit_id` that
-does not resolve to a loaded canonical unit is deliberately preserved and
-indexed without a corresponding unresolved-reference diagnostic.
+Regression coverage verifies source-diagnostic aggregation, shared
+source-language authority, dictionary/morpheme/phonology/linguistic-example
+retention behavior, malformed frontmatter handling, and production build
+compatibility. Runtime testing verified the persistent Diagnostics workspace,
+source-card expansion and navigation, continued unrelated translation behavior,
+and contextual affected-note notifications.
 
-This is a diagnosability and repairability finding, not evidence of creator-data
-destruction. Current source interpretation does not authorize rewriting the
-malformed note, and recognized malformed records are deliberately retained so
-they can be reparsed after creator repair.
+The remediation remains non-destructive: it explains malformed, rejected, and
+supported unresolved source relationships without rewriting creator-authored
+source data.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
@@ -1308,7 +1374,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Open                    | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed sources retain Workbench identity and structured diagnostics, but those diagnostics are not persistently exposed to the creator; structurally valid unresolved phonology references likewise lack a relationship diagnostic. | Data Safety §5; `WorkbenchSourceRecord` diagnostic model; dictionary, morpheme, phonology, and linguistic-example source adapters and inventory loaders; source-diagnostics UI trace; malformed-source parser regressions | Preserve the existing non-destructive source-record model and add a persistent creator-facing diagnostic layer that aggregates retained source diagnostics and semantic relationship diagnostics without granting authority to rewrite creator-authored source data. |
+| DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Remediated and verified | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed and contextually rejected linguistic sources remain in diagnostic accounting while excluded from clean feature indexes; retained parser/authority diagnostics and supported unresolved phonology relationships are now persistently exposed to the creator without source rewrite authority. | Data Safety §5; `WorkbenchSourceRecord`; `source-language-authority.ts`; `source-diagnostics.ts`; `diagnostics-tab.ts`; dictionary, morpheme, phonology, and linguistic-example language-scope regressions; `test:source-diagnostics`; `test:frontmatter`; production build; Diagnostics and affected-note Notice runtime verification | Remediated: retain rejected recognized sources, aggregate parser/authority/relationship diagnostics through a pure observational boundary, expose them in the persistent Diagnostics workspace, and briefly resurface current diagnostics on meaningful affected-note navigation without granting repair or rewrite authority. |
 | DS-002-H1   | Data Safety §2 / generated dictionary frontmatter                 | Remediated and verified | Medium    | Note; newly generated lexical-entry frontmatter                                                        | Generated dictionary templates directly interpolated creator/workflow strings into YAML, so accepted YAML-significant linguistic text could become malformed or acquire the wrong parsed value/type. | Data Safety §2; real Obsidian `stringifyYaml()` / `parseYaml()` characterization; `test:markdown-note-renderer`; dictionary writer and translation-repair regressions; production build; lint baseline | Generated semantic frontmatter now passes through a representation-only renderer using Obsidian `stringifyYaml()`. The four creation flows retain separate semantic authority, intentionally blank fields remain blank placeholders, and existing destination/overwrite protections are unchanged. |
 | SEC-004-H9  | Security §4 / query interpretation                             | Remediated and verified | Hardening | Explicit selected query only; no source mutation                                                                                         | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query, including loss of Unicode combining marks.                                                                        | Security Audit SEC-004-H9; `test:lookup-query`; runtime phrase, rejection, and Unicode-equivalence verification                                                                                                                     | Lookup now establishes lexical authority before searching and rejects unsafe internal material rather than deleting it. Creator-authored source text remains unchanged.                                                                                                                                                                                      |
 | SEC-004-H10 | Security §4 / lexical range scanning                           | Remediated and verified | Hardening | Cursor/hover lexical range; indirect mutation relevance where cursor-derived ranges feed mutation-capable commands                       | UTF-16 code-unit scanning could split valid supplementary-plane Unicode letters and produce an incorrect lexical range.                                                                                              | Security Audit SEC-004-H10; `test:word-scan`; production build; runtime verification of complete `var𐐀u` cursor lookup and Reading View hover                                                                                       | Shared scanning now iterates complete Unicode code points while preserving UTF-16 coordinates required by editor and DOM APIs. Creator-authored text is not normalized or rewritten, and existing lexical-boundary semantics remain unchanged.                                                                                                               |

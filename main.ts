@@ -133,6 +133,10 @@ import {
   type LanguageRemovalStateResult,
 } from "./language-removal-state";
 import { ensureVaultFolderStrict } from "./vault-folder-writer";
+import {
+  buildSourceDiagnosticGroups,
+  type SourceDiagnosticGroup,
+} from "./source-diagnostics";
 import { EditorView } from "@codemirror/view";
 
 export default class ConlangPlugin extends Plugin {
@@ -208,6 +212,20 @@ export default class ConlangPlugin extends Plugin {
   // settings change so the mousemove fast-path is a single boolean check.
   private hoverActive = false;
 
+  /**
+   * Remember which diagnosed source note most recently produced the brief
+   * navigation Notice.
+   *
+   * This is suppression state only, not diagnostic authority. The actual
+   * answer to "does this note currently have diagnostics?" is derived fresh
+   * from getSourceDiagnostics() whenever the workspace reports a file switch.
+   *
+   * Resetting this value after the user moves to an unaffected note means that
+   * returning to the diagnosed note later is a new meaningful visit and may
+   * notify again.
+   */
+  private lastNotifiedDiagnosticPath: string | null = null;
+
   async onload() {
     await this.loadSettings();
     this.dictionary = new Dictionary(this.app);
@@ -246,6 +264,21 @@ export default class ConlangPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.maybeReloadForPath(file.path);
         this.maybeReloadForPath(oldPath);
+      }),
+    );
+
+    /*
+     * Diagnostics remain observational even when the creator navigates outside
+     * the Diagnostics workspace. A file-open event is the narrow workspace
+     * boundary for noticing a meaningful switch to another source note.
+     *
+     * Repeated workspace events for the same diagnosed note are suppressed by
+     * maybeNotifyForDiagnosticFile(); no polling, reload, or source mutation is
+     * performed here.
+     */
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        this.maybeNotifyForDiagnosticFile(file);
       }),
     );
 
@@ -550,12 +583,28 @@ export default class ConlangPlugin extends Plugin {
    * and exact-object rollback prevents another settings transaction from
    * observing or overwriting provisional new-language state.
    */
-  async createLanguageState(): Promise<LanguageCreationStateResult> {
+  async createLanguageState(
+    includePortableIds: boolean,
+  ): Promise<LanguageCreationStateResult> {
+    /*
+     * The creator may choose the initial portable-ID policy before this method
+     * is called, but that choice grants no authority over the generated name,
+     * vault destination, or configured-language collection.
+     *
+     * H13 still enters the common settings queue before those authoritative
+     * values are inspected. The already-resolved boolean is merely carried
+     * through the transaction into the exact LanguageConfig created by H5.
+     */
     return this.settingsAuthorityQueue.run(() =>
       applyLanguageCreationState({
         state: this.settings,
         create: (name, existingLanguages) =>
-          createStandardLanguage(this.app, name, existingLanguages),
+          createStandardLanguage(
+            this.app,
+            name,
+            existingLanguages,
+            includePortableIds,
+          ),
         save: () => this.saveSettings(),
       }),
     );
@@ -1189,6 +1238,88 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
+   * Briefly tell the creator when they meaningfully switch to a source note
+   * that currently has Workbench diagnostics.
+   *
+   * The current diagnostic model remains authoritative. This method only reads
+   * that model and displays a Notice; it cannot edit the source note, change an
+   * inventory, or repair malformed data.
+   *
+   * `file-open` can be emitted more than once while workspace state settles.
+   * Remembering the currently notified diagnosed path prevents repeated Notices
+   * for those duplicate events. Moving to any unaffected file clears that
+   * suppression state so a later return to the diagnosed source is meaningful
+   * again.
+   */
+  private maybeNotifyForDiagnosticFile(file: TFile | null): void {
+    if (!(file instanceof TFile)) {
+      this.lastNotifiedDiagnosticPath = null;
+      return;
+    }
+
+    const group = this.getSourceDiagnostics().find(
+      (candidate) => candidate.path === file.path,
+    );
+
+    if (!group) {
+      this.lastNotifiedDiagnosticPath = null;
+      return;
+    }
+
+    if (this.lastNotifiedDiagnosticPath === file.path) {
+      return;
+    }
+
+    this.lastNotifiedDiagnosticPath = file.path;
+
+    const issueCount = group.diagnostics.length;
+    const diagnosticLabel =
+      issueCount === 1 ? "diagnostic" : "diagnostics";
+
+    new Notice(
+      `Conlang Workbench: ${file.name} has ${issueCount} ${diagnosticLabel}.`,
+      2000,
+    );
+  }
+
+  /**
+   * Return the current creator-facing diagnostics for recognized linguistic
+   * source notes.
+   *
+   * Each inventory remains responsible for recognizing and parsing its own
+   * source type. This accessor merely gathers the already-established source
+   * records and passes them to the pure diagnostic aggregator.
+   *
+   * Phonology records are supplied twice on purpose:
+   * - once in `records`, so parser/authority diagnostics become ordinary cards;
+   * - once in their specialized arrays, so source-diagnostics.ts can validate
+   *   realization -> unit relationships.
+   *
+   * The aggregator deduplicates repeated diagnostics by Workbench source
+   * identity. Nothing in this method grants authority to edit creator files.
+   */
+  getSourceDiagnostics(): SourceDiagnosticGroup[] {
+    const dictionaryRecords = this.dictionary.allSourceRecords();
+    const morphemeRecords = this.morphemes.allSourceRecords();
+    const exampleRecords = this.linguisticExamples.allSourceRecords();
+    const phonologyUnitRecords = this.phonology.allUnitSourceRecords();
+    const phonologyRealizationRecords =
+      this.phonology.allRealizationSourceRecords();
+
+    return buildSourceDiagnosticGroups({
+      records: [
+        ...dictionaryRecords,
+        ...morphemeRecords,
+        ...exampleRecords,
+        ...phonologyUnitRecords,
+        ...phonologyRealizationRecords,
+      ],
+      phonologyUnitRecords,
+      phonologyRealizationRecords,
+    });
+  }
+
+  /**
    * Reload linguistic runtime state only from settled settings authority.
    *
    * H13 transactions temporarily install requested settings while persistence,
@@ -1264,7 +1395,11 @@ export default class ConlangPlugin extends Plugin {
     }
 
     const count = await this.dictionary.loadFromFolders(
-      active.map((l) => ({ folder: l.dictionaryFolder, language: l.name })),
+      active.map((l) => ({
+        folder: l.dictionaryFolder,
+        language: l.name,
+        languageId: this.getLanguageProfile(l)?.id,
+      })),
       this.settings.languageMembership,
     );
 
@@ -1881,6 +2016,7 @@ export default class ConlangPlugin extends Plugin {
 
     const created: string[] = [];
     const errors: string[] = [];
+    let portableIdsOmitted = 0;
     let firstPath: string | null = null;
     for (const target of result.targets) {
       const lang = langs.find((l) => l.name === target.languageName);
@@ -1895,6 +2031,7 @@ export default class ConlangPlugin extends Plugin {
         created.push(
           `${target.form} (${lang.name}${r.created ? "" : ", existing"})`,
         );
+        if (r.portableIdOmitted) portableIdsOmitted += 1;
         if (!firstPath) firstPath = r.path;
       } else {
         errors.push(`${lang.name}: ${r.error}`);
@@ -1906,15 +2043,20 @@ export default class ConlangPlugin extends Plugin {
       if (f instanceof TFile)
         await this.app.workspace.getLeaf(false).openFile(f);
     }
+    const portableIdNote =
+      portableIdsOmitted > 0
+        ? ` Portable lexeme ${portableIdsOmitted === 1 ? "ID was" : "IDs were"} omitted from ${portableIdsOmitted} ${portableIdsOmitted === 1 ? "entry" : "entries"} because ID generation is not compatible with this environment; ${portableIdsOmitted === 1 ? "it can" : "they can"} be added later with portable-ID backfill.`
+        : "";
+
     if (errors.length > 0) {
       new Notice(
-        `Made Up Words: ${created.length} saved, ${errors.length} failed — ${errors.join("; ")}`,
+        `Made Up Words: ${created.length} saved, ${errors.length} failed — ${errors.join("; ")}${portableIdNote}`,
         9000,
       );
     } else {
       new Notice(
-        `Made Up Words: saved ${created.length} ${created.length === 1 ? "entry" : "entries"}`,
-        5000,
+        `Made Up Words: saved ${created.length} ${created.length === 1 ? "entry" : "entries"}.${portableIdNote}`,
+        portableIdsOmitted > 0 ? 9000 : 5000,
       );
     }
   }
@@ -1934,7 +2076,13 @@ export default class ConlangPlugin extends Plugin {
     conlangForm: string;
     partOfSpeech: string;
   }): Promise<
-    { ok: true; created: boolean; path: string } | { ok: false; error: string }
+    | {
+        ok: true;
+        created: boolean;
+        path: string;
+        portableIdOmitted: boolean;
+      }
+    | { ok: false; error: string }
   > {
     const form = p.conlangForm.trim();
     if (!form) return { ok: false, error: "empty conlang form" };
@@ -1945,15 +2093,17 @@ export default class ConlangPlugin extends Plugin {
       definition: p.englishText,
       partOfSpeech: p.partOfSpeech,
       dictionaryFolder: p.lang.dictionaryFolder,
+      includePortableIds: p.lang.includePortableIds ?? false,
 
       // The writer decides whether a same-spelling lexical source requires a
       // homograph. This creation flow retains authority over exactly which
       // metadata and body belong to its note; the shared renderer only encodes
       // those already-decided values safely as YAML + Markdown.
-      buildContent: ({ wordOverride }) =>
+      buildContent: ({ wordOverride, lexemeId }) =>
         renderMarkdownNote({
           frontmatter: {
             ...(wordOverride ? { word: form } : {}),
+            ...(lexemeId ? { lexeme_id: lexemeId } : {}),
             definition: p.englishText,
             language: p.lang.name,
             ...(p.partOfSpeech ? { partOfSpeech: p.partOfSpeech } : {}),
@@ -1973,11 +2123,22 @@ export default class ConlangPlugin extends Plugin {
 
     if (result.status === "created") {
       await this.waitForFrontmatter(result.file);
-      return { ok: true, created: true, path: result.path };
+
+      return {
+        ok: true,
+        created: true,
+        path: result.path,
+        portableIdOmitted: result.portableIdOmitted,
+      };
     }
 
     if (result.status === "existing") {
-      return { ok: true, created: false, path: result.path };
+      return {
+        ok: true,
+        created: false,
+        path: result.path,
+        portableIdOmitted: false,
+      };
     }
 
     return { ok: false, error: result.error };
@@ -2210,21 +2371,21 @@ export default class ConlangPlugin extends Plugin {
       definition: englishText,
       partOfSpeech: opts.partOfSpeech,
       dictionaryFolder: folder,
+      includePortableIds: lang.includePortableIds ?? false,
 
       // Keep this command's established linguistic/document template here.
       // Vocabulary repair retains authority over exactly which metadata and
       // explanatory body this translation workflow may create. The persistence
       // writer owns whether/where creation is safe, while the shared renderer
       // only encodes these already-authorized values as YAML + Markdown.
-      buildContent: ({ wordOverride }) =>
+      buildContent: ({ wordOverride, lexemeId }) =>
         renderMarkdownNote({
           frontmatter: {
             ...(wordOverride ? { word: translated } : {}),
+            ...(lexemeId ? { lexeme_id: lexemeId } : {}),
             definition: englishText,
             language: lang.name,
-            ...(opts.partOfSpeech
-              ? { partOfSpeech: opts.partOfSpeech }
-              : {}),
+            ...(opts.partOfSpeech ? { partOfSpeech: opts.partOfSpeech } : {}),
           },
           blankFrontmatter: opts.partOfSpeech
             ? ["ipa", "etymology"]
@@ -2273,10 +2434,16 @@ export default class ConlangPlugin extends Plugin {
       ? " as a new sense of an existing word"
       : "";
 
+    const portableIdNote = result.portableIdOmitted
+      ? " Portable lexeme ID omitted because ID generation is not compatible with this environment; it can be added later with portable-ID backfill."
+      : "";
+
     new Notice(
-      isActive
+      (isActive
         ? `Made Up Words: created "${translated}" in ${lang.name}${senseNote}`
-        : `Made Up Words: created "${translated}" in ${lang.name}${senseNote} (inactive — activate it to see hover/highlight)`,
+        : `Made Up Words: created "${translated}" in ${lang.name}${senseNote} (inactive — activate it to see hover/highlight)`) +
+        portableIdNote,
+      result.portableIdOmitted ? 9000 : undefined,
     );
   }
 
@@ -2322,10 +2489,15 @@ export default class ConlangPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(writeResult.file);
     await this.afterEntriesChanged();
 
+    const portableIdNote = writeResult.portableIdOmitted
+      ? " Portable lexeme ID omitted because ID generation is not compatible with this environment; it can be added later with portable-ID backfill."
+      : "";
+
     new Notice(
-      writeResult.wordOverride
+      (writeResult.wordOverride
         ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word`
-        : `Conlang: added "${result.conlangWord}"`,
+        : `Conlang: added "${result.conlangWord}"`) + portableIdNote,
+      writeResult.portableIdOmitted ? 9000 : undefined,
     );
   }
 
@@ -2356,6 +2528,7 @@ export default class ConlangPlugin extends Plugin {
       definition: result.englishDefinition,
       partOfSpeech: result.partOfSpeech,
       dictionaryFolder: lang.dictionaryFolder,
+      includePortableIds: lang.includePortableIds ?? false,
 
       // The writer owns persistence safety, while this callback owns the
       // ordinary-word Markdown schema. Keeping those responsibilities separate
@@ -2364,10 +2537,11 @@ export default class ConlangPlugin extends Plugin {
       // An omitted part of speech deliberately remains a visible blank
       // `partOfSpeech:` prompt. A supplied value instead belongs to semantic
       // frontmatter and must be serialized safely as the creator's string.
-      buildContent: ({ wordOverride }) =>
+      buildContent: ({ wordOverride, lexemeId }) =>
         renderMarkdownNote({
           frontmatter: {
             ...(wordOverride ? { word: result.conlangWord } : {}),
+            ...(lexemeId ? { lexeme_id: lexemeId } : {}),
             definition: result.englishDefinition,
             language: lang.name,
             ...(result.partOfSpeech
@@ -2468,6 +2642,7 @@ export default class ConlangPlugin extends Plugin {
       // Passing it here preserves the existing "Name (place).md"-style policy.
       partOfSpeech: result.category || "name",
       dictionaryFolder: folder,
+      includePortableIds: lang.includePortableIds ?? false,
 
       // Keep Name-specific metadata and body layout in the Name command. The
       // shared writer owns only persistence safety and tells us whether the
@@ -2478,10 +2653,11 @@ export default class ConlangPlugin extends Plugin {
       // An exactly empty category preserves the existing visible
       // `nameCategory:` placeholder. Any nonempty creator value is semantic
       // frontmatter and is serialized without interpreting YAML-like text.
-      buildContent: ({ wordOverride }) =>
+      buildContent: ({ wordOverride, lexemeId }) =>
         renderMarkdownNote({
           frontmatter: {
             ...(wordOverride ? { word: result.conlangForm } : {}),
+            ...(lexemeId ? { lexeme_id: lexemeId } : {}),
             definition: referent,
             language: lang.name,
             partOfSpeech: "proper-noun",
@@ -2524,7 +2700,14 @@ export default class ConlangPlugin extends Plugin {
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
-    new Notice(`Conlang: created name "${result.conlangForm}"`);
+
+    new Notice(
+      `Conlang: created name "${result.conlangForm}"` +
+        (writeResult.portableIdOmitted
+          ? ". Portable lexeme ID omitted because ID generation is not compatible with this environment; it can be added later with portable-ID backfill."
+          : ""),
+      writeResult.portableIdOmitted ? 9000 : undefined,
+    );
   }
 
   private promptForName(): Promise<NameCreationResult | null> {

@@ -5,6 +5,7 @@ import {
 } from "./dictionary-source";
 import { joinVaultPath } from "./vault-paths";
 import { ensureVaultFolderStrict } from "./vault-folder-writer";
+import { createPortableLinguisticId } from "./portable-id";
 
 /**
  * Information supplied to the entry-specific Markdown builder.
@@ -16,6 +17,16 @@ import { ensureVaultFolderStrict } from "./vault-folder-writer";
  */
 export interface DictionaryEntryContentContext {
   wordOverride: boolean;
+
+  /**
+   * Newly generated portable lexical identity for this exact creation.
+   *
+   * This is undefined when portable IDs are disabled. The writer generates it
+   * only after fresh destination analysis has authorized a new persistent
+   * lexical source, so inspection, blocked writes, and reused existing entries
+   * never consume or manufacture linguistic identity.
+   */
+  lexemeId?: string;
 }
 
 /**
@@ -32,6 +43,14 @@ export interface DictionaryEntryWriteRequest {
   definition: string;
   partOfSpeech?: string;
   dictionaryFolder: string;
+
+  /**
+   * Whether this language wants Workbench to generate portable linguistic IDs
+   * for newly created lexical notes. This never authorizes editing an existing
+   * note or backfilling an older one.
+   */
+  includePortableIds?: boolean;
+
   buildContent: (context: DictionaryEntryContentContext) => string;
 }
 
@@ -69,6 +88,16 @@ export type DictionaryEntryWriteResult =
       path: string;
       file: TFile;
       wordOverride: boolean;
+
+      /**
+       * True only when this language requested portable IDs but the current
+       * runtime did not provide the UUID capability needed to generate one.
+       *
+       * The lexical note was still created successfully. This flag lets the
+       * UI tell the creator that the optional ID can be backfilled later
+       * without making the persistence layer responsible for notifications.
+       */
+      portableIdOmitted: boolean;
     }
   | {
       status: "existing";
@@ -378,17 +407,45 @@ export async function writeDictionaryEntry(
     wordOverride = true;
   }
 
+  /*
+   * Portable linguistic identity is attempted only after the fresh destination
+   * analysis above has established that this operation may create a new source.
+   *
+   * In particular, an existing same-meaning entry returns before reaching this
+   * point, and an unsafe collision also returns before reaching it. Generating
+   * here therefore keeps identity allocation coupled to an authorized creation
+   * attempt without performing any vault mutation.
+   *
+   * Portable identity remains optional infrastructure. If this runtime lacks
+   * randomUUID(), creation continues without lexeme_id and the successful
+   * result records that omission for the UI. An unexpected exception from an
+   * available generator is different: it fails closed before folder creation.
+   */
   let content: string;
+  let portableIdOmitted = false;
+
   try {
-    // Build before creating folders. A template/programming failure should not
-    // leave persistent directory changes behind.
-    content = request.buildContent({ wordOverride });
+    let lexemeId: string | undefined;
+
+    if (request.includePortableIds) {
+      const portableId = createPortableLinguisticId("lex");
+
+      if (portableId.status === "created") {
+        lexemeId = portableId.id;
+      } else {
+        portableIdOmitted = true;
+      }
+    }
+
+    // Build before creating folders. A template/programming failure or an
+    // unexpected ID-generation failure must not leave directory changes behind.
+    content = request.buildContent({ wordOverride, lexemeId });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
     return {
       status: "failed",
-      error: `couldn't build dictionary entry content: ${message}`,
+      error: `couldn't prepare dictionary entry content: ${message}`,
     };
   }
 
@@ -415,6 +472,7 @@ export async function writeDictionaryEntry(
       path,
       file,
       wordOverride,
+      portableIdOmitted,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

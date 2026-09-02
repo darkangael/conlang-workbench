@@ -21,6 +21,7 @@ import { DictionaryEntry, InflectedForm, LexicalSense } from "./types";
 import { MorphemeTab } from "./morpheme-tab";
 import { LinguisticExampleTab } from "./linguistic-example-tab";
 import { PhonologyTab } from "./phonology-tab";
+import { DiagnosticsTab } from "./diagnostics-tab";
 import { applyCypherReverse } from "./cypher";
 import {
   findInflection,
@@ -53,12 +54,14 @@ type TabId =
   | "morphemes"
   | "examples"
   | "phonology";
+type PanelMode = "language" | "diagnostics";
 type SortKey = "alphabetical" | "recent" | "partOfSpeech";
 type TranslatorDirection = "english-to-conlang" | "conlang-to-english";
 
 export class TranslationPanelView extends ItemView {
   private plugin: ConlangPlugin;
   private activeTab: TabId = "translate";
+  private panelMode: PanelMode = "language";
   private lastRenderedText: string = "";
   private pollHandle: number | null = null;
   private morphemeEl!: HTMLElement;
@@ -99,6 +102,11 @@ export class TranslationPanelView extends ItemView {
   private headerEl!: HTMLElement;
   private tabsEl!: HTMLElement;
   private tabContentEl!: HTMLElement;
+  // Diagnostics is a panel-level workspace rather than a linguistic
+  // feature tab. The panel owns its host container and visibility, while the
+  // dedicated DiagnosticsTab owns rendering and source-note navigation.
+  private diagnosticsEl!: HTMLElement;
+  private diagnosticsTab!: DiagnosticsTab;
 
   // Translate-tab refs
   private translateEmptyEl!: HTMLElement;
@@ -164,6 +172,7 @@ export class TranslationPanelView extends ItemView {
     this.buildMorphemeTab();
     this.buildExampleTab();
     this.buildPhonologyTab();
+    this.buildDiagnosticsWorkspace();
     this.showActiveTab();
 
     // Update Translate tab on selection change
@@ -210,6 +219,17 @@ export class TranslationPanelView extends ItemView {
     this.runTranslatorTranslation();
 
     /*
+     * Diagnostics is derived from the same settled inventory state as the
+     * feature browsers. When it is visible, rebuild it directly from current
+     * source records rather than preserving a separate cache that could become
+     * stale.
+     */
+    if (this.panelMode === "diagnostics") {
+      this.diagnosticsTab.render();
+      return;
+    }
+
+    /*
      * Feature inventories may also have changed during a language-data reload.
      * Refresh whichever modular feature tab is currently visible. Inactive tabs
      * will render from the latest inventory when the user switches to them.
@@ -232,14 +252,54 @@ export class TranslationPanelView extends ItemView {
     const activeNames = new Set(activeLangs.map((l) => l.name));
     const primary = this.plugin.getPrimaryLanguage();
 
-    const title = this.headerEl.createDiv({ cls: "conlang-panel-title" });
+    const modeRow = this.headerEl.createDiv({
+      cls: "conlang-panel-mode-row",
+    });
+
+    let languageModeLabel: string;
     if (activeLangs.length === 0) {
-      title.setText("No active language");
+      languageModeLabel = "No active language";
     } else if (activeLangs.length === 1) {
-      title.setText(`Language: ${activeLangs[0].name}`);
+      languageModeLabel = `Language: ${activeLangs[0].name}`;
     } else {
-      title.setText(`${activeLangs.length} languages active`);
+      languageModeLabel = `${activeLangs.length} languages active`;
     }
+
+    const languageMode = modeRow.createEl("button", {
+      cls:
+        "conlang-panel-mode" +
+        (this.panelMode === "language" ? " is-active" : ""),
+      text: languageModeLabel,
+    });
+    languageMode.title = "Show the language workspace.";
+    languageMode.addEventListener("click", () => {
+      if (this.panelMode === "language") return;
+
+      this.panelMode = "language";
+      this.renderHeader();
+      this.showActiveTab();
+    });
+
+    const diagnosticCount = this.plugin.getSourceDiagnostics().length;
+    const diagnosticsMode = modeRow.createEl("button", {
+      cls:
+        "conlang-panel-mode" +
+        (this.panelMode === "diagnostics" ? " is-active" : ""),
+      text: `Diagnostics (${diagnosticCount})`,
+    });
+    diagnosticsMode.title =
+      diagnosticCount === 0
+        ? "No source notes currently have diagnostics."
+        : `Show diagnostics for ${diagnosticCount} source ${
+            diagnosticCount === 1 ? "note" : "notes"
+          }.`;
+    diagnosticsMode.addEventListener("click", () => {
+      if (this.panelMode === "diagnostics") return;
+
+      this.panelMode = "diagnostics";
+      this.renderHeader();
+      this.showActiveTab();
+    });
 
     const subtitle = this.headerEl.createDiv({ cls: "conlang-panel-subtitle" });
     if (activeLangs.length > 0) {
@@ -496,6 +556,16 @@ export class TranslationPanelView extends ItemView {
     this.morphemeEl.addClass("conlang-hidden");
     this.exampleEl.addClass("conlang-hidden");
     this.phonologyEl.addClass("conlang-hidden");
+    this.diagnosticsEl.addClass("conlang-hidden");
+
+    if (this.panelMode === "diagnostics") {
+      this.tabsEl.addClass("conlang-hidden");
+      this.diagnosticsEl.removeClass("conlang-hidden");
+      this.diagnosticsTab.render();
+      return;
+    }
+
+    this.tabsEl.removeClass("conlang-hidden");
 
     if (this.activeTab === "translate") {
       // The updateTranslate method decides between empty and body visibility
@@ -575,7 +645,7 @@ export class TranslationPanelView extends ItemView {
   }
 
   private updateTranslate() {
-    if (this.activeTab !== "translate") return;
+    if (this.panelMode !== "language" || this.activeTab !== "translate") return;
 
     const text = this.readSelection();
     if (text === this.lastRenderedText) return;
@@ -1982,6 +2052,22 @@ export class TranslationPanelView extends ItemView {
 
     this.phonologyTab = new PhonologyTab(this.plugin);
     this.phonologyTab.mount(this.phonologyEl);
+  }
+
+  /**
+   * Build the host container for the top-level Diagnostics workspace.
+   *
+   * Diagnostics is deliberately not another linguistic feature tab. The panel
+   * owns placement and Language/Diagnostics mode switching; DiagnosticsTab owns
+   * the read-only diagnostic presentation inside this container.
+   */
+  private buildDiagnosticsWorkspace() {
+    this.diagnosticsEl = this.tabContentEl.createDiv({
+      cls: "conlang-diagnostics conlang-hidden",
+    });
+
+    this.diagnosticsTab = new DiagnosticsTab(this.plugin);
+    this.diagnosticsTab.mount(this.diagnosticsEl);
   }
 
   private renderBrowser() {

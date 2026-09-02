@@ -20,10 +20,8 @@
 // Body of the note can contain freeform usage notes; we include it as `notes`.
 
 import { App, TFile, TFolder, CachedMetadata } from "obsidian";
-import {
-  resolveLanguageMembership,
-  type LanguageMembershipMode,
-} from "./language-membership";
+import type { LanguageMembershipMode } from "./language-membership";
+import { resolveSourceLanguageAuthority } from "./source-language-authority";
 import { DictionaryEntry, LexicalSense } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
 import { parseLexicalSenses } from "./lexical-senses";
@@ -350,7 +348,7 @@ export class Dictionary {
    * overlap.
    */
   async loadFromFolders(
-    sources: { folder: string; language?: string }[],
+    sources: { folder: string; language?: string; languageId?: string }[],
     membershipMode: LanguageMembershipMode = "respect-explicit",
   ): Promise<number> {
     this.clear();
@@ -375,16 +373,34 @@ export class Dictionary {
 
         const entry = record.value;
 
-        const membership = resolveLanguageMembership(
-          source.language,
-          entry.language,
+        const authority = resolveSourceLanguageAuthority({
+          configuredLanguage: source.language,
+          configuredLanguageId: source.languageId,
+          explicitLanguage: entry.language,
+          explicitLanguageId: entry.languageId,
           membershipMode,
-        );
-        if (!membership.accepted) continue;
+        });
 
-        // Runtime scope follows the selected membership policy. This changes
-        // only the parsed in-memory entry; creator-authored YAML is untouched.
-        entry.language = membership.runtimeLanguage;
+        if (!authority.accepted) {
+          // The lexical source parsed successfully, so language-context
+          // rejection must not make it disappear from source-facing state.
+          //
+          // Append the contextual warning to a derived record instead of
+          // mutating parser-owned diagnostics in place. The parsed lexical
+          // value remains intact for diagnosis, but it is deliberately kept
+          // out of all clean Dictionary indexes below.
+          this.addSourceRecord({
+            ...record,
+            diagnostics: [...record.diagnostics, authority.diagnostic],
+          });
+          continue;
+        }
+
+        // Runtime language scope is contextual only. Applying these resolved
+        // values to the in-memory entry does not authorize rewriting the
+        // creator's Markdown or backfilling legacy metadata.
+        entry.language = authority.runtimeLanguage;
+        entry.languageId = authority.runtimeLanguageId;
 
         this.addSourceRecord(record);
         this.addEntry(entry);

@@ -33,11 +33,9 @@ const {
 const { createObsidianWorkbenchIdentity } =
   await importBundled("workbench-id.ts");
 
-const { parseMorphemeSource } =
-  await importBundled("morpheme-source.ts");
+const { parseMorphemeSource } = await importBundled("morpheme-source.ts");
 
-const { parsePhonologySource } =
-  await importBundled("phonology-source.ts");
+const { parsePhonologySource } = await importBundled("phonology-source.ts");
 
 const {
   classifyDictionarySourceAuthority,
@@ -45,8 +43,9 @@ const {
   parseDictionarySource,
 } = await importBundled("dictionary-source.ts");
 
-const { parseLinguisticExampleSource } =
-  await importBundled("linguistic-example-source.ts");
+const { parseLinguisticExampleSource } = await importBundled(
+  "linguistic-example-source.ts",
+);
 
 // ---------------------------------------------------------------------------
 // Shared frontmatter value boundary
@@ -72,10 +71,7 @@ assert.equal(parseNonBlankYamlString("  alpha  "), "alpha");
 assert.equal(parseNonBlankYamlString("   "), undefined);
 assert.equal(parseNonBlankYamlString(42), undefined);
 assert.equal(parseNonBlankYamlString(true), undefined);
-assert.equal(
-  parseNonBlankYamlString({ unexpected: "shape" }),
-  undefined,
-);
+assert.equal(parseNonBlankYamlString({ unexpected: "shape" }), undefined);
 
 // Nonblank scalar parsing is specifically suitable for alias recovery.
 assert.equal(parseNonBlankYamlScalarText("  alpha  "), "alpha");
@@ -204,10 +200,7 @@ assert.ok(validMorphemeRecord);
 assert.equal(validMorphemeRecord.value?.id, "plural-s");
 assert.equal(validMorphemeRecord.value?.form, "-s");
 assert.equal(validMorphemeRecord.value?.gloss, "plural");
-assert.equal(
-  validMorphemeRecord.identity.linguisticID,
-  "plural-s",
-);
+assert.equal(validMorphemeRecord.identity.linguisticID, "plural-s");
 assert.equal(validMorphemeRecord.diagnostics.length, 0);
 
 // A malformed preferred ID does not hide a valid compatibility alias.
@@ -225,10 +218,7 @@ const recoveredIdRecord = parseMorphemeSource(
 
 assert.ok(recoveredIdRecord);
 assert.equal(recoveredIdRecord.value?.id, "plural-s");
-assert.equal(
-  recoveredIdRecord.identity.linguisticID,
-  "plural-s",
-);
+assert.equal(recoveredIdRecord.identity.linguisticID, "plural-s");
 assert.ok(
   recoveredIdRecord.diagnostics.some(
     (diagnostic) =>
@@ -298,10 +288,7 @@ const missingGlossRecord = parseMorphemeSource(
 
 assert.ok(missingGlossRecord);
 assert.equal(missingGlossRecord.value, null);
-assert.equal(
-  missingGlossRecord.identity.linguisticID,
-  "plural-s",
-);
+assert.equal(missingGlossRecord.identity.linguisticID, "plural-s");
 assert.ok(
   missingGlossRecord.diagnostics.some(
     (diagnostic) =>
@@ -411,10 +398,7 @@ assert.ok(validUnitSource);
 assert.equal(validUnitSource.kind, "unit");
 assert.equal(validUnitSource.record.value?.id, "p");
 assert.equal(validUnitSource.record.value?.symbol, "/p/");
-assert.equal(
-  validUnitSource.record.identity.linguisticID,
-  "p",
-);
+assert.equal(validUnitSource.record.identity.linguisticID, "p");
 assert.equal(validUnitSource.record.diagnostics.length, 0);
 
 // Canonical realization notes are classified separately from unit notes.
@@ -429,12 +413,69 @@ const validRealizationSource = parsePhonologySource(
 );
 assert.ok(validRealizationSource);
 assert.equal(validRealizationSource.kind, "realization");
-assert.equal(
-  validRealizationSource.record.value?.id,
-  "p-aspirated",
-);
+assert.equal(validRealizationSource.record.value?.id, "p-aspirated");
 assert.equal(validRealizationSource.record.value?.unitId, "p");
 assert.equal(validRealizationSource.record.value?.symbol, "[pʰ]");
+
+// Supported status vocabulary remains clean and available on the parsed object.
+const validStatusUnitSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: "p",
+    symbol: "/p/",
+    status: "proposed",
+  }),
+);
+assert.ok(validStatusUnitSource);
+assert.equal(validStatusUnitSource.kind, "unit");
+assert.equal(validStatusUnitSource.record.value?.status, "proposed");
+assert.equal(validStatusUnitSource.record.diagnostics.length, 0);
+
+// A structurally valid string outside the supported status vocabulary remains
+// optional rather than invalidating the unit, but it must no longer disappear
+// silently from Workbench's source-facing interpretation.
+const unsupportedStatusUnitSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-unit",
+    unit_id: "p",
+    symbol: "/p/",
+    status: "experimental",
+  }),
+);
+assert.ok(unsupportedStatusUnitSource);
+assert.equal(unsupportedStatusUnitSource.kind, "unit");
+assert.equal(unsupportedStatusUnitSource.record.value?.status, undefined);
+assert.ok(
+  unsupportedStatusUnitSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "phonology.unrecognized-status" &&
+      diagnostic.field === "status" &&
+      diagnostic.severity === "warning",
+  ),
+);
+
+// Structured status data is also ignored without invalidating an otherwise
+// complete realization, but its incompatible YAML representation is diagnosed.
+const malformedStatusRealizationSource = parsePhonologySource(
+  makePhonologySource({
+    type: "phonological-realization",
+    realization_id: "p-aspirated",
+    unit_id: "p",
+    symbol: "[pʰ]",
+    status: { malformed: "structure" },
+  }),
+);
+assert.ok(malformedStatusRealizationSource);
+assert.equal(malformedStatusRealizationSource.kind, "realization");
+assert.equal(malformedStatusRealizationSource.record.value?.status, undefined);
+assert.ok(
+  malformedStatusRealizationSource.record.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-value" &&
+      diagnostic.field === "status" &&
+      diagnostic.severity === "warning",
+  ),
+);
 
 // Malformed preferred aliases must not suppress a valid supported fallback.
 const recoveredUnitIdSource = parsePhonologySource(
@@ -487,10 +528,7 @@ const recoveredNumericPreferredUnitIdSource = parsePhonologySource(
   }),
 );
 assert.ok(recoveredNumericPreferredUnitIdSource);
-assert.equal(
-  recoveredNumericPreferredUnitIdSource.record.value?.id,
-  "p",
-);
+assert.equal(recoveredNumericPreferredUnitIdSource.record.value?.id, "p");
 assert.ok(
   recoveredNumericPreferredUnitIdSource.record.diagnostics.some(
     (diagnostic) =>
@@ -514,10 +552,7 @@ assert.equal(malformedUnitIdSource.kind, "unit");
 assert.equal(malformedUnitIdSource.record.value, null);
 assert.ok(malformedUnitIdSource.record.identity.workbenchID);
 assert.ok(malformedUnitIdSource.record.identity.sourceID);
-assert.equal(
-  malformedUnitIdSource.record.identity.linguisticID,
-  undefined,
-);
+assert.equal(malformedUnitIdSource.record.identity.linguisticID, undefined);
 assert.ok(
   malformedUnitIdSource.record.diagnostics.some(
     (diagnostic) =>
@@ -558,10 +593,7 @@ const recoveredRealizationIdSource = parsePhonologySource(
 );
 assert.ok(recoveredRealizationIdSource);
 assert.equal(recoveredRealizationIdSource.kind, "realization");
-assert.equal(
-  recoveredRealizationIdSource.record.value?.id,
-  "p-aspirated",
-);
+assert.equal(recoveredRealizationIdSource.record.value?.id, "p-aspirated");
 assert.ok(
   recoveredRealizationIdSource.record.diagnostics.some(
     (diagnostic) =>
@@ -582,10 +614,7 @@ const recoveredRealizationUnitIdSource = parsePhonologySource(
 );
 assert.ok(recoveredRealizationUnitIdSource);
 assert.equal(recoveredRealizationUnitIdSource.kind, "realization");
-assert.equal(
-  recoveredRealizationUnitIdSource.record.value?.unitId,
-  "p",
-);
+assert.equal(recoveredRealizationUnitIdSource.record.value?.unitId, "p");
 assert.ok(
   recoveredRealizationUnitIdSource.record.diagnostics.some(
     (diagnostic) =>
@@ -691,7 +720,89 @@ assert.ok(lemmaGlossSource);
 assert.equal(lemmaGlossSource.value?.word, "talu");
 assert.equal(lemmaGlossSource.value?.definition, "river");
 assert.equal(lemmaGlossSource.value?.partOfSpeech, "noun");
-assert.equal(lemmaGlossSource.identity.linguisticID, "talu");
+assert.equal(
+  lemmaGlossSource.identity.linguisticID,
+  undefined,
+  "a legacy lemma must not be manufactured into stable lexical identity",
+);
+
+// An explicit portable lexical ID is independent from the current lemma.
+const explicitLexemeIdSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lexeme_id: "lex-river-001",
+    language_id: "test-language",
+    lemma: "talu",
+    gloss: "river",
+  }),
+);
+assert.ok(explicitLexemeIdSource);
+assert.equal(explicitLexemeIdSource.value?.word, "talu");
+assert.equal(explicitLexemeIdSource.value?.languageId, "test-language");
+assert.equal(explicitLexemeIdSource.identity.linguisticID, "lex-river-001");
+assert.equal(explicitLexemeIdSource.diagnostics.length, 0);
+
+// Changing the surface form while retaining the same creator-authored ID does
+// not change linguistic identity.
+const respelledLexemeSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lexeme_id: "lex-river-001",
+    lemma: "taluu",
+    gloss: "river",
+  }),
+);
+assert.ok(respelledLexemeSource);
+assert.equal(respelledLexemeSource.value?.word, "taluu");
+assert.equal(respelledLexemeSource.identity.linguisticID, "lex-river-001");
+
+// A malformed optional ID cannot establish portable identity, but it also does
+// not destroy an otherwise valid legacy lexical entry. The source remains
+// identifiable through Workbench/source identity and receives a diagnostic.
+const malformedLexemeIdSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lexeme_id: { malformed: "structure" },
+    lemma: "talu",
+    gloss: "river",
+  }),
+);
+assert.ok(malformedLexemeIdSource);
+assert.ok(malformedLexemeIdSource.value);
+assert.equal(malformedLexemeIdSource.value.word, "talu");
+assert.equal(malformedLexemeIdSource.identity.linguisticID, undefined);
+assert.ok(malformedLexemeIdSource.identity.workbenchID);
+assert.ok(malformedLexemeIdSource.identity.sourceID);
+assert.ok(
+  malformedLexemeIdSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "frontmatter.unusable-value" &&
+      diagnostic.field === "lexeme_id" &&
+      diagnostic.severity === "warning",
+  ),
+);
+
+// Blank lexical IDs likewise provide no identity and must never fall back to
+// the lemma. Preserve the usable lexical entry and explain the ignored field.
+const blankLexemeIdSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lexeme_id: "   ",
+    lemma: "talu",
+    gloss: "river",
+  }),
+);
+assert.ok(blankLexemeIdSource);
+assert.ok(blankLexemeIdSource.value);
+assert.equal(blankLexemeIdSource.identity.linguisticID, undefined);
+assert.ok(
+  blankLexemeIdSource.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "dictionary.lexeme.unusable-id" &&
+      diagnostic.field === "lexeme_id" &&
+      diagnostic.severity === "warning",
+  ),
+);
 
 // Explicit lexeme classification is also recognized.
 const explicitLexemeSource = parseDictionarySource(
@@ -703,6 +814,63 @@ const explicitLexemeSource = parseDictionarySource(
 );
 assert.ok(explicitLexemeSource);
 assert.equal(explicitLexemeSource.value?.word, "talu");
+
+// Optional dictionary scalar fields retain their historical tolerant scalar
+// behavior. Numbers and booleans remain valid textual metadata.
+const tolerantOptionalScalarSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lemma: "talu",
+    gloss: "river",
+    ipa: 42,
+    notes: true,
+  }),
+);
+assert.ok(tolerantOptionalScalarSource);
+assert.equal(tolerantOptionalScalarSource.value?.ipa, "42");
+assert.equal(tolerantOptionalScalarSource.value?.notes, "true");
+assert.equal(tolerantOptionalScalarSource.diagnostics.length, 0);
+
+// A present structured optional value cannot safely be manufactured into text.
+// The lexical entry remains valid because IPA/etymology/notes/language are
+// optional, while diagnostics retain exactly which source fields were ignored.
+const malformedOptionalScalarSource = parseDictionarySource(
+  makeDictionarySource({
+    type: "lexeme",
+    lemma: "talu",
+    gloss: "river",
+    ipa: { malformed: "structure" },
+    etymology: ["unexpected"],
+    notes: { nested: true },
+    language: ["Test Language"],
+    language_id: { malformed: "structure" },
+  }),
+);
+assert.ok(malformedOptionalScalarSource);
+assert.ok(malformedOptionalScalarSource.value);
+assert.equal(malformedOptionalScalarSource.value.ipa, undefined);
+assert.equal(malformedOptionalScalarSource.value.etymology, undefined);
+assert.equal(malformedOptionalScalarSource.value.notes, undefined);
+assert.equal(malformedOptionalScalarSource.value.language, undefined);
+assert.equal(malformedOptionalScalarSource.value.languageId, undefined);
+
+for (const field of [
+  "ipa",
+  "etymology",
+  "notes",
+  "language",
+  "language_id",
+]) {
+  assert.ok(
+    malformedOptionalScalarSource.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "frontmatter.unusable-value" &&
+        diagnostic.field === field &&
+        diagnostic.severity === "warning",
+    ),
+    `expected an unusable-value warning for dictionary field ${field}`,
+  );
+}
 
 // Generic supporting Markdown must not become a malformed dictionary source
 // merely because it lives somewhere under a recursively scanned lexicon path.
@@ -784,10 +952,7 @@ assert.equal(recoveredBlankDefinitionSource.value?.definition, "river");
 // Keeping source authority separate from definition comparison prevents a
 // morpheme such as `type: morpheme; gloss: river` from being mistaken for an
 // existing word merely because Dictionary also understands the `gloss` field.
-assert.equal(
-  classifyDictionarySourceAuthority(undefined),
-  "unknown",
-);
+assert.equal(classifyDictionarySourceAuthority(undefined), "unknown");
 
 assert.equal(
   classifyDictionarySourceAuthority({
@@ -846,14 +1011,8 @@ assert.equal(
   compareDictionaryDefinition({ definition: "river" }, "forest"),
   "different",
 );
-assert.equal(
-  compareDictionaryDefinition(undefined, "river"),
-  "unknown",
-);
-assert.equal(
-  compareDictionaryDefinition({}, "river"),
-  "unknown",
-);
+assert.equal(compareDictionaryDefinition(undefined, "river"), "unknown");
+assert.equal(compareDictionaryDefinition({}, "river"), "unknown");
 assert.equal(
   compareDictionaryDefinition(
     { definition: { malformed: "structure" } },
@@ -876,10 +1035,7 @@ assert.equal(
 );
 
 // Preserve the dictionary's deliberately tolerant scalar semantics.
-assert.equal(
-  compareDictionaryDefinition({ definition: 42 }, "42"),
-  "same",
-);
+assert.equal(compareDictionaryDefinition({ definition: 42 }, "42"), "same");
 
 // Preserve the established comma/semicolon sense comparison used when deciding
 // whether an existing entry already covers a requested meaning.
@@ -901,7 +1057,11 @@ const recoveredWordSource = parseDictionarySource(
 );
 assert.ok(recoveredWordSource);
 assert.equal(recoveredWordSource.value?.word, "talu");
-assert.equal(recoveredWordSource.identity.linguisticID, "talu");
+assert.equal(
+  recoveredWordSource.identity.linguisticID,
+  undefined,
+  "recovering a lemma must not manufacture stable lexical identity",
+);
 assert.ok(
   recoveredWordSource.diagnostics.some(
     (diagnostic) =>
@@ -921,7 +1081,11 @@ const filenameFallbackSource = parseDictionarySource(
 );
 assert.ok(filenameFallbackSource);
 assert.equal(filenameFallbackSource.value?.word, "talu");
-assert.equal(filenameFallbackSource.identity.linguisticID, "talu");
+assert.equal(
+  filenameFallbackSource.identity.linguisticID,
+  undefined,
+  "filename fallback supplies a surface form, not stable lexical identity",
+);
 
 // Structured forms use their own parser for first-usable alias recovery.
 // A malformed `forms` value must not suppress valid legacy `inflections`.
@@ -972,14 +1136,8 @@ const recoveredOptionalAliasesSource = parseDictionarySource(
   }),
 );
 assert.ok(recoveredOptionalAliasesSource);
-assert.equal(
-  recoveredOptionalAliasesSource.value?.partOfSpeech,
-  "proper-noun",
-);
-assert.equal(
-  recoveredOptionalAliasesSource.value?.nameCategory,
-  "character",
-);
+assert.equal(recoveredOptionalAliasesSource.value?.partOfSpeech, "proper-noun");
+assert.equal(recoveredOptionalAliasesSource.value?.nameCategory, "character");
 
 // A recognized lexical source with no interpretable required meaning remains
 // addressable under independent Workbench/source identity but cannot enter the
@@ -992,11 +1150,13 @@ const malformedLexemeSource = parseDictionarySource(
 );
 assert.ok(malformedLexemeSource);
 assert.equal(malformedLexemeSource.value, null);
-assert.equal(malformedLexemeSource.identity.linguisticID, "talu");
+assert.equal(
+  malformedLexemeSource.identity.linguisticID,
+  undefined,
+  "a malformed lexical source without lexeme_id retains source identity only",
+);
 assert.ok(
-  malformedLexemeSource.identity.workbenchID.startsWith(
-    "wb:obsidian-file:",
-  ),
+  malformedLexemeSource.identity.workbenchID.startsWith("wb:obsidian-file:"),
 );
 assert.ok(
   malformedLexemeSource.diagnostics.some(
@@ -1014,7 +1174,11 @@ const incompleteExplicitLexemeSource = parseDictionarySource(
 );
 assert.ok(incompleteExplicitLexemeSource);
 assert.equal(incompleteExplicitLexemeSource.value, null);
-assert.equal(incompleteExplicitLexemeSource.identity.linguisticID, "talu");
+assert.equal(
+  incompleteExplicitLexemeSource.identity.linguisticID,
+  undefined,
+  "type: lexeme establishes source authority but does not invent lexeme identity",
+);
 
 // ---------------------------------------------------------------------------
 // Linguistic-example source adapter
@@ -1044,10 +1208,7 @@ assert.ok(validExampleSource);
 assert.equal(validExampleSource.value?.id, "example-001");
 assert.equal(validExampleSource.value?.text, "Mi varu.");
 assert.equal(validExampleSource.value?.translation, "I flow.");
-assert.equal(
-  validExampleSource.identity.linguisticID,
-  "example-001",
-);
+assert.equal(validExampleSource.identity.linguisticID, "example-001");
 assert.ok(validExampleSource.identity.workbenchID);
 assert.equal(validExampleSource.diagnostics.length, 0);
 
@@ -1135,8 +1296,7 @@ assert.ok(structuredTextExampleSource);
 assert.equal(structuredTextExampleSource.value, null);
 assert.ok(
   structuredTextExampleSource.diagnostics.some(
-    (diagnostic) =>
-      diagnostic.code === "linguistic-example.unusable-text",
+    (diagnostic) => diagnostic.code === "linguistic-example.unusable-text",
   ),
 );
 
@@ -1169,14 +1329,8 @@ const malformedOptionalExampleSource = parseLinguisticExampleSource(
 
 assert.ok(malformedOptionalExampleSource);
 assert.ok(malformedOptionalExampleSource.value);
-assert.equal(
-  malformedOptionalExampleSource.value.translation,
-  undefined,
-);
-assert.equal(
-  malformedOptionalExampleSource.value.languageId,
-  undefined,
-);
+assert.equal(malformedOptionalExampleSource.value.translation, undefined);
+assert.equal(malformedOptionalExampleSource.value.languageId, undefined);
 assert.equal(malformedOptionalExampleSource.value.notes, undefined);
 
 for (const field of ["translation", "language_id", "notes"]) {
@@ -1244,30 +1398,23 @@ assert.deepEqual(parseStringList(["alpha", "beta"]), ["alpha", "beta"]);
 assert.deepEqual(parseStringList("alpha, beta"), ["alpha", "beta"]);
 
 // Simple YAML scalars inside a list remain tolerantly interpretable as text.
-assert.deepEqual(parseStringList(["alpha", 42, true]), [
-  "alpha",
-  "42",
-  "true",
-]);
+assert.deepEqual(parseStringList(["alpha", 42, true]), ["alpha", "42", "true"]);
 
 // Structured values are not silently converted into implementation-generated
 // strings such as "[object Object]". Usable neighboring values are preserved.
-assert.deepEqual(
-  parseStringList(["alpha", { unexpected: "shape" }, "beta"]),
-  ["alpha", "beta"],
-);
+assert.deepEqual(parseStringList(["alpha", { unexpected: "shape" }, "beta"]), [
+  "alpha",
+  "beta",
+]);
 
 // Nested arrays are likewise left uninterpreted.
-assert.deepEqual(
-  parseStringList(["alpha", ["nested", "array"], "beta"]),
-  ["alpha", "beta"],
-);
+assert.deepEqual(parseStringList(["alpha", ["nested", "array"], "beta"]), [
+  "alpha",
+  "beta",
+]);
 
 // A list containing only unsupported structures produces no interpreted data.
-assert.equal(
-  parseStringList([{ unexpected: "shape" }, ["nested"]]),
-  undefined,
-);
+assert.equal(parseStringList([{ unexpected: "shape" }, ["nested"]]), undefined);
 
 // Existing behavior is preserved: a bare numeric scalar is not itself treated
 // as a list field.
@@ -1278,13 +1425,10 @@ assert.equal(parseStringList(42), undefined);
 // ---------------------------------------------------------------------------
 
 // Canonical list-of-text form remains supported.
-assert.deepEqual(
-  parseInflectedForms(["plural: kalath", "genitive: kalen"]),
-  [
-    { label: "plural", form: "kalath" },
-    { label: "genitive", form: "kalen" },
-  ],
-);
+assert.deepEqual(parseInflectedForms(["plural: kalath", "genitive: kalen"]), [
+  { label: "plural", form: "kalath" },
+  { label: "genitive", form: "kalen" },
+]);
 
 // Supported YAML map representation remains supported.
 assert.deepEqual(parseInflectedForms({ plural: "kalath" }), [
@@ -1297,23 +1441,17 @@ assert.deepEqual(parseInflectedForms([{ plural: "kalath" }]), [
 ]);
 
 // Multiple forms under one map key remain supported.
-assert.deepEqual(
-  parseInflectedForms({ dative: ["kalim", "kalum"] }),
-  [
-    { label: "dative", form: "kalim" },
-    { label: "dative", form: "kalum" },
-  ],
-);
+assert.deepEqual(parseInflectedForms({ dative: ["kalim", "kalum"] }), [
+  { label: "dative", form: "kalim" },
+  { label: "dative", form: "kalum" },
+]);
 
 // Simple scalar values in explicitly supported map/list structures remain
 // tolerantly interpretable.
-assert.deepEqual(
-  parseInflectedForms([{ number: 42 }, { enabled: true }]),
-  [
-    { label: "number", form: "42" },
-    { label: "enabled", form: "true" },
-  ],
-);
+assert.deepEqual(parseInflectedForms([{ number: 42 }, { enabled: true }]), [
+  { label: "number", form: "42" },
+  { label: "enabled", form: "true" },
+]);
 
 // Unsupported nested structures are skipped rather than becoming invented
 // text such as "[object Object]".

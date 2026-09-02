@@ -70,28 +70,59 @@ function optionalString(value: unknown): string | undefined {
   return parsed || undefined;
 }
 
-function parseUnitStatus(
+/**
+ * Parse the optional analytical status shared by units and realizations.
+ *
+ * `status` is optional, so an absent/null value is not a problem. A present
+ * value that Workbench cannot interpret should not invalidate the complete
+ * phonology object either; instead we preserve that object and retain a warning
+ * explaining which creator-authored field was ignored.
+ *
+ * Strict-string semantics remain unchanged. Numbers, booleans, arrays, and
+ * objects are not coerced into status text.
+ */
+function parsePhonologyStatus<T extends
+  | PhonologicalUnitStatus
+  | PhonologicalRealizationStatus>(
   value: unknown,
-): PhonologicalUnitStatus | undefined {
+  diagnostics: WorkbenchDiagnostic[],
+): T | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
   const parsed = optionalString(value);
 
-  return parsed === "established" ||
+  if (
+    parsed === "established" ||
     parsed === "proposed" ||
     parsed === "unresolved"
-    ? parsed
-    : undefined;
-}
+  ) {
+    return parsed as T;
+  }
 
-function parseRealizationStatus(
-  value: unknown,
-): PhonologicalRealizationStatus | undefined {
-  const parsed = optionalString(value);
+  if (typeof value === "string") {
+    diagnostics.push({
+      code: "phonology.unrecognized-status",
+      severity: "warning",
+      field: "status",
+      message:
+        `Phonology status "${value}" is not one of the supported values ` +
+        '"established", "proposed", or "unresolved". The source file was ' +
+        "not modified.",
+    });
+  } else {
+    diagnostics.push({
+      code: "frontmatter.unusable-value",
+      severity: "warning",
+      field: "status",
+      message:
+        'Frontmatter field "status" was present but could not be interpreted ' +
+        "as a supported string status. The source file was not modified.",
+    });
+  }
 
-  return parsed === "established" ||
-    parsed === "proposed" ||
-    parsed === "unresolved"
-    ? parsed
-    : undefined;
+  return undefined;
 }
 
 function parseUnitSource(
@@ -159,7 +190,10 @@ function parseUnitSource(
     id,
     symbol,
     category: optionalString(fm.category),
-    status: parseUnitStatus(fm.status),
+    status: parsePhonologyStatus<PhonologicalUnitStatus>(
+      fm.status,
+      diagnostics,
+    ),
     language: optionalString(fm.language),
     languageId: languageIdResult.value,
     notes: optionalString(fm.notes),
@@ -262,7 +296,10 @@ function parseRealizationSource(
     unitId,
     symbol,
     environment: optionalString(fm.environment),
-    status: parseRealizationStatus(fm.status),
+    status: parsePhonologyStatus<PhonologicalRealizationStatus>(
+      fm.status,
+      diagnostics,
+    ),
     language: optionalString(fm.language),
     languageId: languageIdResult.value,
     notes: optionalString(fm.notes),

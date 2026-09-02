@@ -1,8 +1,6 @@
 import { App, CachedMetadata, TFile, TFolder } from "obsidian";
-import {
-  resolveLanguageMembership,
-  type LanguageMembershipMode,
-} from "./language-membership";
+import type { LanguageMembershipMode } from "./language-membership";
+import { resolveSourceLanguageAuthority } from "./source-language-authority";
 import { parsePhonologySource } from "./phonology-source";
 import type {
   PhonologySourceInput,
@@ -304,11 +302,12 @@ export class PhonologyInventory {
   }
 
   /**
-   * Load canonical phonological-unit notes from every configured source.
+   * Load canonical phonology notes from every configured source.
    *
-   * Explicit language metadata on the note wins. Source-level language data is
-   * inherited only when the note omits it, matching the pattern used by the
-   * other language-specific inventories.
+   * Readable `language:` membership follows the configured membership policy,
+   * while explicit conflicting stable `language_id` identity always rejects.
+   * Missing accepted scope may inherit from the configured language in runtime
+   * only; creator-authored Markdown is never rewritten by this loader.
    */
   async loadFromFolders(
     sources: PhonologySource[],
@@ -345,27 +344,31 @@ export class PhonologyInventory {
             continue;
           }
 
-          const membership = resolveLanguageMembership(
-            source.language,
-            unit.language,
+          const authority = resolveSourceLanguageAuthority({
+            configuredLanguage: source.language,
+            configuredLanguageId: source.languageId,
+            explicitLanguage: unit.language,
+            explicitLanguageId: unit.languageId,
             membershipMode,
-          );
-          if (!membership.accepted) continue;
+          });
 
-          if (
-            source.languageId &&
-            unit.languageId &&
-            unit.languageId !== source.languageId
-          ) {
+          if (!authority.accepted) {
+            // This source was successfully parsed as a complete phonological
+            // unit. Rejection from the configured language therefore belongs
+            // in source-facing diagnostics rather than making the source
+            // disappear or pretending its linguistic data was malformed.
+            this.addUnitSourceRecord({
+              ...record,
+              diagnostics: [...record.diagnostics, authority.diagnostic],
+            });
             continue;
           }
 
-          // Assign runtime membership without modifying creator-authored YAML.
-          unit.language = membership.runtimeLanguage;
-
-          if (!unit.languageId && source.languageId) {
-            unit.languageId = source.languageId;
-          }
+          // Contextual scope is applied to the in-memory object only. It helps
+          // clean indexes distinguish languages without authorizing any
+          // frontmatter migration or creator-data rewrite.
+          unit.language = authority.runtimeLanguage;
+          unit.languageId = authority.runtimeLanguageId;
 
           this.addUnitSourceRecord(record);
           this.addUnit(unit);
@@ -383,27 +386,29 @@ export class PhonologyInventory {
           continue;
         }
 
-        const membership = resolveLanguageMembership(
-          source.language,
-          realization.language,
+        const authority = resolveSourceLanguageAuthority({
+          configuredLanguage: source.language,
+          configuredLanguageId: source.languageId,
+          explicitLanguage: realization.language,
+          explicitLanguageId: realization.languageId,
           membershipMode,
-        );
-        if (!membership.accepted) continue;
+        });
 
-        if (
-          source.languageId &&
-          realization.languageId &&
-          realization.languageId !== source.languageId
-        ) {
+        if (!authority.accepted) {
+          // A complete realization rejected by language authority is still a
+          // recognized creator source. Retain its parsed value and append a
+          // contextual diagnostic without allowing it into relationship or ID
+          // indexes below.
+          this.addRealizationSourceRecord({
+            ...record,
+            diagnostics: [...record.diagnostics, authority.diagnostic],
+          });
           continue;
         }
 
-        // Assign runtime membership without modifying creator-authored YAML.
-        realization.language = membership.runtimeLanguage;
-
-        if (!realization.languageId && source.languageId) {
-          realization.languageId = source.languageId;
-        }
+        // Apply inherited/validated language scope in runtime only.
+        realization.language = authority.runtimeLanguage;
+        realization.languageId = authority.runtimeLanguageId;
 
         this.addRealizationSourceRecord(record);
 

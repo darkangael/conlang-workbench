@@ -95,7 +95,7 @@ function configuredInventoryPaths(
  */
 function findCanonicalClaimConflict(
   candidate: LanguageConfig,
-  existingLanguages: LanguageConfig[],
+  existingLanguages: readonly LanguageConfig[],
 ): string | null {
   const candidateSources = configuredInventoryPaths(candidate);
 
@@ -159,7 +159,8 @@ function findCanonicalClaimConflict(
 export async function createStandardLanguage(
   app: App,
   languageName: string,
-  existingLanguages: LanguageConfig[],
+  existingLanguages: readonly LanguageConfig[],
+  includePortableIds: boolean,
 ): Promise<StandardLanguageCreationResult> {
   let paths: StandardLanguagePaths;
 
@@ -194,6 +195,17 @@ export async function createStandardLanguage(
     exampleFolder: paths.examples,
     phonologyFolder: paths.phonology,
     hoverEnabled: true,
+
+    /*
+     * Record the creator's explicit onboarding choice on the new language.
+     *
+     * This controls only whether future Workbench-generated notes should
+     * automatically receive portable linguistic IDs. It does not authorize
+     * changing existing creator notes and it does not control recognition of
+     * IDs already present in source data.
+     */
+    includePortableIds,
+
     sheets: [],
   };
 
