@@ -34,7 +34,8 @@ import {
   loadLanguageProfile,
   validateLanguageProfilePath,
 } from "./language-profile";
-import { isPathWithinFolder, validateVaultRelativePath } from "./vault-paths";
+import { validateVaultRelativePath } from "./vault-paths";
+import { isWatchedLanguageSourcePath } from "./language-source-watch";
 import { findInflection, InflectionMatch } from "./inflection";
 import { matchPhraseAtStart, PhraseIndex, EMPTY_PHRASE_INDEX } from "./phrases";
 import { WORD_RE, cleanWord } from "./word-tokens";
@@ -255,8 +256,9 @@ export default class ConlangPlugin extends Plugin {
         this.maybeReloadForPath(file.path);
       }),
     );
-    // Also react to dictionary files being deleted or renamed so removed words
-    // stop (and renamed words start) highlighting without a manual reload.
+    // Also react to canonical linguistic sources being deleted or renamed.
+    // Rename checks both paths below so moving a source into or out of an active
+    // canonical folder cannot leave the corresponding runtime inventory stale.
     this.registerEvent(
       this.app.vault.on("delete", (file) => this.maybeReloadForPath(file.path)),
     );
@@ -1513,21 +1515,24 @@ export default class ConlangPlugin extends Plugin {
    * post-processor runs again.
    */
   /**
-   * If `path` falls inside ANY active language's dictionary folder, reload the
-   * dictionary and refresh the panel + highlights. Used by the metadata and
-   * vault watchers so added/edited/deleted/renamed entries take effect live.
+   * If `path` falls inside any canonical source folder belonging to an active
+   * language, reload the settled linguistic state and refresh the UI.
    *
-   * Previously this only watched the *primary* language's folder, so words kept
-   * in another active language's folder never triggered a live refresh.
+   * The vault/metadata watchers call this for edits and deletions. Rename events
+   * call it once for the new path and once for the old path, so moving a source
+   * into OR out of a watched canonical folder invalidates the loaded inventory.
+   *
+   * Keep the folder-membership decision in language-source-watch.ts rather than
+   * duplicating the canonical source list here. That helper is deliberately
+   * read-only: recognizing that runtime state is stale grants no authority to
+   * modify the source note or its configuration.
    */
   private maybeReloadForPath(path: string) {
-    const inDict = this.getActiveLanguages().some(
-      (l) => l.dictionaryFolder && isPathWithinFolder(path, l.dictionaryFolder),
-    );
-    if (!inDict) return;
-    // Debounced: metadataCache "changed" fires repeatedly while a dictionary
-    // note is being edited, and each reload is a full reindex plus a global
-    // re-render. Coalescing bursts keeps large dictionaries responsive.
+    if (!isWatchedLanguageSourcePath(path, this.getActiveLanguages())) return;
+
+    // Debounced: metadataCache "changed" can fire repeatedly while a linguistic
+    // source note is being edited, and each reload rebuilds the active language
+    // inventories plus the dependent UI. Coalescing bursts keeps this responsive.
     this.scheduleDictionaryReload();
   }
 

@@ -2958,6 +2958,23 @@ function loadLanguageProfile(app, config) {
   return parseLanguageProfileFrontmatter(abstractFile.path, cache.frontmatter);
 }
 
+// language-source-watch.ts
+function isWatchedLanguageSourcePath(path, activeLanguages) {
+  return activeLanguages.some((language) => {
+    const folders = [
+      language.dictionaryFolder,
+      language.morphemeFolder,
+      language.exampleFolder,
+      language.phonologyFolder
+    ];
+    return folders.some((folder) => {
+      const configuredFolder = folder == null ? void 0 : folder.trim();
+      if (!configuredFolder) return false;
+      return isPathWithinFolder(path, configuredFolder);
+    });
+  });
+}
+
 // inflection.ts
 function findInflection(word, dictionary, rules, language) {
   if (!rules || rules.length === 0) return null;
@@ -13202,18 +13219,20 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
    * post-processor runs again.
    */
   /**
-   * If `path` falls inside ANY active language's dictionary folder, reload the
-   * dictionary and refresh the panel + highlights. Used by the metadata and
-   * vault watchers so added/edited/deleted/renamed entries take effect live.
+   * If `path` falls inside any canonical source folder belonging to an active
+   * language, reload the settled linguistic state and refresh the UI.
    *
-   * Previously this only watched the *primary* language's folder, so words kept
-   * in another active language's folder never triggered a live refresh.
+   * The vault/metadata watchers call this for edits and deletions. Rename events
+   * call it once for the new path and once for the old path, so moving a source
+   * into OR out of a watched canonical folder invalidates the loaded inventory.
+   *
+   * Keep the folder-membership decision in language-source-watch.ts rather than
+   * duplicating the canonical source list here. That helper is deliberately
+   * read-only: recognizing that runtime state is stale grants no authority to
+   * modify the source note or its configuration.
    */
   maybeReloadForPath(path) {
-    const inDict = this.getActiveLanguages().some(
-      (l) => l.dictionaryFolder && isPathWithinFolder(path, l.dictionaryFolder)
-    );
-    if (!inDict) return;
+    if (!isWatchedLanguageSourcePath(path, this.getActiveLanguages())) return;
     this.scheduleDictionaryReload();
   }
   /**
