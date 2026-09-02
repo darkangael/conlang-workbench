@@ -554,30 +554,94 @@ None.
 
 ### Unknown Keys
 
-Determine whether fields unknown to the current Workbench version survive
-mutating operations.
+Current Workbench source adapters interpret only the frontmatter fields needed
+by their feature-facing runtime models. Fields that an adapter does not
+recognize are not thereby claimed, removed, normalized, or written back to the
+creator's source note.
+
+The production mutation inventory contains no existing-note frontmatter
+read-modify-write operation. In particular, current production code does not
+use `processFrontMatter()`, `Vault.modify()`, or another mechanism that would
+reconstruct an existing note from Workbench's known-field model. An unknown key
+can therefore be absent from the current runtime representation while remaining
+intact in the creator-authored Markdown.
+
+Dictionary persistence follows the same preservation boundary from the opposite
+direction. `writeDictionaryEntry()` uses `vault.create()` for a newly authorized
+destination. A same-meaning existing lexical source is reused, uncertain or
+nonlexical collisions block creation, and a confirmed homograph receives a new
+free path. Existing creator-authored notes are not overwritten in order to
+create or repair vocabulary.
 
 ### Third-Party Metadata
 
-Consider frontmatter used by other Obsidian plugins or the user's own workflow.
+Workbench does not treat all metadata inside a configured linguistic source as
+Workbench-owned metadata. Frontmatter used by another Obsidian plugin or by the
+creator's own workflow remains outside Workbench's mutation authority when the
+current feature does not understand that field.
+
+Language-root rename preserves this boundary structurally. Workbench resolves
+and revalidates the existing language root, then passes that existing
+`TFolder` to Obsidian's `FileManager.renameFile()`. It does not enumerate the
+contained notes, parse their known fields, and generate replacement files at
+the destination. Third-party metadata, creator Markdown, and other unmodeled
+note content therefore are not reconstructed as part of the move.
+
+Translation commit is an exact-range text mutation rather than a metadata
+rewrite. Immediately before `editor.replaceRange()`, Workbench revalidates the
+captured language, file identity and path, target range, and exact original
+text. The creator can deliberately select text anywhere the editor permits,
+including text that may be inside frontmatter, but that authorization applies
+only to the exact reviewed range. Workbench receives no authority to rewrite
+unrelated metadata elsewhere in the note.
 
 ### Future Workbench Fields
 
-Ensure older operations do not accidentally erase fields introduced by newer
-versions.
+Under the current architecture, a field introduced by a newer Workbench version
+can remain in a creator note even when an older version does not recognize it.
+The older runtime may be unable to interpret or expose that field, but its
+feature adapters do not serialize their reduced known-field representation
+back over the source note.
+
+This is forward preservation by non-mutation, not a promise of forward semantic
+compatibility. An older Workbench version is not expected to understand the
+meaning or behavior of a field introduced later; the current data-safety
+guarantee is that lack of understanding does not itself authorize deletion or
+replacement of that creator data.
 
 ### Round-Trip Behavior
 
-Where serialization exists, test whether unrecognized data survives a
-read-modify-write cycle.
+There is currently no production existing-note frontmatter
+read-modify-write serialization cycle for unknown fields to traverse. A
+traditional unknown-field round-trip test would therefore test an operation
+that Workbench does not presently perform.
+
+The `renderMarkdownNote()` serializer reviewed in Data Safety §2 is a new-note
+representation boundary. Its callers decide the metadata for a newly created
+source, and the renderer safely serializes those authorized values. It does not
+parse an existing creator note and therefore does not claim to round-trip
+preexisting unknown metadata.
+
+Regression verification for this section included the language-rename planner
+and transaction suites, dictionary-entry writer, Markdown-note renderer,
+translation-commit planner, and translation-vocabulary repair. The production
+mutation inventory was also repeated after those tests and remained limited to
+strict folder creation, existing-root rename, exact authorized editor-range
+replacement, and new-file creation.
+
+A future feature that edits templates, migrates metadata, modifies existing
+frontmatter, or otherwise reconstructs an existing creator note must receive a
+new preservation review. This section's Pass does not authorize a future
+implementation to deserialize a note into only known Workbench fields and then
+overwrite unknown, third-party, or newer-version metadata.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
