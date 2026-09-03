@@ -1145,41 +1145,228 @@ None.
 
 ### Operations at Risk
 
-Identify operations requiring multiple writes or multi-step mutation.
+Current mutation paths fall into three materially different atomicity classes:
+
+1. **Single durable mutations.** Dictionary-entry persistence performs one final
+   `vault.create()` after destination authority, content generation, and strict
+   folder establishment have succeeded. Translation commit performs one
+   synchronous `editor.replaceRange()` only after the exact file, range, source
+   text, target language, and replacement have been revalidated.
+2. **Settings/runtime transactions.** Ordinary persisted settings and
+   language-affecting settings may temporarily install candidate configuration
+   in memory, persist the complete settings object, rebuild runtime linguistic
+   state when required, and perform a compensating settings save when the
+   requested state cannot safely become authoritative.
+3. **Filesystem-plus-settings transactions.** New-language creation,
+   language-root repair, and language rename cross Obsidian filesystem state
+   and persisted Workbench configuration. These operations cannot truthfully
+   provide database-style all-or-nothing rollback because creator or concurrent
+   filesystem activity may occur between awaited vault operations.
+
+The plugin-wide `SettingsAuthorityQueue` serializes complete settings-authority
+transactions before authority-sensitive reads, snapshots, candidate
+construction, or provisional mutation. Specialized transaction modules retain
+ownership of their individual persistence, reload, filesystem, and rollback
+semantics.
 
 ### Write Sequence
 
-Document the order in which state changes occur.
+The ordinary persisted-setting sequence is:
+
+1. read the previously authoritative value;
+2. return without writing when the requested value is unchanged;
+3. install the requested value in memory;
+4. persist the complete settings object;
+5. restore the previous in-memory value if persistence fails.
+
+Reload-aware language-setting transactions extend that sequence:
+
+1. validate the requested configuration and snapshot settled prior authority;
+2. install and persist the requested settings;
+3. prepare the complete linguistic runtime in detached candidate objects;
+4. synchronously commit that candidate only after all fallible/asynchronous
+   preparation succeeds;
+5. if source preflight blocks the request or detached candidate preparation
+   throws, restore the previous settings snapshot and perform a compensating
+   save.
+
+Language-root repair first establishes missing folders additively, then changes
+and persists configuration, and reloads only when the repaired language is
+active. Rollback restores configuration but deliberately preserves folders
+already created by the authorized additive operation.
+
+Language rename first moves the proven owned root from the old path to the new
+path, then applies and persists rewritten configuration, then reloads when
+needed. A failed active reload attempts the exact reverse filesystem rename
+before restoring old settings. If that reverse rename fails, the new
+configuration is retained so in-memory settings continue to describe the
+physical root that actually exists.
+
+New-language creation preflights the complete standard folder hierarchy before
+mutation, creates folders additively, registers the returned language
+configuration, and then persists settings. A failed settings save removes only
+the exact configuration object inserted by that transaction; established
+folders are preserved.
 
 ### Failure Points
 
-Consider what happens if the operation fails:
+Before the first write, validation, source preflight, destination checks,
+candidate construction where applicable, and exact-target revalidation fail
+closed without creator-data mutation.
 
-- before first write
-- during a write
-- between writes
-- after some notes succeed
+During or between additive folder writes, already-created folders may remain.
+They are understandable residue of the authorized operation and are not
+automatically deleted because creator or concurrent data may have appeared
+inside them while an awaited vault operation was in progress.
+
+A dictionary-entry content-generation failure occurs before folder creation.
+A final `vault.create()` failure does not authorize replacement or cleanup of an
+existing creator source. Translation commit performs one synchronous exact-range
+replacement only after its asynchronous confirmation gap has been revalidated.
+
+A settings-save failure restores the previous in-memory authority. Where a
+requested configuration was already persisted before a later runtime failure,
+the transaction restores the previous configuration and attempts a compensating
+save.
+
+A compensating save can itself fail. Those cases are reported distinctly as
+rollback-persistence failures: memory/runtime/filesystem state is kept aligned
+with the safest state the transaction can prove, while the UI warns that
+persisted settings may still require review before restart.
+
+For language rename, rollback of configuration is conditional on successful
+physical root restoration. Workbench does not claim that the old configuration
+was restored when the reverse filesystem rename failed.
 
 ### State After Interruption
 
-Determine whether partially completed operations leave data understandable and
-recoverable.
+The runtime linguistic inventories are no longer progressively cleared and
+rebuilt in live objects. `prepareLanguageRuntime()` builds detached Language
+Profile, dictionary, morpheme, linguistic-example, and phonology state. A
+preflight refusal or exception during candidate preparation therefore leaves
+the previously committed runtime authoritative. Successful preparation is
+installed by a synchronous commit with no awaited work inside the replacement
+boundary.
+
+This guarantee permits reload-aware settings transactions to restore their
+previous configuration after either an explicit preflight block or a thrown
+candidate-preparation error. It does not imply that unrelated filesystem
+operations can always be reversed safely.
+
+Filesystem transactions preserve truthful physical state:
+
+- additive language creation and root repair do not delete folders created
+  before a later failure;
+- language rename restores old settings only after the root has actually moved
+  back;
+- if reverse rename fails, the new settings remain in memory because they still
+  describe the physical renamed root;
+- if reverse rename succeeds but compensating persistence fails, old
+  memory/runtime/root state remains aligned while durable settings are reported
+  as uncertain.
+
+No current multi-note source-rewrite operation exists. Translation vocabulary
+repair may create several independently authorized lexical notes before a later
+item is cancelled or fails; those completed notes remain valid durable creator
+actions rather than being deleted as rollback.
 
 ### Atomicity
 
-Use atomic or replace-safe patterns where practical.
+Atomicity is applied at the strongest boundary that does not create a new
+creator-data risk.
+
+Runtime linguistic reload now follows **build first, commit only when
+complete**. All fallible/asynchronous inventory loading occurs against detached
+candidate objects. The live runtime replacement is synchronous and therefore
+observationally atomic with respect to other plugin callbacks.
+
+Settings operations use compensating transactions rather than assuming that one
+`saveData()` call can cover persistence plus runtime work. The common
+`SettingsAuthorityQueue` prevents another settings transaction from treating
+provisional state as settled rollback authority.
+
+Filesystem operations deliberately do not promise destructive rollback.
+Automatically deleting folders after partial additive creation could exceed
+Workbench's authority and destroy creator or concurrent data. Rename rollback
+is attempted only through the exact proven old/new root pair, and settings
+rollback follows the filesystem result rather than assuming that reversal
+succeeded.
 
 ### Recovery
 
-Document how a user can restore a known-good state.
+Most rejected or failed operations recover automatically to a known-good live
+state:
+
+- pre-write validation failures leave prior state untouched;
+- failed ordinary settings persistence restores the prior in-memory value;
+- blocked or failed detached runtime preparation leaves the prior runtime
+  untouched and triggers configuration rollback;
+- successful compensating persistence restores agreement between durable
+  settings and the prior runtime;
+- successful reverse language rename restores the prior root and configuration.
+
+When compensating persistence fails, Workbench keeps the safest proven
+in-memory/runtime/filesystem state and presents an explicit warning that
+persisted settings may require review before Obsidian is restarted.
+
+When additive language creation or root repair fails after establishing some
+folders, those folders are intentionally preserved. The creator can inspect
+them normally in the vault; Workbench does not delete them automatically.
+
+When reverse language rename fails, the renamed root and matching new in-memory
+configuration are retained and the UI reports that the previous root could not
+be restored. Recovery therefore starts from the filesystem state that actually
+exists rather than from a falsely reconstructed configuration.
+
+External vault recovery facilities such as Obsidian File Recovery, Git, or
+filesystem/versioned backups remain useful general safeguards, but current
+Workbench rollback logic does not assume that ordinary users have any
+particular external recovery system.
 
 ### Findings
 
-None recorded yet.
+#### DS-008-H1 — Runtime linguistic reload progressively mutated live inventories
+
+**Severity:** Medium
+**Impact radius:** Runtime linguistic state for the active language set; no
+direct creator-Markdown corruption or deletion.
+
+Before remediation, `reloadActiveLanguage()` cleared/rebuilt live Language
+Profile and linguistic inventory state progressively. Individual inventory
+loaders also cleared their live indexes before asynchronous source loading
+completed. An unexpected failure after one or more loaders had begun could
+therefore leave a mixed or incomplete runtime until another successful reload
+or plugin restart.
+
+**Remediation:** Runtime preparation now occurs through a detached
+`LanguageRuntimeCandidate`. Language Profiles, dictionary, morphemes,
+linguistic examples, and phonology are fully prepared before
+`commitLanguageRuntime()` synchronously installs the completed candidate.
+Long-lived UI components retain the plugin/runtime owner rather than a
+replaceable inventory instance. Future canonical linguistic runtime modules
+must join this same detached prepare/commit lifecycle rather than introducing
+progressive mutation of live runtime state.
+
+The stronger runtime guarantee was then propagated through reload-aware
+settings, language removal, root repair, and rename transactions. A thrown
+candidate-preparation failure now has the same old-runtime-preservation
+guarantee needed for safe settings rollback, while filesystem rollback remains
+conditional on what the transaction can prove about actual vault state.
+
+**Verification:** `scripts/test-language-runtime.mjs` verifies complete
+candidate construction, empty candidates, inventory arguments, dictionary
+count, case policy, and a forced late phonology failure after earlier detached
+loaders have run. Focused transaction regressions verify successful rollback,
+rollback-save failure, root-repair folder preservation, and all three
+rename-recovery outcomes. The complete remediated transaction regression set
+and production build pass. Commits `f447726` and `78d02bf` contain the runtime
+and transaction remediations respectively.
+
+**Status:** Remediated and verified.
 
 ### Status
 
-**Not Reviewed**
+**Pass — DS-008-H1 remediated and verified.**
 
 ---
 
@@ -1626,6 +1813,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-008-H1   | Data Safety §8 / partial failure and runtime atomicity          | Remediated and verified | Medium    | Runtime linguistic state for the active language set; no direct creator-Markdown corruption or deletion                                 | Runtime linguistic reload progressively cleared and rebuilt live profiles and inventories, so an unexpected loader failure could leave mixed or incomplete runtime state until a later successful reload or restart. | Data Safety §8; `scripts/test-language-runtime.mjs`; focused active-language, case, membership, source, profile, removal, root-repair, and rename transaction regressions; production build; commits `f447726` and `78d02bf`             | Runtime reload now prepares complete detached candidate profiles and linguistic inventories before synchronous commit. Reload-aware settings transactions restore prior configuration after blocked or failed candidate preparation, while filesystem rollback follows proven physical state and never deletes additive folders merely to simulate atomicity. |
 | DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Remediated and verified | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed and contextually rejected linguistic sources remain in diagnostic accounting while excluded from clean feature indexes; retained parser/authority diagnostics and supported unresolved phonology relationships are now persistently exposed to the creator without source rewrite authority. | Data Safety §5; `WorkbenchSourceRecord`; `source-language-authority.ts`; `source-diagnostics.ts`; `diagnostics-tab.ts`; dictionary, morpheme, phonology, and linguistic-example language-scope regressions; `test:source-diagnostics`; `test:frontmatter`; production build; Diagnostics and affected-note Notice runtime verification | Remediated: retain rejected recognized sources, aggregate parser/authority/relationship diagnostics through a pure observational boundary, expose them in the persistent Diagnostics workspace, and briefly resurface current diagnostics on meaningful affected-note navigation without granting repair or rewrite authority. |
 | DS-002-H1   | Data Safety §2 / generated dictionary frontmatter                 | Remediated and verified | Medium    | Note; newly generated lexical-entry frontmatter                                                        | Generated dictionary templates directly interpolated creator/workflow strings into YAML, so accepted YAML-significant linguistic text could become malformed or acquire the wrong parsed value/type. | Data Safety §2; real Obsidian `stringifyYaml()` / `parseYaml()` characterization; `test:markdown-note-renderer`; dictionary writer and translation-repair regressions; production build; lint baseline | Generated semantic frontmatter now passes through a representation-only renderer using Obsidian `stringifyYaml()`. The four creation flows retain separate semantic authority, intentionally blank fields remain blank placeholders, and existing destination/overwrite protections are unchanged. |
 | SEC-004-H9  | Security §4 / query interpretation                             | Remediated and verified | Hardening | Explicit selected query only; no source mutation                                                                                         | Lookup-query cleanup could delete meaningful characters and manufacture a different lexical query, including loss of Unicode combining marks.                                                                        | Security Audit SEC-004-H9; `test:lookup-query`; runtime phrase, rejection, and Unicode-equivalence verification                                                                                                                     | Lookup now establishes lexical authority before searching and rejects unsafe internal material rather than deleting it. Creator-authored source text remains unchanged.                                                                                                                                                                                      |
