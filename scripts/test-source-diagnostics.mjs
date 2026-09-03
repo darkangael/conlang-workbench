@@ -410,6 +410,150 @@ try {
   );
 
   // -------------------------------------------------------------------------
+  // Lexical parts use owning-language scope and explicit target cardinality.
+  // -------------------------------------------------------------------------
+  const compoundOwner = record({
+    path: "Languages/Mer/Lexicon/compound.md",
+    value: {
+      word: "compound",
+      parts: ["root", "other-language-only", "shared-part"],
+      language: "Mer",
+      languageId: "mer-language",
+    },
+  });
+
+  const uniqueRoot = record({
+    path: "Languages/Mer/Lexicon/root.md",
+    value: {
+      word: "root",
+      language: "Mer",
+      languageId: "mer-language",
+    },
+  });
+
+  const otherLanguageOnlyRoot = record({
+    path: "Languages/Test Language/Lexicon/other-language-only.md",
+    value: {
+      word: "other-language-only",
+      language: "Test Language",
+      languageId: "test-language",
+    },
+  });
+
+  const ambiguousRootA = record({
+    path: "Languages/Mer/Lexicon/shared-part-a.md",
+    value: {
+      word: "shared-part",
+      language: "Mer",
+      languageId: "mer-language",
+    },
+  });
+
+  const ambiguousRootB = record({
+    path: "Languages/Mer/Lexicon/shared-part-b.md",
+    value: {
+      word: "other-headword",
+      aliases: ["shared-part"],
+      language: "Mer",
+      languageId: "mer-language",
+    },
+  });
+
+  const lexicalPartDiagnostics = buildSourceDiagnosticGroups({
+    records: [],
+    dictionaryRecords: [
+      compoundOwner,
+      uniqueRoot,
+      otherLanguageOnlyRoot,
+      ambiguousRootA,
+      ambiguousRootB,
+    ],
+    caseSensitiveMatching: false,
+  });
+
+  assert.equal(
+    lexicalPartDiagnostics.length,
+    1,
+    "only the owning compound note should receive relationship diagnostics",
+  );
+  assert.equal(lexicalPartDiagnostics[0].path, compoundOwner.path);
+  assert.deepEqual(
+    lexicalPartDiagnostics[0].diagnostics.map(
+      (diagnostic) => diagnostic.code,
+    ),
+    [
+      "dictionary.parts.unresolved-target",
+      "dictionary.parts.ambiguous-target",
+    ],
+    "a unique local target is clean, a target belonging only to another language is unresolved, and several local targets are ambiguous",
+  );
+
+  assert.ok(
+    lexicalPartDiagnostics[0].diagnostics[0].message.includes(
+      "other-language-only",
+    ),
+    "the unresolved warning must preserve the creator-authored part text",
+  );
+
+  const ambiguousPartDiagnostic =
+    lexicalPartDiagnostics[0].diagnostics[1];
+
+  assert.ok(
+    ambiguousPartDiagnostic.message.includes(ambiguousRootA.path) &&
+      ambiguousPartDiagnostic.message.includes(ambiguousRootB.path),
+    "the ambiguous warning must name every same-language candidate path",
+  );
+  assert.equal(
+    ambiguousPartDiagnostic.message.includes(otherLanguageOnlyRoot.path),
+    false,
+    "another language must never enter the candidate target list",
+  );
+
+  // The settled case policy must match the live Dictionary index. The same
+  // source pair is clean in case-insensitive mode and unresolved when exact
+  // case is required.
+  const caseOwner = record({
+    path: "Languages/Mer/Lexicon/case-compound.md",
+    value: {
+      word: "case-compound",
+      parts: ["CASE-ROOT"],
+      language: "Mer",
+      languageId: "mer-language",
+    },
+  });
+
+  const caseRoot = record({
+    path: "Languages/Mer/Lexicon/case-root.md",
+    value: {
+      word: "case-root",
+      language: "Mer",
+      languageId: "mer-language",
+    },
+  });
+
+  assert.deepEqual(
+    buildSourceDiagnosticGroups({
+      records: [],
+      dictionaryRecords: [caseOwner, caseRoot],
+      caseSensitiveMatching: false,
+    }),
+    [],
+    "case-insensitive diagnostics must recognize the same target as the Dictionary index",
+  );
+
+  const caseSensitivePartDiagnostics = buildSourceDiagnosticGroups({
+    records: [],
+    dictionaryRecords: [caseOwner, caseRoot],
+    caseSensitiveMatching: true,
+  });
+
+  assert.equal(caseSensitivePartDiagnostics.length, 1);
+  assert.equal(
+    caseSensitivePartDiagnostics[0].diagnostics[0].code,
+    "dictionary.parts.unresolved-target",
+  );
+
+  // -------------------------------------------------------------------------
   // Repeated collection of the same source issue must not duplicate it.
   // -------------------------------------------------------------------------
   const sharedIdentity = identityFor(

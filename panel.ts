@@ -38,6 +38,7 @@ import {
   firstSense,
 } from "./word-tokens";
 import { normalizeLexicalKey } from "./lexical-normalization";
+import { resolveLexicalPart } from "./lexical-part-relationships";
 import {
   glossEnglishToConlang,
   glossConlangToEnglish,
@@ -933,7 +934,7 @@ export class TranslationPanelView extends ItemView {
 
     // === Compound decomposition: show parts if this is a compound ===
     if (entry.parts && entry.parts.length > 0) {
-      this.renderPartsDecomposition(entry.parts);
+      this.renderPartsDecomposition(entry);
     }
 
     // === Declared forms (the entry's own `forms:` property) ===
@@ -1052,37 +1053,65 @@ export class TranslationPanelView extends ItemView {
   }
 
   /**
-   * Render a compound entry's parts as clickable chips. Each part is looked
-   * up in the dictionary; if found, the chip shows its meaning and clicking
-   * navigates to that part's entry. Unknown parts are shown greyed out.
+   * Render one lexical entry's compound decomposition.
+   *
+   * Resolution uses the entry itself as language authority and returns explicit
+   * zero/one/many cardinality. Only one proven same-language target becomes
+   * clickable. Missing or ambiguous relationships remain visible but cannot
+   * silently navigate to another language's or an arbitrarily first-loaded
+   * note.
    */
-  private renderPartsDecomposition(parts: string[]) {
+  private renderPartsDecomposition(owner: DictionaryEntry) {
     const section = this.entriesEl.createDiv({ cls: "conlang-parts-section" });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
     header.setText("Parts");
     const list = section.createDiv({ cls: "conlang-parts-list" });
-    for (const part of parts) {
+    const candidates = this.plugin.dictionary.allEntries();
+
+    for (const part of owner.parts ?? []) {
       const chip = list.createDiv({ cls: "conlang-part-chip" });
       const wordEl = chip.createSpan({ cls: "conlang-part-word" });
       wordEl.setText(part);
-      const entry = this.plugin.dictionary.lookup(part);
-      if (entry) {
-        const sep = chip.createSpan({ cls: "conlang-part-sep" });
-        sep.setText("→");
-        const meaningEl = chip.createSpan({ cls: "conlang-part-meaning" });
-        const sense = firstSense(entry.definition);
-        meaningEl.setText(sense || entry.definition);
-        chip.addClass("conlang-clickable");
-        chip.addEventListener("click", () => {
-          const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-          if (file instanceof TFile) {
-            void this.plugin.app.workspace.getLeaf(false).openFile(file);
-          }
-        });
-      } else {
+
+      const resolution = resolveLexicalPart(
+        owner,
+        part,
+        candidates,
+        this.plugin.settings.caseSensitiveMatching,
+      );
+
+      if (resolution.status === "unresolved") {
         chip.addClass("unknown");
-        chip.title = "This part isn't in the dictionary.";
+        chip.title =
+          "This part isn't in this lexical entry's language dictionary.";
+        continue;
       }
+
+      const sep = chip.createSpan({ cls: "conlang-part-sep" });
+      sep.setText("→");
+      const meaningEl = chip.createSpan({ cls: "conlang-part-meaning" });
+
+      if (resolution.status === "ambiguous") {
+        chip.addClass("ambiguous");
+        meaningEl.setText(
+          `${resolution.targets.length} possible same-language matches`,
+        );
+        chip.title =
+          "This part is ambiguous. Open Diagnostics to inspect every " +
+          "matching source before deciding which relationship is intended.";
+        continue;
+      }
+
+      const [target] = resolution.targets;
+      const sense = firstSense(target.definition);
+      meaningEl.setText(sense || target.definition);
+      chip.addClass("conlang-clickable");
+      chip.addEventListener("click", () => {
+        const file = this.plugin.app.vault.getAbstractFileByPath(target.path);
+        if (file instanceof TFile) {
+          void this.plugin.app.workspace.getLeaf(false).openFile(file);
+        }
+      });
     }
   }
 

@@ -1375,13 +1375,30 @@
   transition: background 0.1s;
 }
 
-.conlang-part-chip:hover:not(.unknown) {
+/*
+ * Only uniquely resolved parts receive the hover treatment associated with a
+ * clickable target. Unknown and ambiguous relationships remain inert.
+ */
+.conlang-part-chip:hover:not(.unknown):not(.ambiguous) {
   background: var(--background-modifier-hover);
 }
 
 .conlang-part-chip.unknown {
   opacity: 0.6;
   font-style: italic;
+}
+
+/*
+ * Ambiguity is distinct from absence: candidates exist, but Workbench refuses
+ * to choose one. Keep the part readable while giving its explanation the
+ * warning color used elsewhere in Obsidian.
+ */
+.conlang-part-chip.ambiguous {
+  font-style: italic;
+}
+
+.conlang-part-chip.ambiguous .conlang-part-meaning {
+  color: var(--text-warning);
 }
 
 .conlang-part-word {

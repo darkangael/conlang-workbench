@@ -1330,6 +1330,7 @@ export default class ConlangPlugin extends Plugin {
       exampleRecords,
       phonologyUnitRecords,
       phonologyRealizationRecords,
+      caseSensitiveMatching: this.settings.caseSensitiveMatching,
     });
   }
 

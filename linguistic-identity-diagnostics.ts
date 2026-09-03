@@ -6,6 +6,10 @@ import type {
   WorkbenchDiagnostic,
   WorkbenchSourceRecord,
 } from "./workbench-source";
+import {
+  resolveLexicalPart,
+  type LexicalPartRelationshipValue,
+} from "./lexical-part-relationships";
 
 /**
  * Minimal language scope shared by the linguistic objects whose IDs are
@@ -31,10 +35,16 @@ export interface DiagnosticLexicalSense {
 }
 
 /**
- * Dictionary values add nested senses to the common language scope.
+ * Dictionary values add nested senses and compound-part relationships to the
+ * common language scope.
+ *
+ * Extending LexicalPartRelationshipValue keeps diagnostic resolution aligned
+ * with the same minimal contract used by the Dictionary panel.
  */
-export interface DiagnosticDictionaryValue extends DiagnosticScopedValue {
+export interface DiagnosticDictionaryValue
+  extends DiagnosticScopedValue, LexicalPartRelationshipValue {
   senses?: readonly DiagnosticLexicalSense[];
+  parts?: readonly string[];
 }
 
 /**
@@ -91,6 +101,10 @@ export interface LinguisticIdentityDiagnosticInput {
   exampleRecords?: readonly WorkbenchSourceRecord<DiagnosticScopedValue>[];
   phonologyUnitRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalUnitValue>[];
   phonologyRealizationRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalRealizationValue>[];
+
+  // Lexical relationship matching must mirror the settled dictionary index.
+  // Omitted input preserves the long-standing case-insensitive default.
+  caseSensitiveMatching?: boolean;
 }
 
 /**
@@ -212,6 +226,100 @@ function collectObjectDomainCollisions<T extends DiagnosticScopedValue>(
             "document-type identity domain. Every source was preserved; " +
             "open the affected notes and decide whether they should remain " +
             "separate, receive distinct IDs, be merged, or be deleted.",
+        },
+      });
+    }
+  }
+
+  return diagnostics;
+}
+
+/**
+ * Add source-facing diagnostics for lexical compound parts that do not resolve
+ * to exactly one target inside their owning language.
+ *
+ * Only complete accepted dictionary records participate. Malformed or rejected
+ * sources retain their parser/authority diagnostics, but cannot become trusted
+ * relationship targets.
+ */
+function collectLexicalPartRelationshipDiagnostics(
+  records: readonly WorkbenchSourceRecord<DiagnosticDictionaryValue>[],
+  caseSensitive: boolean,
+): DerivedIdentityDiagnostic[] {
+  const recordsBySource = new Map<
+    string,
+    WorkbenchSourceRecord<DiagnosticDictionaryValue> & {
+      value: DiagnosticDictionaryValue;
+    }
+  >();
+
+  for (const record of records) {
+    if (!record.value) continue;
+
+    // Repeated collection of one physical source must not manufacture an
+    // ambiguous relationship target.
+    if (!recordsBySource.has(record.identity.workbenchID)) {
+      recordsBySource.set(record.identity.workbenchID, {
+        ...record,
+        value: record.value,
+      });
+    }
+  }
+
+  const completeRecords = Array.from(recordsBySource.values());
+  const candidates = completeRecords.map((record) => ({
+    ...record.value,
+    path: record.path,
+  }));
+  const diagnostics: DerivedIdentityDiagnostic[] = [];
+
+  for (const record of completeRecords) {
+    const parts = record.value.parts ?? [];
+
+    for (const part of parts) {
+      const resolution = resolveLexicalPart(
+        record.value,
+        part,
+        candidates,
+        caseSensitive,
+      );
+
+      if (resolution.status === "unique") continue;
+
+      if (resolution.status === "unresolved") {
+        diagnostics.push({
+          identity: record.identity,
+          path: record.path,
+          diagnostic: {
+            code: "dictionary.parts.unresolved-target",
+            severity: "warning",
+            field: "parts",
+            message:
+              `Compound part "${part}" does not resolve to a headword or ` +
+              "alias within this lexical entry's current language scope. " +
+              "The lexical source and part text were preserved and were not " +
+              "modified.",
+          },
+        });
+        continue;
+      }
+
+      const targetPaths = resolution.targets
+        .map((target) => target.path)
+        .sort((left, right) => left.localeCompare(right));
+
+      diagnostics.push({
+        identity: record.identity,
+        path: record.path,
+        diagnostic: {
+          code: "dictionary.parts.ambiguous-target",
+          severity: "warning",
+          field: "parts",
+          message:
+            `Compound part "${part}" resolves to multiple same-language ` +
+            `headword or alias notes: ${describeOtherPaths(targetPaths)}. ` +
+            "Every source was preserved; open the affected notes and make " +
+            "the intended lexical relationship unique before relying on it.",
         },
       });
     }
@@ -443,11 +551,13 @@ function collectLanguageProfileCollisions(
 }
 
 /**
- * Build every identity diagnostic that depends on comparing loaded sources.
+ * Build every identity or relationship diagnostic that depends on comparing
+ * loaded sources.
  *
  * One public entry point keeps source-diagnostics.ts responsible for grouping
  * and presentation while this module owns domain-aware collisions, nested
- * lexical-sense identity, and phonological relationship cardinality.
+ * lexical-sense identity, lexical-part resolution, and phonological
+ * relationship cardinality.
  */
 export function buildLinguisticIdentityDiagnostics(
   input: LinguisticIdentityDiagnosticInput,
@@ -455,6 +565,10 @@ export function buildLinguisticIdentityDiagnostics(
   const diagnostics: DerivedIdentityDiagnostic[] = [
     ...collectLanguageProfileCollisions(input.languageProfiles ?? []),
     ...collectLexicalSenseCollisions(input.dictionaryRecords ?? []),
+    ...collectLexicalPartRelationshipDiagnostics(
+      input.dictionaryRecords ?? [],
+      input.caseSensitiveMatching ?? false,
+    ),
     ...collectPhonologyRelationshipDiagnostics(
       input.phonologyUnitRecords ?? [],
       input.phonologyRealizationRecords ?? [],

@@ -55,6 +55,10 @@ export interface BuildSourceDiagnosticGroupsInput {
   exampleRecords?: readonly WorkbenchSourceRecord<DiagnosticScopedValue>[];
   phonologyUnitRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalUnitValue>[];
   phonologyRealizationRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalRealizationValue>[];
+
+  // Relationship diagnostics must use the same settled lexical comparison
+  // policy as the live Dictionary indexes.
+  caseSensitiveMatching?: boolean;
 }
 
 /**

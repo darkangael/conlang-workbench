@@ -7658,6 +7658,51 @@ function explainInflection(label) {
   return EXPLANATIONS[key];
 }
 
+// lexical-part-relationships.ts
+function sharesOwnerLanguage(owner, candidate) {
+  var _a, _b, _c, _d, _e, _f;
+  const ownerLanguageId = (_a = owner.languageId) == null ? void 0 : _a.trim();
+  const ownerLanguage = (_b = owner.language) == null ? void 0 : _b.trim();
+  if (ownerLanguageId && ((_c = candidate.languageId) == null ? void 0 : _c.trim()) !== ownerLanguageId) {
+    return false;
+  }
+  if (ownerLanguage && ((_d = candidate.language) == null ? void 0 : _d.trim()) !== ownerLanguage) {
+    return false;
+  }
+  if (!ownerLanguageId && !ownerLanguage) {
+    return !((_e = candidate.languageId) == null ? void 0 : _e.trim()) && !((_f = candidate.language) == null ? void 0 : _f.trim());
+  }
+  return true;
+}
+function resolveLexicalPart(owner, part, candidates, caseSensitive) {
+  const partKey = normalizeLexicalKey(part, caseSensitive);
+  const targets = candidates.filter((candidate) => {
+    var _a;
+    if (!sharesOwnerLanguage(owner, candidate)) return false;
+    const candidateKeys = [
+      candidate.word,
+      ...(_a = candidate.aliases) != null ? _a : []
+    ].map((value) => normalizeLexicalKey(value, caseSensitive));
+    return candidateKeys.includes(partKey);
+  });
+  if (targets.length === 0) {
+    return {
+      status: "unresolved",
+      targets: []
+    };
+  }
+  if (targets.length === 1) {
+    return {
+      status: "unique",
+      targets: [targets[0]]
+    };
+  }
+  return {
+    status: "ambiguous",
+    targets
+  };
+}
+
 // panel.ts
 var VIEW_TYPE_PANEL = "made-up-words-panel";
 var _TranslationPanelView = class _TranslationPanelView extends import_obsidian20.ItemView {
@@ -8292,7 +8337,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       }
     });
     if (entry.parts && entry.parts.length > 0) {
-      this.renderPartsDecomposition(entry.parts);
+      this.renderPartsDecomposition(entry);
     }
     if (entry.forms && entry.forms.length > 0) {
       this.renderDeclaredForms(entry.forms);
@@ -8384,37 +8429,57 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     );
   }
   /**
-   * Render a compound entry's parts as clickable chips. Each part is looked
-   * up in the dictionary; if found, the chip shows its meaning and clicking
-   * navigates to that part's entry. Unknown parts are shown greyed out.
+   * Render one lexical entry's compound decomposition.
+   *
+   * Resolution uses the entry itself as language authority and returns explicit
+   * zero/one/many cardinality. Only one proven same-language target becomes
+   * clickable. Missing or ambiguous relationships remain visible but cannot
+   * silently navigate to another language's or an arbitrarily first-loaded
+   * note.
    */
-  renderPartsDecomposition(parts) {
+  renderPartsDecomposition(owner) {
+    var _a;
     const section = this.entriesEl.createDiv({ cls: "conlang-parts-section" });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
     header.setText("Parts");
     const list = section.createDiv({ cls: "conlang-parts-list" });
-    for (const part of parts) {
+    const candidates = this.plugin.dictionary.allEntries();
+    for (const part of (_a = owner.parts) != null ? _a : []) {
       const chip = list.createDiv({ cls: "conlang-part-chip" });
       const wordEl = chip.createSpan({ cls: "conlang-part-word" });
       wordEl.setText(part);
-      const entry = this.plugin.dictionary.lookup(part);
-      if (entry) {
-        const sep = chip.createSpan({ cls: "conlang-part-sep" });
-        sep.setText("\u2192");
-        const meaningEl = chip.createSpan({ cls: "conlang-part-meaning" });
-        const sense = firstSense(entry.definition);
-        meaningEl.setText(sense || entry.definition);
-        chip.addClass("conlang-clickable");
-        chip.addEventListener("click", () => {
-          const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-          if (file instanceof import_obsidian20.TFile) {
-            void this.plugin.app.workspace.getLeaf(false).openFile(file);
-          }
-        });
-      } else {
+      const resolution = resolveLexicalPart(
+        owner,
+        part,
+        candidates,
+        this.plugin.settings.caseSensitiveMatching
+      );
+      if (resolution.status === "unresolved") {
         chip.addClass("unknown");
-        chip.title = "This part isn't in the dictionary.";
+        chip.title = "This part isn't in this lexical entry's language dictionary.";
+        continue;
       }
+      const sep = chip.createSpan({ cls: "conlang-part-sep" });
+      sep.setText("\u2192");
+      const meaningEl = chip.createSpan({ cls: "conlang-part-meaning" });
+      if (resolution.status === "ambiguous") {
+        chip.addClass("ambiguous");
+        meaningEl.setText(
+          `${resolution.targets.length} possible same-language matches`
+        );
+        chip.title = "This part is ambiguous. Open Diagnostics to inspect every matching source before deciding which relationship is intended.";
+        continue;
+      }
+      const [target] = resolution.targets;
+      const sense = firstSense(target.definition);
+      meaningEl.setText(sense || target.definition);
+      chip.addClass("conlang-clickable");
+      chip.addEventListener("click", () => {
+        const file = this.plugin.app.vault.getAbstractFileByPath(target.path);
+        if (file instanceof import_obsidian20.TFile) {
+          void this.plugin.app.workspace.getLeaf(false).openFile(file);
+        }
+      });
     }
   }
   translateConlangToEnglish(text) {
@@ -12357,6 +12422,62 @@ function collectObjectDomainCollisions(domain) {
   }
   return diagnostics;
 }
+function collectLexicalPartRelationshipDiagnostics(records, caseSensitive) {
+  var _a;
+  const recordsBySource = /* @__PURE__ */ new Map();
+  for (const record of records) {
+    if (!record.value) continue;
+    if (!recordsBySource.has(record.identity.workbenchID)) {
+      recordsBySource.set(record.identity.workbenchID, {
+        ...record,
+        value: record.value
+      });
+    }
+  }
+  const completeRecords = Array.from(recordsBySource.values());
+  const candidates = completeRecords.map((record) => ({
+    ...record.value,
+    path: record.path
+  }));
+  const diagnostics = [];
+  for (const record of completeRecords) {
+    const parts = (_a = record.value.parts) != null ? _a : [];
+    for (const part of parts) {
+      const resolution = resolveLexicalPart(
+        record.value,
+        part,
+        candidates,
+        caseSensitive
+      );
+      if (resolution.status === "unique") continue;
+      if (resolution.status === "unresolved") {
+        diagnostics.push({
+          identity: record.identity,
+          path: record.path,
+          diagnostic: {
+            code: "dictionary.parts.unresolved-target",
+            severity: "warning",
+            field: "parts",
+            message: `Compound part "${part}" does not resolve to a headword or alias within this lexical entry's current language scope. The lexical source and part text were preserved and were not modified.`
+          }
+        });
+        continue;
+      }
+      const targetPaths = resolution.targets.map((target) => target.path).sort((left, right) => left.localeCompare(right));
+      diagnostics.push({
+        identity: record.identity,
+        path: record.path,
+        diagnostic: {
+          code: "dictionary.parts.ambiguous-target",
+          severity: "warning",
+          field: "parts",
+          message: `Compound part "${part}" resolves to multiple same-language headword or alias notes: ${describeOtherPaths(targetPaths)}. Every source was preserved; open the affected notes and make the intended lexical relationship unique before relying on it.`
+        }
+      });
+    }
+  }
+  return diagnostics;
+}
 function collectLexicalSenseCollisions(records) {
   var _a, _b, _c;
   const diagnostics = [];
@@ -12472,38 +12593,42 @@ function collectLanguageProfileCollisions(profiles) {
   return diagnostics;
 }
 function buildLinguisticIdentityDiagnostics(input) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
   const diagnostics = [
     ...collectLanguageProfileCollisions((_a = input.languageProfiles) != null ? _a : []),
     ...collectLexicalSenseCollisions((_b = input.dictionaryRecords) != null ? _b : []),
+    ...collectLexicalPartRelationshipDiagnostics(
+      (_c = input.dictionaryRecords) != null ? _c : [],
+      (_d = input.caseSensitiveMatching) != null ? _d : false
+    ),
     ...collectPhonologyRelationshipDiagnostics(
-      (_c = input.phonologyUnitRecords) != null ? _c : [],
-      (_d = input.phonologyRealizationRecords) != null ? _d : []
+      (_e = input.phonologyUnitRecords) != null ? _e : [],
+      (_f = input.phonologyRealizationRecords) != null ? _f : []
     )
   ];
   const domains = [
     {
-      records: (_e = input.dictionaryRecords) != null ? _e : [],
+      records: (_g = input.dictionaryRecords) != null ? _g : [],
       field: "lexeme_id",
       objectLabel: "Lexeme"
     },
     {
-      records: (_f = input.morphemeRecords) != null ? _f : [],
+      records: (_h = input.morphemeRecords) != null ? _h : [],
       field: "morpheme_id",
       objectLabel: "Morpheme"
     },
     {
-      records: (_g = input.exampleRecords) != null ? _g : [],
+      records: (_i = input.exampleRecords) != null ? _i : [],
       field: "example_id",
       objectLabel: "Linguistic example"
     },
     {
-      records: (_h = input.phonologyUnitRecords) != null ? _h : [],
+      records: (_j = input.phonologyUnitRecords) != null ? _j : [],
       field: "unit_id",
       objectLabel: "Phonological unit"
     },
     {
-      records: (_i = input.phonologyRealizationRecords) != null ? _i : [],
+      records: (_k = input.phonologyRealizationRecords) != null ? _k : [],
       field: "realization_id",
       objectLabel: "Phonological realization"
     }
@@ -13409,7 +13534,8 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       morphemeRecords,
       exampleRecords,
       phonologyUnitRecords,
-      phonologyRealizationRecords
+      phonologyRealizationRecords,
+      caseSensitiveMatching: this.settings.caseSensitiveMatching
     });
   }
   /**
