@@ -50,16 +50,14 @@ export interface DiagnosticDictionaryValue
 /**
  * Minimal canonical-unit shape needed for relationship validation.
  */
-export interface DiagnosticPhonologicalUnitValue
-  extends DiagnosticScopedValue {
+export interface DiagnosticPhonologicalUnitValue extends DiagnosticScopedValue {
   id: string;
 }
 
 /**
  * Minimal realization shape needed to resolve its declared canonical unit.
  */
-export interface DiagnosticPhonologicalRealizationValue
-  extends DiagnosticScopedValue {
+export interface DiagnosticPhonologicalRealizationValue extends DiagnosticScopedValue {
   unitId: string;
 }
 
@@ -127,9 +125,7 @@ export function normalizeObjectIdentity(id: string): string {
  * Language Profile. Truly unscoped objects share an explicit unscoped domain
  * rather than borrowing an ID or filename as invented language authority.
  */
-export function languageIdentityScope(
-  value: DiagnosticScopedValue,
-): string {
+export function languageIdentityScope(value: DiagnosticScopedValue): string {
   const languageId = value.languageId?.trim();
   if (languageId) return `language-id:${languageId}`;
 
@@ -138,7 +134,6 @@ export function languageIdentityScope(
 
   return "language-unscoped";
 }
-
 
 interface ObjectIdentityDomain<T extends DiagnosticScopedValue> {
   records: readonly WorkbenchSourceRecord<T>[];
@@ -396,17 +391,11 @@ function unitMatchesRealization(
     return false;
   }
 
-  if (
-    realization.languageId &&
-    unit.languageId !== realization.languageId
-  ) {
+  if (realization.languageId && unit.languageId !== realization.languageId) {
     return false;
   }
 
-  if (
-    realization.language &&
-    unit.language !== realization.language
-  ) {
+  if (realization.language && unit.language !== realization.language) {
     return false;
   }
 

@@ -1279,8 +1279,7 @@ export default class ConlangPlugin extends Plugin {
     this.lastNotifiedDiagnosticPath = file.path;
 
     const issueCount = group.diagnostics.length;
-    const diagnosticLabel =
-      issueCount === 1 ? "diagnostic" : "diagnostics";
+    const diagnosticLabel = issueCount === 1 ? "diagnostic" : "diagnostics";
 
     new Notice(
       `Conlang Workbench: ${file.name} has ${issueCount} ${diagnosticLabel}.`,

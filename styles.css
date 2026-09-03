@@ -30,7 +30,9 @@
   font-size: 0.9em;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color 0.1s, border-color 0.1s;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
 }
 
 .conlang-tab:hover {
@@ -65,7 +67,9 @@
   font-size: 0.85em;
   background: var(--background-secondary);
   opacity: 0.55;
-  transition: opacity 0.1s, background 0.1s;
+  transition:
+    opacity 0.1s,
+    background 0.1s;
 }
 
 .conlang-lang-chip.is-active {
@@ -116,7 +120,10 @@
   letter-spacing: 0.05em;
   padding: 1px 6px;
   border-radius: 3px;
-  background: var(--background-modifier-success-rgb, var(--background-modifier-border));
+  background: var(
+    --background-modifier-success-rgb,
+    var(--background-modifier-border)
+  );
   color: var(--text-muted);
   font-weight: 600;
   border: 1px solid var(--background-modifier-border);
@@ -739,7 +746,8 @@
   gap: 4px 6px;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.25));
+  border-top: 1px solid
+    var(--background-modifier-border, rgba(128, 128, 128, 0.25));
   font-size: 0.85em;
 }
 
@@ -1669,7 +1677,10 @@ body {
   --conlang-known-color: var(--text-accent, #a882ff);
   --conlang-known-english-color: var(--text-muted, #9aa0a6);
   --conlang-known-bg: var(--text-selection, hsla(258, 88%, 68%, 0.28));
-  --conlang-known-english-bg: var(--background-modifier-hover, rgba(255, 255, 255, 0.08));
+  --conlang-known-english-bg: var(
+    --background-modifier-hover,
+    rgba(255, 255, 255, 0.08)
+  );
 }
 
 /* Underline style (default).
@@ -1781,7 +1792,10 @@ body.conlang-hl-background .conlang-known-word.is-phrase {
 }
 
 .conlang-badge-active {
-  background: var(--background-modifier-success, var(--background-modifier-border));
+  background: var(
+    --background-modifier-success,
+    var(--background-modifier-border)
+  );
   color: var(--text-normal);
 }
 

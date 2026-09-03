@@ -41,12 +41,7 @@ try {
     linguisticID,
   });
 
-  const record = ({
-    path,
-    value = {},
-    diagnostics = [],
-    linguisticID,
-  }) => ({
+  const record = ({ path, value = {}, diagnostics = [], linguisticID }) => ({
     identity: identityFor(path, linguisticID),
     path,
     value,
@@ -94,10 +89,7 @@ try {
     diagnostics: [],
   });
 
-  assert.deepEqual(
-    buildSourceDiagnosticGroups({ records: [clean] }),
-    [],
-  );
+  assert.deepEqual(buildSourceDiagnosticGroups({ records: [clean] }), []);
 
   // -------------------------------------------------------------------------
   // Top-level portable IDs collide only inside one language and object type.
@@ -149,11 +141,7 @@ try {
 
   const topLevelCollisions = buildSourceDiagnosticGroups({
     records: [],
-    dictionaryRecords: [
-      lexemeA,
-      lexemeB,
-      otherLanguageLexeme,
-    ],
+    dictionaryRecords: [lexemeA, lexemeB, otherLanguageLexeme],
     morphemeRecords: [morphemeA, morphemeB],
   });
 
@@ -169,18 +157,12 @@ try {
   );
 
   for (const group of topLevelCollisions.slice(0, 2)) {
-    assert.equal(
-      group.diagnostics[0].code,
-      "identity.duplicate-lexeme-id",
-    );
+    assert.equal(group.diagnostics[0].code, "identity.duplicate-lexeme-id");
     assert.equal(group.diagnostics[0].field, "lexeme_id");
   }
 
   for (const group of topLevelCollisions.slice(2)) {
-    assert.equal(
-      group.diagnostics[0].code,
-      "identity.duplicate-morpheme-id",
-    );
+    assert.equal(group.diagnostics[0].code, "identity.duplicate-morpheme-id");
     assert.equal(group.diagnostics[0].field, "morpheme_id");
   }
 
@@ -269,14 +251,8 @@ try {
       group.diagnostics[0].code,
     ]),
     [
-      [
-        "Languages/Mer/Examples/example-a.md",
-        "identity.duplicate-example-id",
-      ],
-      [
-        "Languages/Mer/Examples/example-b.md",
-        "identity.duplicate-example-id",
-      ],
+      ["Languages/Mer/Examples/example-a.md", "identity.duplicate-example-id"],
+      ["Languages/Mer/Examples/example-b.md", "identity.duplicate-example-id"],
       [
         "Languages/Mer/Phonology/realization-a.md",
         "identity.duplicate-realization-id",
@@ -285,22 +261,14 @@ try {
         "Languages/Mer/Phonology/realization-b.md",
         "identity.duplicate-realization-id",
       ],
-      [
-        "Languages/Mer/Phonology/unit-a.md",
-        "identity.duplicate-unit-id",
-      ],
-      [
-        "Languages/Mer/Phonology/unit-b.md",
-        "identity.duplicate-unit-id",
-      ],
+      ["Languages/Mer/Phonology/unit-a.md", "identity.duplicate-unit-id"],
+      ["Languages/Mer/Phonology/unit-b.md", "identity.duplicate-unit-id"],
     ],
     "examples, units, and realizations must report collisions only inside their own object domains",
   );
 
   assert.equal(
-    remainingObjectCollisions.some(
-      (group) => group.path === uniqueTarget.path,
-    ),
+    remainingObjectCollisions.some((group) => group.path === uniqueTarget.path),
     false,
     "a uniquely identified relationship target must not receive a diagnostic",
   );
@@ -314,11 +282,7 @@ try {
     value: {
       language: "Mer",
       languageId: "mer",
-      senses: [
-        { id: "current" },
-        { id: "current" },
-        { id: "flow" },
-      ],
+      senses: [{ id: "current" }, { id: "current" }, { id: "flow" }],
     },
   });
 
@@ -353,10 +317,7 @@ try {
         path: "Reference/Unique Profile.md",
       },
     ],
-    dictionaryRecords: [
-      senseCollisionEntry,
-      independentSenseEntry,
-    ],
+    dictionaryRecords: [senseCollisionEntry, independentSenseEntry],
   });
 
   assert.equal(
@@ -389,16 +350,12 @@ try {
   );
 
   const profileGroups = nestedAndProfileCollisions.filter(
-    (group) =>
-      group.diagnostics[0].code === "identity.duplicate-language-id",
+    (group) => group.diagnostics[0].code === "identity.duplicate-language-id",
   );
 
   assert.deepEqual(
     profileGroups.map((group) => group.path),
-    [
-      "Reference/Mer Profile.md",
-      "Reference/Test Profile.md",
-    ],
+    ["Reference/Mer Profile.md", "Reference/Test Profile.md"],
     "each distinct colliding profile note must receive one navigable diagnostic",
   );
 
@@ -478,13 +435,8 @@ try {
   );
   assert.equal(lexicalPartDiagnostics[0].path, compoundOwner.path);
   assert.deepEqual(
-    lexicalPartDiagnostics[0].diagnostics.map(
-      (diagnostic) => diagnostic.code,
-    ),
-    [
-      "dictionary.parts.unresolved-target",
-      "dictionary.parts.ambiguous-target",
-    ],
+    lexicalPartDiagnostics[0].diagnostics.map((diagnostic) => diagnostic.code),
+    ["dictionary.parts.unresolved-target", "dictionary.parts.ambiguous-target"],
     "a unique local target is clean, a target belonging only to another language is unresolved, and several local targets are ambiguous",
   );
 
@@ -495,8 +447,7 @@ try {
     "the unresolved warning must preserve the creator-authored part text",
   );
 
-  const ambiguousPartDiagnostic =
-    lexicalPartDiagnostics[0].diagnostics[1];
+  const ambiguousPartDiagnostic = lexicalPartDiagnostics[0].diagnostics[1];
 
   assert.ok(
     ambiguousPartDiagnostic.message.includes(ambiguousRootA.path) &&
@@ -686,9 +637,7 @@ try {
     "phonology.realization.ambiguous-unit",
   );
   assert.ok(
-    ambiguousRealizationGroup.diagnostics[0].message.includes(
-      testUnit.path,
-    ) &&
+    ambiguousRealizationGroup.diagnostics[0].message.includes(testUnit.path) &&
       ambiguousRealizationGroup.diagnostics[0].message.includes(
         duplicateTestUnit.path,
       ),
@@ -701,10 +650,7 @@ try {
     );
 
     assert.ok(unitGroup);
-    assert.equal(
-      unitGroup.diagnostics[0].code,
-      "identity.duplicate-unit-id",
-    );
+    assert.equal(unitGroup.diagnostics[0].code, "identity.duplicate-unit-id");
   }
 
   // -------------------------------------------------------------------------

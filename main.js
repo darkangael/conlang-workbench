@@ -7679,10 +7679,9 @@ function resolveLexicalPart(owner, part, candidates, caseSensitive) {
   const targets = candidates.filter((candidate) => {
     var _a;
     if (!sharesOwnerLanguage(owner, candidate)) return false;
-    const candidateKeys = [
-      candidate.word,
-      ...(_a = candidate.aliases) != null ? _a : []
-    ].map((value) => normalizeLexicalKey(value, caseSensitive));
+    const candidateKeys = [candidate.word, ...(_a = candidate.aliases) != null ? _a : []].map(
+      (value) => normalizeLexicalKey(value, caseSensitive)
+    );
     return candidateKeys.includes(partKey);
   });
   if (targets.length === 0) {
@@ -8305,12 +8304,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
    */
   renderWordDetails(_selectedText, entry, viaInflection) {
     this.setTranslationBlockVisible(false);
-    this.renderEntryDetailsInto(
-      this.entriesEl,
-      entry,
-      viaInflection,
-      true
-    );
+    this.renderEntryDetailsInto(this.entriesEl, entry, viaInflection, true);
   }
   /**
    * Render one dictionary entry into a container chosen by the owning surface.
@@ -12897,10 +12891,7 @@ function buildSourceDiagnosticGroups(input) {
     }
     existing.diagnosticKeys.add(keyForDiagnostic);
     existing.diagnostics.push(diagnostic);
-    existing.severity = highestSeverity(
-      existing.severity,
-      diagnostic.severity
-    );
+    existing.severity = highestSeverity(existing.severity, diagnostic.severity);
   };
   for (const record of input.records) {
     for (const diagnostic of record.diagnostics) {
@@ -12908,11 +12899,7 @@ function buildSourceDiagnosticGroups(input) {
     }
   }
   for (const derived of buildLinguisticIdentityDiagnostics(input)) {
-    addDiagnostic(
-      derived.identity,
-      derived.path,
-      derived.diagnostic
-    );
+    addDiagnostic(derived.identity, derived.path, derived.diagnostic);
   }
   const result = Array.from(groups.values()).map(
     ({ identity, path, severity, diagnostics }) => ({

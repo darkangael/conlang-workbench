@@ -153,10 +153,7 @@ export function buildSourceDiagnosticGroups(
 
     existing.diagnosticKeys.add(keyForDiagnostic);
     existing.diagnostics.push(diagnostic);
-    existing.severity = highestSeverity(
-      existing.severity,
-      diagnostic.severity,
-    );
+    existing.severity = highestSeverity(existing.severity, diagnostic.severity);
   };
 
   // First preserve every parser/inventory diagnostic already attached to a
@@ -176,11 +173,7 @@ export function buildSourceDiagnosticGroups(
    * record or creator-authored note.
    */
   for (const derived of buildLinguisticIdentityDiagnostics(input)) {
-    addDiagnostic(
-      derived.identity,
-      derived.path,
-      derived.diagnostic,
-    );
+    addDiagnostic(derived.identity, derived.path, derived.diagnostic);
   }
 
   const result: SourceDiagnosticGroup[] = Array.from(groups.values()).map(

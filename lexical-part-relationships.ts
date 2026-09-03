@@ -22,9 +22,7 @@ export interface LexicalPartRelationshipValue {
  * caller acknowledge whether a target is missing, unique, or ambiguous before
  * it grants navigation or any future mutation authority.
  */
-export type LexicalPartResolution<
-  T extends LexicalPartRelationshipValue,
-> =
+export type LexicalPartResolution<T extends LexicalPartRelationshipValue> =
   | {
       status: "unresolved";
       targets: readonly [];
@@ -65,10 +63,7 @@ function sharesOwnerLanguage(
   }
 
   if (!ownerLanguageId && !ownerLanguage) {
-    return (
-      !candidate.languageId?.trim() &&
-      !candidate.language?.trim()
-    );
+    return !candidate.languageId?.trim() && !candidate.language?.trim();
   }
 
   return true;
@@ -81,9 +76,7 @@ function sharesOwnerLanguage(
  * inflected forms remain excluded because `parts` currently names lexical
  * headwords or aliases, not grammatical surface forms.
  */
-export function resolveLexicalPart<
-  T extends LexicalPartRelationshipValue,
->(
+export function resolveLexicalPart<T extends LexicalPartRelationshipValue>(
   owner: LexicalPartRelationshipValue,
   part: string,
   candidates: readonly T[],
@@ -94,10 +87,9 @@ export function resolveLexicalPart<
   const targets = candidates.filter((candidate) => {
     if (!sharesOwnerLanguage(owner, candidate)) return false;
 
-    const candidateKeys = [
-      candidate.word,
-      ...(candidate.aliases ?? []),
-    ].map((value) => normalizeLexicalKey(value, caseSensitive));
+    const candidateKeys = [candidate.word, ...(candidate.aliases ?? [])].map(
+      (value) => normalizeLexicalKey(value, caseSensitive),
+    );
 
     return candidateKeys.includes(partKey);
   });

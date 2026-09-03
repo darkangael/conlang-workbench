@@ -896,12 +896,7 @@ export class TranslationPanelView extends ItemView {
     // Selection owns this container and historically lets its summary card
     // navigate directly to the established source note.
     this.setTranslationBlockVisible(false);
-    this.renderEntryDetailsInto(
-      this.entriesEl,
-      entry,
-      viaInflection,
-      true,
-    );
+    this.renderEntryDetailsInto(this.entriesEl, entry, viaInflection, true);
   }
 
   /**
@@ -934,9 +929,9 @@ export class TranslationPanelView extends ItemView {
      * borrowed rules from another language.
      */
     const lang = entry.language
-      ? this.plugin
+      ? (this.plugin
           .getActiveLanguages()
-          .find((candidate) => candidate.name === entry.language) ?? null
+          .find((candidate) => candidate.name === entry.language) ?? null)
       : this.plugin.getActiveLanguage();
 
     // === Top card: the dictionary entry itself ===
@@ -959,10 +954,7 @@ export class TranslationPanelView extends ItemView {
       });
       category.setText(entry.nameCategory);
     }
-    if (
-      this.plugin.getActiveLanguages().length > 1 &&
-      entry.language
-    ) {
+    if (this.plugin.getActiveLanguages().length > 1 && entry.language) {
       const language = head.createSpan({
         cls: "conlang-word-card-language",
       });
@@ -1106,8 +1098,8 @@ export class TranslationPanelView extends ItemView {
     container: HTMLElement,
     entry: Readonly<DictionaryEntry>,
   ): void {
-    const displayable = (entry.senses ?? []).filter(
-      (sense) => Boolean(sense.gloss || sense.definition),
+    const displayable = (entry.senses ?? []).filter((sense) =>
+      Boolean(sense.gloss || sense.definition),
     );
     if (displayable.length === 0) return;
 
@@ -1150,10 +1142,7 @@ export class TranslationPanelView extends ItemView {
    * ("dative: kalim, kalum") sit on one row, matching how predicted forms are
    * grouped directly below.
    */
-  private renderDeclaredForms(
-    container: HTMLElement,
-    forms: InflectedForm[],
-  ) {
+  private renderDeclaredForms(container: HTMLElement, forms: InflectedForm[]) {
     const section = container.createDiv({
       cls: "conlang-declared-section",
     });
