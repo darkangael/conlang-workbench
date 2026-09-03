@@ -13829,6 +13829,27 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     this.linguisticExamples = candidate.linguisticExamples;
     this.phonology = candidate.phonology;
     this.classifyCache.clear();
+    this.invalidateHoverResolution();
+  }
+  /**
+   * Invalidate hover state derived from the previous linguistic runtime.
+   *
+   * Hover caches the last resolved word and may leave its tooltip visible. Once
+   * commitLanguageRuntime() installs a new dictionary generation, both pieces
+   * of state are stale even when the pointer is still resting on the same word.
+   *
+   * Hide the old tooltip immediately, then clear lastHoverWord so the next
+   * mousemove performs a fresh lookup against the newly authoritative runtime.
+   *
+   * This helper is intentionally called from the successful runtime-commit
+   * boundary rather than from reloadActiveLanguage(). A blocked preflight or a
+   * failed detached preparation leaves the previous runtime authoritative, so
+   * its existing hover result remains valid and should not be discarded merely
+   * because a reload was attempted.
+   */
+  invalidateHoverResolution() {
+    this.hideTooltip();
+    this.lastHoverWord = null;
   }
   // === Panel management ===
   async openPanel() {
