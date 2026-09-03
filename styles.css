@@ -539,6 +539,19 @@
   flex-wrap: wrap;
 }
 
+/*
+ * Keep each filter label beside the control it describes. The complete group
+ * can move to the next line when the side panel narrows, but its contents do
+ * not split across separate lines.
+ */
+.conlang-browser-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .conlang-browser-control-label {
   font-size: 0.75em;
   text-transform: uppercase;
@@ -587,6 +600,22 @@
   font-size: 0.9em;
   padding: 24px 12px;
   text-align: center;
+}
+
+/*
+ * Dictionary details replace only the result surface. The browser controls
+ * remain mounted but hidden, preserving their session state for Back.
+ */
+.conlang-browser-details {
+  min-width: 0;
+}
+
+.conlang-browser-details-actions {
+  margin-top: 0;
+}
+
+.conlang-browser-details-content {
+  min-width: 0;
 }
 
 .conlang-empty-headline {
@@ -1475,6 +1504,23 @@
   color: var(--text-faint);
 }
 
+.conlang-word-card-category,
+.conlang-word-card-language {
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+.conlang-word-card-category {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.conlang-word-card-aliases {
+  margin-top: 4px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
 .conlang-word-card-def {
   color: var(--text-normal);
   margin-bottom: 4px;
@@ -1485,6 +1531,39 @@
   color: var(--text-muted);
   font-style: italic;
   margin-top: 4px;
+}
+
+/*
+ * Structured senses remain optional enrichment beneath the simple definition.
+ * Their own classes leave room for the pre-alpha sense model to grow without
+ * tying future fields to the compact Dictionary browser-row layout.
+ */
+.conlang-entry-senses {
+  margin-top: 12px;
+}
+
+.conlang-entry-senses-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conlang-entry-sense {
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.conlang-entry-sense-gloss {
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.conlang-entry-sense-definition {
+  margin-top: 2px;
+  font-size: 0.9em;
+  color: var(--text-normal);
 }
 
 .conlang-word-card-note {

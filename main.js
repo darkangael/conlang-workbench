@@ -7717,8 +7717,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     this.posFilter = "";
     // empty string = all
     this.nameFilter = "all";
-    this.languageFilter = "";
-    // empty = all active languages
+    // Dictionary opens on the current primary language. The creator may
+    // deliberately broaden the browser to every active language for comparison.
+    this.showAllActiveDictionaryLanguages = false;
     this.sortKey = "alphabetical";
     this.browserLimit = _TranslationPanelView.BROWSER_PAGE;
     this.browserFilterSig = "";
@@ -7729,6 +7730,13 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     this.translatorMode = "gloss";
     this.translatorInput = "";
     this.translatorDebounceTimer = null;
+    /*
+     * A Dictionary row can temporarily replace the browser list with one entry's
+     * details. Store only the source path, not the DictionaryEntry object itself.
+     * Runtime reloads replace the complete Dictionary inventory, so retaining an
+     * old object would let the UI display stale derived data.
+     */
+    this.selectedDictionaryEntryPath = null;
     this.updateScheduled = false;
     this.plugin = plugin;
   }
@@ -8295,12 +8303,32 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
    * Shows definition, POS, IPA, etymology, and all generated inflected forms
    * grouped by inflection label.
    */
-  renderWordDetails(selectedText, entry, viaInflection) {
-    var _a, _b;
+  renderWordDetails(_selectedText, entry, viaInflection) {
     this.setTranslationBlockVisible(false);
-    this.entriesEl.empty();
-    const lang = this.plugin.getActiveLanguage();
-    const card = this.entriesEl.createDiv({ cls: "conlang-word-card" });
+    this.renderEntryDetailsInto(
+      this.entriesEl,
+      entry,
+      viaInflection,
+      true
+    );
+  }
+  /**
+   * Render one dictionary entry into a container chosen by the owning surface.
+   *
+   * Selection and Dictionary may now share the same presentation without
+   * sharing navigation state. This remains a read-only renderer: it receives an
+   * already-loaded entry and can only navigate to already-established paths.
+   *
+   * Keeping the extraction inside panel.ts for now limits audit-time churn.
+   * Once the wider Dictionary and sense design settles, this method and its
+   * helpers can move together into a dedicated component without changing
+   * their data-safety boundary.
+   */
+  renderEntryDetailsInto(container, entry, viaInflection, openSummaryOnClick) {
+    var _a, _b, _c;
+    container.empty();
+    const lang = entry.language ? (_a = this.plugin.getActiveLanguages().find((candidate) => candidate.name === entry.language)) != null ? _a : null : this.plugin.getActiveLanguage();
+    const card = container.createDiv({ cls: "conlang-word-card" });
     const head = card.createDiv({ cls: "conlang-word-card-head" });
     const wordEl = head.createSpan({ cls: "conlang-word-card-word" });
     wordEl.setText(entry.word);
@@ -8312,8 +8340,26 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       const ipa = head.createSpan({ cls: "conlang-word-card-ipa" });
       ipa.setText(entry.ipa);
     }
+    if (entry.nameCategory) {
+      const category = head.createSpan({
+        cls: "conlang-word-card-category"
+      });
+      category.setText(entry.nameCategory);
+    }
+    if (this.plugin.getActiveLanguages().length > 1 && entry.language) {
+      const language = head.createSpan({
+        cls: "conlang-word-card-language"
+      });
+      language.setText(entry.language);
+    }
     const def = card.createDiv({ cls: "conlang-word-card-def" });
     def.setText(entry.definition);
+    if (entry.aliases && entry.aliases.length > 0) {
+      const aliases = card.createDiv({
+        cls: "conlang-word-card-aliases"
+      });
+      aliases.setText(`Also: ${entry.aliases.join(", ")}`);
+    }
     if (entry.etymology) {
       const etym = card.createDiv({ cls: "conlang-word-card-etym" });
       etym.setText(`Etymology: ${entry.etymology}`);
@@ -8329,23 +8375,24 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
         note.addClass("has-explanation");
       }
     }
-    card.addClass("conlang-clickable");
-    card.addEventListener("click", () => {
-      const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian20.TFile) {
-        void this.plugin.app.workspace.getLeaf(false).openFile(file);
-      }
-    });
+    if (openSummaryOnClick) {
+      card.addClass("conlang-clickable");
+      card.title = "Open dictionary source note";
+      card.addEventListener("click", () => {
+        this.openDictionaryEntrySource(entry);
+      });
+    }
+    this.renderEntrySenses(container, entry);
     if (entry.parts && entry.parts.length > 0) {
-      this.renderPartsDecomposition(entry);
+      this.renderPartsDecomposition(container, entry);
     }
     if (entry.forms && entry.forms.length > 0) {
-      this.renderDeclaredForms(entry.forms);
+      this.renderDeclaredForms(container, entry.forms);
     }
     const generated = lang ? generateInflections(entry, lang.inflections) : [];
     if (generated.length === 0) {
       if (entry.forms && entry.forms.length > 0) return;
-      const empty = this.entriesEl.createDiv({ cls: "conlang-forms-empty" });
+      const empty = container.createDiv({ cls: "conlang-forms-empty" });
       if (!entry.partOfSpeech) {
         empty.setText(
           "No inflected forms predicted \u2014 this entry has no part of speech, so POS-filtered rules don't apply. Edit the entry's frontmatter to add a partOfSpeech."
@@ -8357,22 +8404,22 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       }
       return;
     }
-    const header = this.entriesEl.createDiv({
+    const header = container.createDiv({
       cls: "conlang-panel-section-header"
     });
     header.setText("Predicted forms");
     const groups = /* @__PURE__ */ new Map();
     for (const g of generated) {
-      const list = (_a = groups.get(g.rule.label)) != null ? _a : [];
+      const list = (_b = groups.get(g.rule.label)) != null ? _b : [];
       list.push(g);
       groups.set(g.rule.label, list);
     }
-    const formsList = this.entriesEl.createDiv({ cls: "conlang-forms-list" });
+    const formsList = container.createDiv({ cls: "conlang-forms-list" });
     for (const [label, items] of groups) {
       const row = formsList.createDiv({ cls: "conlang-form-row" });
       const labelEl = row.createDiv({ cls: "conlang-form-label" });
       labelEl.setText(label);
-      const customDescription = (_b = items[0]) == null ? void 0 : _b.rule.description;
+      const customDescription = (_c = items[0]) == null ? void 0 : _c.rule.description;
       const explanation = customDescription || explainInflection(label);
       if (explanation) {
         labelEl.title = explanation;
@@ -8384,10 +8431,55 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
         formEl.setText(item.form);
       }
     }
-    const hint = this.entriesEl.createDiv({ cls: "conlang-forms-hint" });
+    const hint = container.createDiv({ cls: "conlang-forms-hint" });
     hint.setText(
       "Forms are predicted from your inflection rules. Hover any of them in a note to see this entry."
     );
+  }
+  /**
+   * Render the reader-facing portion of this entry's structured senses.
+   *
+   * Sense IDs and lookup terms remain available in the runtime model for future
+   * reference and editing tools, but they are not prose definitions and should
+   * not become visual clutter merely because the model can store them.
+   *
+   * Keeping sense presentation in one helper leaves room for the pre-alpha
+   * schema to grow without coupling those future fields to Dictionary
+   * navigation or compound-part resolution.
+   */
+  renderEntrySenses(container, entry) {
+    var _a;
+    const displayable = ((_a = entry.senses) != null ? _a : []).filter(
+      (sense) => Boolean(sense.gloss || sense.definition)
+    );
+    if (displayable.length === 0) return;
+    const section = container.createDiv({
+      cls: "conlang-entry-senses"
+    });
+    section.createDiv({
+      cls: "conlang-panel-section-header",
+      text: "Senses"
+    });
+    const list = section.createDiv({
+      cls: "conlang-entry-senses-list"
+    });
+    for (const sense of displayable) {
+      const senseEl = list.createDiv({
+        cls: "conlang-entry-sense"
+      });
+      if (sense.gloss) {
+        senseEl.createDiv({
+          cls: "conlang-entry-sense-gloss",
+          text: sense.gloss
+        });
+      }
+      if (sense.definition) {
+        senseEl.createDiv({
+          cls: "conlang-entry-sense-definition",
+          text: sense.definition
+        });
+      }
+    }
   }
   /**
    * Render the entry's hardcoded `forms:` as a declension/conjugation table
@@ -8395,9 +8487,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
    * ("dative: kalim, kalum") sit on one row, matching how predicted forms are
    * grouped directly below.
    */
-  renderDeclaredForms(forms) {
+  renderDeclaredForms(container, forms) {
     var _a;
-    const section = this.entriesEl.createDiv({
+    const section = container.createDiv({
       cls: "conlang-declared-section"
     });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
@@ -8437,9 +8529,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
    * silently navigate to another language's or an arbitrarily first-loaded
    * note.
    */
-  renderPartsDecomposition(owner) {
+  renderPartsDecomposition(container, owner) {
     var _a;
-    const section = this.entriesEl.createDiv({ cls: "conlang-parts-section" });
+    const section = container.createDiv({ cls: "conlang-parts-section" });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
     header.setText("Parts");
     const list = section.createDiv({ cls: "conlang-parts-list" });
@@ -8480,6 +8572,19 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
           void this.plugin.app.workspace.getLeaf(false).openFile(file);
         }
       });
+    }
+  }
+  /**
+   * Navigate to an already-loaded lexical source.
+   *
+   * This helper has navigation authority only. It does not create, repair,
+   * rename, or rewrite the source when the path is missing or no longer points
+   * to a Markdown file.
+   */
+  openDictionaryEntrySource(entry) {
+    const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
+    if (file instanceof import_obsidian20.TFile) {
+      void this.plugin.app.workspace.getLeaf(false).openFile(file);
     }
   }
   translateConlangToEnglish(text) {
@@ -9130,14 +9235,18 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
         this.renderBrowserList();
       }, 200);
     });
-    const controlsRow = this.browserEl.createDiv({
+    this.browserControlsEl = this.browserEl.createDiv({
       cls: "conlang-browser-controls"
     });
-    const sortLabel = controlsRow.createSpan({
+    const controlsRow = this.browserControlsEl;
+    const sortGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group"
+    });
+    const sortLabel = sortGroup.createSpan({
       cls: "conlang-browser-control-label"
     });
     sortLabel.setText("Sort");
-    const sortSelect = controlsRow.createEl("select", {
+    const sortSelect = sortGroup.createEl("select", {
       cls: "conlang-browser-select"
     });
     const sortOptions = [
@@ -9156,11 +9265,14 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       this.sortKey = sortSelect.value;
       this.renderBrowserList();
     });
-    const posLabel = controlsRow.createSpan({
+    const posGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group"
+    });
+    const posLabel = posGroup.createSpan({
       cls: "conlang-browser-control-label"
     });
     posLabel.setText("Type");
-    const posSelect = controlsRow.createEl("select", {
+    const posSelect = posGroup.createEl("select", {
       cls: "conlang-browser-select"
     });
     posSelect.addEventListener("change", () => {
@@ -9168,11 +9280,14 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       this.renderBrowserList();
     });
     posSelect.addClass("conlang-pos-select");
-    const namesLabel = controlsRow.createSpan({
+    const namesControlGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group"
+    });
+    const namesLabel = namesControlGroup.createSpan({
       cls: "conlang-browser-control-label"
     });
     namesLabel.setText("Names");
-    const namesGroup = controlsRow.createDiv({
+    const namesGroup = namesControlGroup.createDiv({
       cls: "conlang-browser-segmented"
     });
     const namesOptions = [
@@ -9206,25 +9321,49 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
         this.renderBrowserList();
       });
     }
-    const activeLangs = this.plugin.getActiveLanguages();
-    if (activeLangs.length > 1) {
-      const langLabel = controlsRow.createSpan({
-        cls: "conlang-browser-control-label"
-      });
-      langLabel.setText("Language");
-      const langSelect = controlsRow.createEl("select", {
-        cls: "conlang-browser-select"
-      });
-      langSelect.createEl("option", { text: "All", value: "" });
-      for (const l of activeLangs) {
-        langSelect.createEl("option", { text: l.name, value: l.name });
-      }
-      langSelect.value = this.languageFilter;
-      langSelect.addEventListener("change", () => {
-        this.languageFilter = langSelect.value;
-        this.renderBrowserList();
-      });
-    }
+    const languageControlGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group"
+    });
+    const langLabel = languageControlGroup.createSpan({
+      cls: "conlang-browser-control-label"
+    });
+    langLabel.setText("Language");
+    const langScope = languageControlGroup.createDiv({
+      cls: "conlang-browser-segmented"
+    });
+    const primaryButton = langScope.createEl("button", {
+      text: "Primary",
+      cls: "conlang-browser-segment"
+    });
+    primaryButton.title = "Show only the language currently marked as primary by the star.";
+    const allActiveButton = langScope.createEl("button", {
+      text: "All active",
+      cls: "conlang-browser-segment"
+    });
+    allActiveButton.title = "Show entries from every currently active language.";
+    const updateScopeButtons = () => {
+      primaryButton.toggleClass(
+        "active",
+        !this.showAllActiveDictionaryLanguages
+      );
+      allActiveButton.toggleClass(
+        "active",
+        this.showAllActiveDictionaryLanguages
+      );
+    };
+    primaryButton.addEventListener("click", () => {
+      if (!this.showAllActiveDictionaryLanguages) return;
+      this.showAllActiveDictionaryLanguages = false;
+      updateScopeButtons();
+      this.renderBrowser();
+    });
+    allActiveButton.addEventListener("click", () => {
+      if (this.showAllActiveDictionaryLanguages) return;
+      this.showAllActiveDictionaryLanguages = true;
+      updateScopeButtons();
+      this.renderBrowser();
+    });
+    updateScopeButtons();
     this.browserStatsEl = this.browserEl.createDiv({
       cls: "conlang-browser-stats"
     });
@@ -9233,6 +9372,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     });
     this.browserEmptyEl = this.browserEl.createDiv({
       cls: "conlang-browser-empty conlang-hidden"
+    });
+    this.browserDetailsEl = this.browserEl.createDiv({
+      cls: "conlang-browser-details conlang-hidden"
     });
   }
   /**
@@ -9290,8 +9432,29 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     this.diagnosticsTab = new DiagnosticsTab(this.plugin);
     this.diagnosticsTab.mount(this.diagnosticsEl);
   }
+  /**
+   * Return the entries eligible for the Dictionary's current language scope.
+   *
+   * This is a presentation boundary only. It neither changes the loaded
+   * Dictionary inventory nor rewrites any source note. Primary mode is strict:
+   * entries must explicitly belong to the current primary language. All active
+   * mode returns the complete inventory loaded for the active languages.
+   */
+  dictionaryEntriesInLanguageScope() {
+    var _a;
+    const entries = this.plugin.dictionary.allEntries();
+    if (this.showAllActiveDictionaryLanguages) {
+      return entries;
+    }
+    const primaryLanguage = (_a = this.plugin.getPrimaryLanguage()) == null ? void 0 : _a.name;
+    if (!primaryLanguage) {
+      return [];
+    }
+    return entries.filter((entry) => entry.language === primaryLanguage);
+  }
   renderBrowser() {
     var _a;
+    const scopedEntries = this.dictionaryEntriesInLanguageScope();
     const posSelect = (_a = this.browserToolbarEl.parentElement) == null ? void 0 : _a.querySelector(
       ".conlang-pos-select"
     );
@@ -9300,7 +9463,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       posSelect.empty();
       posSelect.createEl("option", { text: "All", value: "" });
       const posSet = /* @__PURE__ */ new Set();
-      for (const entry of this.plugin.dictionary.allEntries()) {
+      for (const entry of scopedEntries) {
         if (entry.partOfSpeech) posSet.add(entry.partOfSpeech);
       }
       const sortedPos = Array.from(posSet).sort();
@@ -9312,7 +9475,69 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
         this.posFilter = "";
       }
     }
+    if (this.selectedDictionaryEntryPath) {
+      const selected = scopedEntries.find(
+        (entry) => entry.path === this.selectedDictionaryEntryPath
+      );
+      if (selected) {
+        this.renderBrowserDetails(selected);
+        return;
+      }
+      this.selectedDictionaryEntryPath = null;
+    }
+    this.showBrowserList();
     this.renderBrowserList();
+  }
+  /**
+   * Show the ordinary searchable Dictionary inventory.
+   *
+   * The controls remain mounted while details are open, so returning to the
+   * list preserves the creator's current search, filters, and sort order.
+   */
+  showBrowserList() {
+    this.browserToolbarEl.removeClass("conlang-hidden");
+    this.browserControlsEl.removeClass("conlang-hidden");
+    this.browserStatsEl.removeClass("conlang-hidden");
+    this.browserDetailsEl.addClass("conlang-hidden");
+  }
+  /**
+   * Replace the Dictionary list with one entry's read-only details.
+   *
+   * Back changes only panel state. Open note navigates to an already-known
+   * source. Neither action edits, repairs, or rewrites creator-authored data.
+   */
+  renderBrowserDetails(entry) {
+    this.browserToolbarEl.addClass("conlang-hidden");
+    this.browserControlsEl.addClass("conlang-hidden");
+    this.browserStatsEl.addClass("conlang-hidden");
+    this.browserListEl.addClass("conlang-hidden");
+    this.browserEmptyEl.addClass("conlang-hidden");
+    this.browserDetailsEl.removeClass("conlang-hidden");
+    this.browserDetailsEl.empty();
+    const actions = this.browserDetailsEl.createDiv({
+      cls: "conlang-panel-actions conlang-browser-details-actions"
+    });
+    const backButton = actions.createEl("button", {
+      cls: "conlang-panel-btn",
+      text: "\u2190 Back to dictionary"
+    });
+    backButton.title = "Return to the current Dictionary search and filters.";
+    backButton.addEventListener("click", () => {
+      this.selectedDictionaryEntryPath = null;
+      this.renderBrowser();
+    });
+    const openButton = actions.createEl("button", {
+      cls: "conlang-panel-btn conlang-panel-btn-primary",
+      text: "Open note"
+    });
+    openButton.title = "Open this entry's existing Markdown source note.";
+    openButton.addEventListener("click", () => {
+      this.openDictionaryEntrySource(entry);
+    });
+    const content = this.browserDetailsEl.createDiv({
+      cls: "conlang-browser-details-content"
+    });
+    this.renderEntryDetailsInto(content, entry, null, false);
   }
   /** True if the entry's partOfSpeech indicates it's a proper noun. */
   isProperNoun(entry) {
@@ -9321,14 +9546,16 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     return p === "proper-noun" || p === "proper noun" || p === "propernoun";
   }
   renderBrowserList() {
+    var _a, _b;
     this.browserListEl.empty();
-    const all = this.plugin.dictionary.allEntries();
+    const all = this.dictionaryEntriesInLanguageScope();
     const q = this.searchQuery.trim().toLowerCase();
+    const languageScopeSignature = this.showAllActiveDictionaryLanguages ? "all-active" : `primary:${(_b = (_a = this.plugin.getPrimaryLanguage()) == null ? void 0 : _a.name) != null ? _b : ""}`;
     const sig = [
       q,
       this.posFilter,
       this.nameFilter,
-      this.languageFilter,
+      languageScopeSignature,
       this.sortKey
     ].join("\0");
     if (sig !== this.browserFilterSig) {
@@ -9336,20 +9563,18 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       this.browserLimit = _TranslationPanelView.BROWSER_PAGE;
     }
     let filtered = all.filter((entry) => {
-      var _a;
+      var _a2;
       const isName = this.isProperNoun(entry);
       if (this.nameFilter === "names-only" && !isName) return false;
       if (this.nameFilter === "hide-names" && isName) return false;
-      if (this.languageFilter && entry.language !== this.languageFilter)
-        return false;
       if (this.posFilter && entry.partOfSpeech !== this.posFilter) return false;
       if (!q) return true;
       if (entry.word.toLowerCase().includes(q)) return true;
       if (entry.definition.toLowerCase().includes(q)) return true;
-      if ((_a = entry.senses) == null ? void 0 : _a.some((sense) => {
-        var _a2, _b, _c;
-        if ((_a2 = sense.gloss) == null ? void 0 : _a2.toLowerCase().includes(q)) return true;
-        if ((_b = sense.definition) == null ? void 0 : _b.toLowerCase().includes(q)) return true;
+      if ((_a2 = entry.senses) == null ? void 0 : _a2.some((sense) => {
+        var _a3, _b2, _c;
+        if ((_a3 = sense.gloss) == null ? void 0 : _a3.toLowerCase().includes(q)) return true;
+        if ((_b2 = sense.definition) == null ? void 0 : _b2.toLowerCase().includes(q)) return true;
         if ((_c = sense.lookupTerms) == null ? void 0 : _c.some((term) => term.toLowerCase().includes(q))) {
           return true;
         }
@@ -9362,9 +9587,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       return false;
     });
     filtered = filtered.slice().sort((a, b) => {
-      var _a, _b, _c, _d;
+      var _a2, _b2, _c, _d;
       if (this.sortKey === "recent") {
-        return ((_a = b.mtime) != null ? _a : 0) - ((_b = a.mtime) != null ? _b : 0);
+        return ((_a2 = b.mtime) != null ? _a2 : 0) - ((_b2 = a.mtime) != null ? _b2 : 0);
       }
       if (this.sortKey === "partOfSpeech") {
         const pa = (_c = a.partOfSpeech) != null ? _c : "~";
@@ -9463,7 +9688,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       phraseBadge.setText("Phrase");
     }
     const activeCount = this.plugin.getActiveLanguages().length;
-    if (activeCount > 1 && entry.language) {
+    if (activeCount > 1 && this.showAllActiveDictionaryLanguages && entry.language) {
       const langBadge = word.createSpan({ cls: "conlang-browser-row-lang" });
       langBadge.setText(entry.language);
     }
@@ -9501,11 +9726,10 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       const ipa = row.createDiv({ cls: "conlang-browser-row-ipa" });
       ipa.setText(entry.ipa);
     }
+    row.title = "View dictionary entry details";
     row.addEventListener("click", () => {
-      const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof import_obsidian20.TFile) {
-        void this.plugin.app.workspace.getLeaf(false).openFile(file);
-      }
+      this.selectedDictionaryEntryPath = entry.path;
+      this.renderBrowser();
     });
   }
 };

@@ -82,7 +82,9 @@ export class TranslationPanelView extends ItemView {
   private searchQuery: string = "";
   private posFilter: string = ""; // empty string = all
   private nameFilter: "all" | "names-only" | "hide-names" = "all";
-  private languageFilter: string = ""; // empty = all active languages
+  // Dictionary opens on the current primary language. The creator may
+  // deliberately broaden the browser to every active language for comparison.
+  private showAllActiveDictionaryLanguages = false;
   private sortKey: SortKey = "alphabetical";
   // Row cap for the browser list. Large dictionaries would otherwise rebuild
   // thousands of DOM rows per repaint. "Show more" raises the cap; any change
@@ -122,9 +124,19 @@ export class TranslationPanelView extends ItemView {
   // Dictionary-tab refs
   private browserEl!: HTMLElement;
   private browserToolbarEl!: HTMLElement;
+  private browserControlsEl!: HTMLElement;
   private browserStatsEl!: HTMLElement;
   private browserListEl!: HTMLElement;
   private browserEmptyEl!: HTMLElement;
+  private browserDetailsEl!: HTMLElement;
+
+  /*
+   * A Dictionary row can temporarily replace the browser list with one entry's
+   * details. Store only the source path, not the DictionaryEntry object itself.
+   * Runtime reloads replace the complete Dictionary inventory, so retaining an
+   * old object would let the UI display stale derived data.
+   */
+  private selectedDictionaryEntryPath: string | null = null;
 
   // Translator-tab refs
   private translatorEl!: HTMLElement;
@@ -877,18 +889,58 @@ export class TranslationPanelView extends ItemView {
    * grouped by inflection label.
    */
   private renderWordDetails(
-    selectedText: string,
+    _selectedText: string,
     entry: DictionaryEntry,
     viaInflection: { form: string; label: string } | null,
   ) {
-    // The translation block is hidden; the entries container holds everything.
+    // Selection owns this container and historically lets its summary card
+    // navigate directly to the established source note.
     this.setTranslationBlockVisible(false);
-    this.entriesEl.empty();
+    this.renderEntryDetailsInto(
+      this.entriesEl,
+      entry,
+      viaInflection,
+      true,
+    );
+  }
 
-    const lang = this.plugin.getActiveLanguage();
+  /**
+   * Render one dictionary entry into a container chosen by the owning surface.
+   *
+   * Selection and Dictionary may now share the same presentation without
+   * sharing navigation state. This remains a read-only renderer: it receives an
+   * already-loaded entry and can only navigate to already-established paths.
+   *
+   * Keeping the extraction inside panel.ts for now limits audit-time churn.
+   * Once the wider Dictionary and sense design settles, this method and its
+   * helpers can move together into a dedicated component without changing
+   * their data-safety boundary.
+   */
+  private renderEntryDetailsInto(
+    container: HTMLElement,
+    entry: DictionaryEntry,
+    viaInflection: { form: string; label: string } | null,
+    openSummaryOnClick: boolean,
+  ) {
+    container.empty();
+
+    /*
+     * Dictionary can display several active languages at once. Inflection rules
+     * must therefore come from this entry's owning language rather than from
+     * whichever language is currently primary.
+     *
+     * Truly unscoped legacy entries retain the older primary-language fallback.
+     * A scoped entry whose configured language is unavailable receives no
+     * borrowed rules from another language.
+     */
+    const lang = entry.language
+      ? this.plugin
+          .getActiveLanguages()
+          .find((candidate) => candidate.name === entry.language) ?? null
+      : this.plugin.getActiveLanguage();
 
     // === Top card: the dictionary entry itself ===
-    const card = this.entriesEl.createDiv({ cls: "conlang-word-card" });
+    const card = container.createDiv({ cls: "conlang-word-card" });
 
     const head = card.createDiv({ cls: "conlang-word-card-head" });
     const wordEl = head.createSpan({ cls: "conlang-word-card-word" });
@@ -901,9 +953,31 @@ export class TranslationPanelView extends ItemView {
       const ipa = head.createSpan({ cls: "conlang-word-card-ipa" });
       ipa.setText(entry.ipa);
     }
+    if (entry.nameCategory) {
+      const category = head.createSpan({
+        cls: "conlang-word-card-category",
+      });
+      category.setText(entry.nameCategory);
+    }
+    if (
+      this.plugin.getActiveLanguages().length > 1 &&
+      entry.language
+    ) {
+      const language = head.createSpan({
+        cls: "conlang-word-card-language",
+      });
+      language.setText(entry.language);
+    }
 
     const def = card.createDiv({ cls: "conlang-word-card-def" });
     def.setText(entry.definition);
+
+    if (entry.aliases && entry.aliases.length > 0) {
+      const aliases = card.createDiv({
+        cls: "conlang-word-card-aliases",
+      });
+      aliases.setText(`Also: ${entry.aliases.join(", ")}`);
+    }
 
     if (entry.etymology) {
       const etym = card.createDiv({ cls: "conlang-word-card-etym" });
@@ -923,25 +997,32 @@ export class TranslationPanelView extends ItemView {
       }
     }
 
-    // Click the card to open the entry note
-    card.addClass("conlang-clickable");
-    card.addEventListener("click", () => {
-      const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof TFile) {
-        void this.plugin.app.workspace.getLeaf(false).openFile(file);
-      }
-    });
+    /*
+     * Selection retains its established click-to-open behavior. Dictionary
+     * details will use an explicit Open note button, so reading metadata or
+     * selecting text inside the card cannot unexpectedly navigate away.
+     */
+    if (openSummaryOnClick) {
+      card.addClass("conlang-clickable");
+      card.title = "Open dictionary source note";
+      card.addEventListener("click", () => {
+        this.openDictionaryEntrySource(entry);
+      });
+    }
+
+    // Structured senses enrich the simple definition without replacing it.
+    this.renderEntrySenses(container, entry);
 
     // === Compound decomposition: show parts if this is a compound ===
     if (entry.parts && entry.parts.length > 0) {
-      this.renderPartsDecomposition(entry);
+      this.renderPartsDecomposition(container, entry);
     }
 
     // === Declared forms (the entry's own `forms:` property) ===
     // Rendered before predicted forms because they're authoritative: the user
     // wrote them by hand precisely because the rules get them wrong.
     if (entry.forms && entry.forms.length > 0) {
-      this.renderDeclaredForms(entry.forms);
+      this.renderDeclaredForms(container, entry.forms);
     }
 
     // === Generated forms ===
@@ -953,7 +1034,7 @@ export class TranslationPanelView extends ItemView {
       // Don't nag about missing rules when the entry declares its own forms —
       // that's a complete, deliberate answer, not a gap to fill.
       if (entry.forms && entry.forms.length > 0) return;
-      const empty = this.entriesEl.createDiv({ cls: "conlang-forms-empty" });
+      const empty = container.createDiv({ cls: "conlang-forms-empty" });
       if (!entry.partOfSpeech) {
         empty.setText(
           "No inflected forms predicted — this entry has no part of speech, so POS-filtered rules don't apply. " +
@@ -967,7 +1048,7 @@ export class TranslationPanelView extends ItemView {
       return;
     }
 
-    const header = this.entriesEl.createDiv({
+    const header = container.createDiv({
       cls: "conlang-panel-section-header",
     });
     header.setText("Predicted forms");
@@ -980,7 +1061,7 @@ export class TranslationPanelView extends ItemView {
       groups.set(g.rule.label, list);
     }
 
-    const formsList = this.entriesEl.createDiv({ cls: "conlang-forms-list" });
+    const formsList = container.createDiv({ cls: "conlang-forms-list" });
     for (const [label, items] of groups) {
       const row = formsList.createDiv({ cls: "conlang-form-row" });
       const labelEl = row.createDiv({ cls: "conlang-form-label" });
@@ -1004,10 +1085,63 @@ export class TranslationPanelView extends ItemView {
     }
 
     // Helpful hint at the bottom
-    const hint = this.entriesEl.createDiv({ cls: "conlang-forms-hint" });
+    const hint = container.createDiv({ cls: "conlang-forms-hint" });
     hint.setText(
       "Forms are predicted from your inflection rules. Hover any of them in a note to see this entry.",
     );
+  }
+
+  /**
+   * Render the reader-facing portion of this entry's structured senses.
+   *
+   * Sense IDs and lookup terms remain available in the runtime model for future
+   * reference and editing tools, but they are not prose definitions and should
+   * not become visual clutter merely because the model can store them.
+   *
+   * Keeping sense presentation in one helper leaves room for the pre-alpha
+   * schema to grow without coupling those future fields to Dictionary
+   * navigation or compound-part resolution.
+   */
+  private renderEntrySenses(
+    container: HTMLElement,
+    entry: Readonly<DictionaryEntry>,
+  ): void {
+    const displayable = (entry.senses ?? []).filter(
+      (sense) => Boolean(sense.gloss || sense.definition),
+    );
+    if (displayable.length === 0) return;
+
+    const section = container.createDiv({
+      cls: "conlang-entry-senses",
+    });
+    section.createDiv({
+      cls: "conlang-panel-section-header",
+      text: "Senses",
+    });
+
+    const list = section.createDiv({
+      cls: "conlang-entry-senses-list",
+    });
+
+    for (const sense of displayable) {
+      const senseEl = list.createDiv({
+        cls: "conlang-entry-sense",
+      });
+
+      if (sense.gloss) {
+        senseEl.createDiv({
+          cls: "conlang-entry-sense-gloss",
+          text: sense.gloss,
+        });
+      }
+
+      if (sense.definition) {
+        senseEl.createDiv({
+          cls: "conlang-entry-sense-definition",
+          text: sense.definition,
+        });
+      }
+    }
   }
 
   /**
@@ -1016,8 +1150,11 @@ export class TranslationPanelView extends ItemView {
    * ("dative: kalim, kalum") sit on one row, matching how predicted forms are
    * grouped directly below.
    */
-  private renderDeclaredForms(forms: InflectedForm[]) {
-    const section = this.entriesEl.createDiv({
+  private renderDeclaredForms(
+    container: HTMLElement,
+    forms: InflectedForm[],
+  ) {
+    const section = container.createDiv({
       cls: "conlang-declared-section",
     });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
@@ -1061,8 +1198,11 @@ export class TranslationPanelView extends ItemView {
    * silently navigate to another language's or an arbitrarily first-loaded
    * note.
    */
-  private renderPartsDecomposition(owner: DictionaryEntry) {
-    const section = this.entriesEl.createDiv({ cls: "conlang-parts-section" });
+  private renderPartsDecomposition(
+    container: HTMLElement,
+    owner: DictionaryEntry,
+  ) {
+    const section = container.createDiv({ cls: "conlang-parts-section" });
     const header = section.createDiv({ cls: "conlang-panel-section-header" });
     header.setText("Parts");
     const list = section.createDiv({ cls: "conlang-parts-list" });
@@ -1112,6 +1252,20 @@ export class TranslationPanelView extends ItemView {
           void this.plugin.app.workspace.getLeaf(false).openFile(file);
         }
       });
+    }
+  }
+
+  /**
+   * Navigate to an already-loaded lexical source.
+   *
+   * This helper has navigation authority only. It does not create, repair,
+   * rename, or rewrite the source when the path is missing or no longer points
+   * to a Markdown file.
+   */
+  private openDictionaryEntrySource(entry: Readonly<DictionaryEntry>): void {
+    const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
+    if (file instanceof TFile) {
+      void this.plugin.app.workspace.getLeaf(false).openFile(file);
     }
   }
 
@@ -1905,15 +2059,24 @@ export class TranslationPanelView extends ItemView {
       }, 200);
     });
 
-    const controlsRow = this.browserEl.createDiv({
+    this.browserControlsEl = this.browserEl.createDiv({
       cls: "conlang-browser-controls",
     });
+    const controlsRow = this.browserControlsEl;
 
-    const sortLabel = controlsRow.createSpan({
+    /*
+     * Each label and its control share one non-breaking flex item. The outer
+     * controls row may still wrap for a narrow side panel, but it cannot leave
+     * a label stranded at the end of one line while its control moves below.
+     */
+    const sortGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group",
+    });
+    const sortLabel = sortGroup.createSpan({
       cls: "conlang-browser-control-label",
     });
     sortLabel.setText("Sort");
-    const sortSelect = controlsRow.createEl("select", {
+    const sortSelect = sortGroup.createEl("select", {
       cls: "conlang-browser-select",
     });
     const sortOptions: { value: SortKey; label: string }[] = [
@@ -1933,11 +2096,14 @@ export class TranslationPanelView extends ItemView {
       this.renderBrowserList();
     });
 
-    const posLabel = controlsRow.createSpan({
+    const posGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group",
+    });
+    const posLabel = posGroup.createSpan({
       cls: "conlang-browser-control-label",
     });
     posLabel.setText("Type");
-    const posSelect = controlsRow.createEl("select", {
+    const posSelect = posGroup.createEl("select", {
       cls: "conlang-browser-select",
     });
     // The "all" option is always present; specific POS values are filled in
@@ -1951,11 +2117,14 @@ export class TranslationPanelView extends ItemView {
 
     // Names filter: a 3-way segmented control. Toggle to focus on (or hide)
     // proper nouns without re-typing them into the search box.
-    const namesLabel = controlsRow.createSpan({
+    const namesControlGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group",
+    });
+    const namesLabel = namesControlGroup.createSpan({
       cls: "conlang-browser-control-label",
     });
     namesLabel.setText("Names");
-    const namesGroup = controlsRow.createDiv({
+    const namesGroup = namesControlGroup.createDiv({
       cls: "conlang-browser-segmented",
     });
     const namesOptions: {
@@ -1996,27 +2165,66 @@ export class TranslationPanelView extends ItemView {
       });
     }
 
-    // Language filter — only meaningful when multiple languages are active.
-    // Empty string = show all active languages.
-    const activeLangs = this.plugin.getActiveLanguages();
-    if (activeLangs.length > 1) {
-      const langLabel = controlsRow.createSpan({
-        cls: "conlang-browser-control-label",
-      });
-      langLabel.setText("Language");
-      const langSelect = controlsRow.createEl("select", {
-        cls: "conlang-browser-select",
-      });
-      langSelect.createEl("option", { text: "All", value: "" });
-      for (const l of activeLangs) {
-        langSelect.createEl("option", { text: l.name, value: l.name });
-      }
-      langSelect.value = this.languageFilter;
-      langSelect.addEventListener("change", () => {
-        this.languageFilter = langSelect.value;
-        this.renderBrowserList();
-      });
-    }
+    /*
+     * Language scope follows the primary language by default.
+     *
+     * This is intentionally a two-state scope control rather than a second
+     * language selector. The star at the top remains authoritative for which
+     * active language is primary; Dictionary merely decides whether to show
+     * that language alone or broaden the comparison to all active ones.
+     */
+    const languageControlGroup = controlsRow.createDiv({
+      cls: "conlang-browser-control-group",
+    });
+    const langLabel = languageControlGroup.createSpan({
+      cls: "conlang-browser-control-label",
+    });
+    langLabel.setText("Language");
+
+    const langScope = languageControlGroup.createDiv({
+      cls: "conlang-browser-segmented",
+    });
+
+    const primaryButton = langScope.createEl("button", {
+      text: "Primary",
+      cls: "conlang-browser-segment",
+    });
+    primaryButton.title =
+      "Show only the language currently marked as primary by the star.";
+
+    const allActiveButton = langScope.createEl("button", {
+      text: "All active",
+      cls: "conlang-browser-segment",
+    });
+    allActiveButton.title =
+      "Show entries from every currently active language.";
+
+    const updateScopeButtons = () => {
+      primaryButton.toggleClass(
+        "active",
+        !this.showAllActiveDictionaryLanguages,
+      );
+      allActiveButton.toggleClass(
+        "active",
+        this.showAllActiveDictionaryLanguages,
+      );
+    };
+
+    primaryButton.addEventListener("click", () => {
+      if (!this.showAllActiveDictionaryLanguages) return;
+      this.showAllActiveDictionaryLanguages = false;
+      updateScopeButtons();
+      this.renderBrowser();
+    });
+
+    allActiveButton.addEventListener("click", () => {
+      if (this.showAllActiveDictionaryLanguages) return;
+      this.showAllActiveDictionaryLanguages = true;
+      updateScopeButtons();
+      this.renderBrowser();
+    });
+
+    updateScopeButtons();
 
     // Stats line
     this.browserStatsEl = this.browserEl.createDiv({
@@ -2030,6 +2238,16 @@ export class TranslationPanelView extends ItemView {
     });
     this.browserEmptyEl = this.browserEl.createDiv({
       cls: "conlang-browser-empty conlang-hidden",
+    });
+
+    /*
+     * Details have their own host rather than replacing browserEl itself.
+     * Search controls and their event listeners therefore remain mounted while
+     * details are open, preserving the creator's filter state and avoiding a
+     * second competing Dictionary interface.
+     */
+    this.browserDetailsEl = this.browserEl.createDiv({
+      cls: "conlang-browser-details conlang-hidden",
     });
   }
 
@@ -2097,10 +2315,35 @@ export class TranslationPanelView extends ItemView {
     this.diagnosticsTab.mount(this.diagnosticsEl);
   }
 
+  /**
+   * Return the entries eligible for the Dictionary's current language scope.
+   *
+   * This is a presentation boundary only. It neither changes the loaded
+   * Dictionary inventory nor rewrites any source note. Primary mode is strict:
+   * entries must explicitly belong to the current primary language. All active
+   * mode returns the complete inventory loaded for the active languages.
+   */
+  private dictionaryEntriesInLanguageScope(): DictionaryEntry[] {
+    const entries = this.plugin.dictionary.allEntries();
+
+    if (this.showAllActiveDictionaryLanguages) {
+      return entries;
+    }
+
+    const primaryLanguage = this.plugin.getPrimaryLanguage()?.name;
+    if (!primaryLanguage) {
+      return [];
+    }
+
+    return entries.filter((entry) => entry.language === primaryLanguage);
+  }
+
   private renderBrowser() {
-    // Re-populate the POS dropdown to reflect the current dictionary's
-    // actual parts of speech. This handles the case where the user adds
-    // a word with a new POS we've not seen before.
+    const scopedEntries = this.dictionaryEntriesInLanguageScope();
+
+    // Re-populate the POS dropdown from entries eligible for the current
+    // language scope. This prevents Primary mode from offering parts of speech
+    // that exist only in another active language.
     const posSelect = this.browserToolbarEl.parentElement?.querySelector(
       ".conlang-pos-select",
     ) as HTMLSelectElement | null;
@@ -2109,7 +2352,7 @@ export class TranslationPanelView extends ItemView {
       posSelect.empty();
       posSelect.createEl("option", { text: "All", value: "" });
       const posSet = new Set<string>();
-      for (const entry of this.plugin.dictionary.allEntries()) {
+      for (const entry of scopedEntries) {
         if (entry.partOfSpeech) posSet.add(entry.partOfSpeech);
       }
       const sortedPos = Array.from(posSet).sort();
@@ -2123,7 +2366,88 @@ export class TranslationPanelView extends ItemView {
       }
     }
 
+    /*
+     * Resolve the selected path against the current inventory generation.
+     * A reload may replace or remove the entry, so the saved path is only a
+     * request to rediscover it—not authority to retain a stale object.
+     */
+    if (this.selectedDictionaryEntryPath) {
+      const selected = scopedEntries.find(
+        (entry) => entry.path === this.selectedDictionaryEntryPath,
+      );
+
+      if (selected) {
+        this.renderBrowserDetails(selected);
+        return;
+      }
+
+      this.selectedDictionaryEntryPath = null;
+    }
+
+    this.showBrowserList();
     this.renderBrowserList();
+  }
+
+  /**
+   * Show the ordinary searchable Dictionary inventory.
+   *
+   * The controls remain mounted while details are open, so returning to the
+   * list preserves the creator's current search, filters, and sort order.
+   */
+  private showBrowserList(): void {
+    this.browserToolbarEl.removeClass("conlang-hidden");
+    this.browserControlsEl.removeClass("conlang-hidden");
+    this.browserStatsEl.removeClass("conlang-hidden");
+    this.browserDetailsEl.addClass("conlang-hidden");
+  }
+
+  /**
+   * Replace the Dictionary list with one entry's read-only details.
+   *
+   * Back changes only panel state. Open note navigates to an already-known
+   * source. Neither action edits, repairs, or rewrites creator-authored data.
+   */
+  private renderBrowserDetails(entry: DictionaryEntry): void {
+    this.browserToolbarEl.addClass("conlang-hidden");
+    this.browserControlsEl.addClass("conlang-hidden");
+    this.browserStatsEl.addClass("conlang-hidden");
+    this.browserListEl.addClass("conlang-hidden");
+    this.browserEmptyEl.addClass("conlang-hidden");
+
+    this.browserDetailsEl.removeClass("conlang-hidden");
+    this.browserDetailsEl.empty();
+
+    const actions = this.browserDetailsEl.createDiv({
+      cls: "conlang-panel-actions conlang-browser-details-actions",
+    });
+
+    const backButton = actions.createEl("button", {
+      cls: "conlang-panel-btn",
+      text: "← Back to dictionary",
+    });
+    backButton.title = "Return to the current Dictionary search and filters.";
+    backButton.addEventListener("click", () => {
+      this.selectedDictionaryEntryPath = null;
+      this.renderBrowser();
+    });
+
+    const openButton = actions.createEl("button", {
+      cls: "conlang-panel-btn conlang-panel-btn-primary",
+      text: "Open note",
+    });
+    openButton.title = "Open this entry's existing Markdown source note.";
+    openButton.addEventListener("click", () => {
+      this.openDictionaryEntrySource(entry);
+    });
+
+    /*
+     * The shared renderer empties the container it owns. Give it a child host
+     * so it cannot erase the Dictionary navigation controls above.
+     */
+    const content = this.browserDetailsEl.createDiv({
+      cls: "conlang-browser-details-content",
+    });
+    this.renderEntryDetailsInto(content, entry, null, false);
   }
 
   /** True if the entry's partOfSpeech indicates it's a proper noun. */
@@ -2134,10 +2458,19 @@ export class TranslationPanelView extends ItemView {
 
   private renderBrowserList() {
     this.browserListEl.empty();
-    const all = this.plugin.dictionary.allEntries();
+
+    /*
+     * Language scope is applied before every other browser filter. The same
+     * scoped entry set supplies both the result denominator and the available
+     * Type choices, so the controls and statistics describe the same inventory.
+     */
+    const all = this.dictionaryEntriesInLanguageScope();
 
     // Filter
     const q = this.searchQuery.trim().toLowerCase();
+    const languageScopeSignature = this.showAllActiveDictionaryLanguages
+      ? "all-active"
+      : `primary:${this.plugin.getPrimaryLanguage()?.name ?? ""}`;
 
     // Reset the row cap whenever the effective filter/sort changes, so a new
     // search starts from the first page again.
@@ -2145,7 +2478,7 @@ export class TranslationPanelView extends ItemView {
       q,
       this.posFilter,
       this.nameFilter,
-      this.languageFilter,
+      languageScopeSignature,
       this.sortKey,
     ].join("\u0000");
     if (sig !== this.browserFilterSig) {
@@ -2158,9 +2491,8 @@ export class TranslationPanelView extends ItemView {
       if (this.nameFilter === "names-only" && !isName) return false;
       if (this.nameFilter === "hide-names" && isName) return false;
 
-      // Language filter (only meaningful when multiple languages active)
-      if (this.languageFilter && entry.language !== this.languageFilter)
-        return false;
+      // Language eligibility was already established by
+      // dictionaryEntriesInLanguageScope() before these content filters run.
 
       if (this.posFilter && entry.partOfSpeech !== this.posFilter) return false;
       if (!q) return true;
@@ -2281,7 +2613,7 @@ export class TranslationPanelView extends ItemView {
       summary.setText(`${shown} of ${total} shown`);
     }
 
-    // Per-POS breakdown of the FULL dictionary, not the filtered view
+    // Per-POS breakdown of the current language scope, not the filtered view
     const counts = new Map<string, number>();
     for (const entry of all) {
       const key = entry.partOfSpeech ?? "—";
@@ -2312,10 +2644,14 @@ export class TranslationPanelView extends ItemView {
       const phraseBadge = word.createSpan({ cls: "conlang-browser-row-badge" });
       phraseBadge.setText("Phrase");
     }
-    // Language label, only shown when multiple languages are active so users
-    // can see which language each entry belongs to in the merged list.
+    // Language labels are needed only in the deliberate All active comparison
+    // view. Primary mode already establishes one visible language.
     const activeCount = this.plugin.getActiveLanguages().length;
-    if (activeCount > 1 && entry.language) {
+    if (
+      activeCount > 1 &&
+      this.showAllActiveDictionaryLanguages &&
+      entry.language
+    ) {
       const langBadge = word.createSpan({ cls: "conlang-browser-row-lang" });
       langBadge.setText(entry.language);
     }
@@ -2364,11 +2700,14 @@ export class TranslationPanelView extends ItemView {
       ipa.setText(entry.ipa);
     }
 
+    row.title = "View dictionary entry details";
     row.addEventListener("click", () => {
-      const file = this.plugin.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof TFile) {
-        void this.plugin.app.workspace.getLeaf(false).openFile(file);
-      }
+      /*
+       * Retain only the stable source path. renderBrowser() resolves the entry
+       * again from the current Dictionary inventory before displaying it.
+       */
+      this.selectedDictionaryEntryPath = entry.path;
+      this.renderBrowser();
     });
   }
 }
