@@ -1374,37 +1374,127 @@ and transaction remediations respectively.
 
 ### Stable ID Domains
 
-Document which IDs are expected to be unique:
+Current production behavior keeps three broad identity layers separate.
 
-- globally
-- per language
-- per document type
+`WorkbenchIdentity.workbenchID` and `sourceID` identify the known Obsidian
+source. They are derived from the complete vault-relative source path and are
+not substituted for creator-authored linguistic identity. Same-inventory
+configured-folder overlap is rejected before runtime loading, preventing one
+physical source tree from being scanned as the canonical inventory of two
+active languages.
+
+`language_id` identifies a canonical Language Profile. Distinct configured
+languages must not silently acquire the same stable language identity merely
+because their unique settings names differ.
+
+Top-level linguistic object IDs are scoped by stable language identity and
+object type. The current fields are:
+
+- `lexeme_id`
+- `morpheme_id`
+- `example_id`
+- phonological `unit_id`
+- phonological `realization_id`
+
+The practical portable identity is therefore `language_id + document type +
+object ID`. Reuse of an object ID by another language or another document type
+does not itself establish a collision.
+
+`LexicalSense.id` is a nested identity parsed from a structured sense block
+inside one lexical entry. Its domain is the owning lexical entry, not the whole
+language. Different lexemes may therefore reuse a sense ID, while repeated
+nonblank sense IDs inside one lexeme are ambiguous.
+
+Generated portable object IDs use a type prefix and Web Crypto UUID, but source
+parsers deliberately honor arbitrary nonblank creator-authored IDs. The
+generator's shape is a collision-avoidance convention, not parser authority to
+rewrite or reject other creator IDs.
 
 ### Duplicate Detection
 
-Check whether duplicate IDs are detected or merely indexed together.
+Morpheme, phonological-unit, and phonological-realization indexes are
+multimaps. Their normalized ID keys retain every matching object in an array
+instead of silently replacing an earlier object. Lookup methods return arrays
+and may optionally filter by stable language ID and readable language name.
+
+Lexical entries and standalone linguistic examples retain their optional
+portable ID through the source record's `linguisticID`, but currently have no
+portable-ID lookup index. Structured lexical senses retain their optional
+nested IDs but likewise have no ID index.
+
+These preservation choices keep colliding creator objects observable.
+Nevertheless, current loading and diagnostic aggregation do not report
+same-domain duplicate object IDs, repeated nested sense IDs, or duplicate
+Language Profile IDs.
 
 ### Ambiguous Lookup
 
-Determine whether callers can accidentally select the wrong object when
-multiple matches exist.
+Current morpheme and phonology ID APIs return all matches rather than choosing
+the first match. No production mutation-capable operation consumes those
+lookup APIs.
+
+The current realization-to-unit relationship is also retained by ID rather
+than resolved to one arbitrary unit object. Diagnostics reports a missing
+same-language unit target, but its existential resolution check treats one or
+several matching units alike. A duplicated same-domain unit target therefore
+appears resolved even though its intended target is ambiguous.
+
+The phonology UI is the only current production consumer of a linguistic
+relationship lookup. It is read-only and supplies both the unit's stable
+language ID and readable language name.
 
 ### Mutation Risk
 
-Ensure future editing or relationship commands do not modify an arbitrary
-duplicate.
+Current production mutation operations do not select creator sources through a
+portable linguistic-object or lexical-sense ID. Duplicate IDs therefore do not
+currently authorize arbitrary note mutation, deletion, or overwrite.
+
+Future editing, relationship, import, backfill, or synchronization commands
+must require a unique identity in the correct language and document-type
+domain. An array with more than one same-domain match must remain ambiguous and
+must never be collapsed to its first element as mutation authority.
 
 ### Diagnostics
 
-Prefer surfacing collisions rather than silently resolving them.
+`buildSourceDiagnosticGroups()` is an observational cross-record boundary and
+already receives the individual inventory source collections through
+`getSourceDiagnostics()`. It reports retained parser/authority problems and
+missing phonological-unit targets without rewriting creator data.
+
+It does not currently surface duplicate stable linguistic identities. Clean
+colliding sources consequently remain available in their inventories and
+source records but are invisible in the persistent Diagnostics workspace.
 
 ### Findings
 
-None recorded yet.
+#### DS-009-H1 — Duplicate stable linguistic identities are preserved but not diagnosed
+
+- **Severity:** Low
+- **Impact radius:** Active linguistic runtime and Diagnostics; no current
+  direct creator-Markdown mutation
+- **Status:** Open
+
+Workbench preserves distinct sources with the same linguistic ID and current
+multimap lookup APIs return every match rather than silently selecting one.
+However, it does not diagnose duplicate IDs within their intended identity
+domains. This includes distinct active Language Profiles claiming the same
+`language_id`, same-language same-type portable object IDs, and repeated
+lexical-sense IDs within one lexical entry.
+
+The present runtime has no ID-driven creator-note mutation command, so the
+confirmed consequence is ambiguous runtime identity and an incomplete
+diagnostic surface rather than direct creator-data corruption. The
+realization-to-unit diagnostic also treats a duplicated target as resolved
+because at least one matching unit exists.
+
+Remediation should remain observational and fail closed: report every affected
+source in the correct identity domain, distinguish missing relationships from
+ambiguous ones, preserve every creator source, and avoid granting any repair or
+rewrite authority.
 
 ### Status
 
-**Not Reviewed**
+**In Progress — DS-009-H1 recorded.**
 
 ---
 
@@ -1813,6 +1903,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Open                    | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved, but same-domain Language Profile, portable object, and nested lexical-sense collisions are not surfaced; duplicated phonological-unit targets appear resolved rather than ambiguous. | Data Safety §9; `workbench-id.ts`; `dictionary.ts`; `morphemes.ts`; `linguistic-examples.ts`; `phonology.ts`; `source-diagnostics.ts`; existing language-scope and source-diagnostics regressions | Add observational domain-aware collision diagnostics, distinguish ambiguous phonological targets from uniquely resolved targets, preserve every source, and ensure future ID-driven mutation fails closed unless one exact target is proven. |
 | DS-008-H1   | Data Safety §8 / partial failure and runtime atomicity          | Remediated and verified | Medium    | Runtime linguistic state for the active language set; no direct creator-Markdown corruption or deletion                                 | Runtime linguistic reload progressively cleared and rebuilt live profiles and inventories, so an unexpected loader failure could leave mixed or incomplete runtime state until a later successful reload or restart. | Data Safety §8; `scripts/test-language-runtime.mjs`; focused active-language, case, membership, source, profile, removal, root-repair, and rename transaction regressions; production build; commits `f447726` and `78d02bf`             | Runtime reload now prepares complete detached candidate profiles and linguistic inventories before synchronous commit. Reload-aware settings transactions restore prior configuration after blocked or failed candidate preparation, while filesystem rollback follows proven physical state and never deletes additive folders merely to simulate atomicity. |
 | DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Remediated and verified | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed and contextually rejected linguistic sources remain in diagnostic accounting while excluded from clean feature indexes; retained parser/authority diagnostics and supported unresolved phonology relationships are now persistently exposed to the creator without source rewrite authority. | Data Safety §5; `WorkbenchSourceRecord`; `source-language-authority.ts`; `source-diagnostics.ts`; `diagnostics-tab.ts`; dictionary, morpheme, phonology, and linguistic-example language-scope regressions; `test:source-diagnostics`; `test:frontmatter`; production build; Diagnostics and affected-note Notice runtime verification | Remediated: retain rejected recognized sources, aggregate parser/authority/relationship diagnostics through a pure observational boundary, expose them in the persistent Diagnostics workspace, and briefly resurface current diagnostics on meaningful affected-note navigation without granting repair or rewrite authority. |
 | DS-002-H1   | Data Safety §2 / generated dictionary frontmatter                 | Remediated and verified | Medium    | Note; newly generated lexical-entry frontmatter                                                        | Generated dictionary templates directly interpolated creator/workflow strings into YAML, so accepted YAML-significant linguistic text could become malformed or acquire the wrong parsed value/type. | Data Safety §2; real Obsidian `stringifyYaml()` / `parseYaml()` characterization; `test:markdown-note-renderer`; dictionary writer and translation-repair regressions; production build; lint baseline | Generated semantic frontmatter now passes through a representation-only renderer using Obsidian `stringifyYaml()`. The four creation flows retain separate semantic authority, intentionally blank fields remain blank placeholders, and existing destination/overwrite protections are unchanged. |
