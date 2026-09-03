@@ -1423,9 +1423,12 @@ portable-ID lookup index. Structured lexical senses retain their optional
 nested IDs but likewise have no ID index.
 
 These preservation choices keep colliding creator objects observable.
-Nevertheless, current loading and diagnostic aggregation do not report
-same-domain duplicate object IDs, repeated nested sense IDs, or duplicate
-Language Profile IDs.
+`linguistic-identity-diagnostics.ts` now compares only complete accepted
+runtime values and reports every source participating in a collision. Separate
+document-type collections prevent false collisions between lexemes, morphemes,
+examples, units, and realizations. Top-level object IDs are compared within
+their language scope, lexical-sense IDs within their owning lexeme, and loaded
+Language Profile IDs across distinct profile paths.
 
 ### Ambiguous Lookup
 
@@ -1434,10 +1437,10 @@ the first match. No production mutation-capable operation consumes those
 lookup APIs.
 
 The current realization-to-unit relationship is also retained by ID rather
-than resolved to one arbitrary unit object. Diagnostics reports a missing
-same-language unit target, but its existential resolution check treats one or
-several matching units alike. A duplicated same-domain unit target therefore
-appears resolved even though its intended target is ambiguous.
+than resolved to one arbitrary unit object. Diagnostics now evaluates target
+cardinality explicitly: zero same-language matches is unresolved, one is
+uniquely resolved, and more than one is ambiguous. An ambiguous realization
+names every candidate unit path without selecting or rewriting any target.
 
 The phonology UI is the only current production consumer of a linguistic
 relationship lookup. It is read-only and supplies both the unit's stable
@@ -1456,14 +1459,17 @@ must never be collapsed to its first element as mutation authority.
 
 ### Diagnostics
 
-`buildSourceDiagnosticGroups()` is an observational cross-record boundary and
-already receives the individual inventory source collections through
-`getSourceDiagnostics()`. It reports retained parser/authority problems and
-missing phonological-unit targets without rewriting creator data.
+`buildSourceDiagnosticGroups()` remains an observational cross-record
+boundary. `getSourceDiagnostics()` supplies loaded Language Profiles and each
+identity-bearing inventory as separate collections to
+`buildLinguisticIdentityDiagnostics()`. Derived collision and relationship
+warnings then pass through the existing per-source grouping and de-duplication
+path without mutating source records or creator Markdown.
 
-It does not currently surface duplicate stable linguistic identities. Clean
-colliding sources consequently remain available in their inventories and
-source records but are invisible in the persistent Diagnostics workspace.
+Every affected source receives its own navigable Diagnostics card. Messages
+name the other colliding paths or ambiguous candidate targets so the creator
+can inspect the notes and decide whether objects should remain separate,
+receive distinct IDs, be merged, or be deleted.
 
 ### Findings
 
@@ -1472,29 +1478,30 @@ source records but are invisible in the persistent Diagnostics workspace.
 - **Severity:** Low
 - **Impact radius:** Active linguistic runtime and Diagnostics; no current
   direct creator-Markdown mutation
-- **Status:** Open
+- **Status:** Remediated and verified
 
-Workbench preserves distinct sources with the same linguistic ID and current
-multimap lookup APIs return every match rather than silently selecting one.
-However, it does not diagnose duplicate IDs within their intended identity
-domains. This includes distinct active Language Profiles claiming the same
-`language_id`, same-language same-type portable object IDs, and repeated
-lexical-sense IDs within one lexical entry.
+Workbench continues to preserve distinct sources with the same linguistic ID
+and current multimap lookup APIs continue to return every match. The new
+observational identity-diagnostics module reports distinct loaded Language
+Profiles sharing one `language_id`, same-language same-type portable object
+IDs, repeated lexical-sense IDs within one lexical entry, and ambiguous
+realization-to-unit relationships.
 
-The present runtime has no ID-driven creator-note mutation command, so the
-confirmed consequence is ambiguous runtime identity and an incomplete
-diagnostic surface rather than direct creator-data corruption. The
-realization-to-unit diagnostic also treats a duplicated target as resolved
-because at least one matching unit exists.
+Automated regressions verify independent document-type and language domains,
+case-insensitive top-level object-ID comparison, lexeme-local sense identity,
+profile-path de-duplication, warnings on every colliding source, and explicit
+zero/one/many phonological target handling. All package regression suites and
+the production build passed.
 
-Remediation should remain observational and fail closed: report every affected
-source in the correct identity domain, distinguish missing relationships from
-ambiguous ones, preserve every creator source, and avoid granting any repair or
-rewrite authority.
+Runtime verification used the permanent DS-009 duplicate-unit fixture. Both
+unit notes received reciprocal warnings, the realization warning named both
+candidate paths, and every Open note action navigated to the correct source.
+Pre- and post-runtime SHA-256 hashes of all three notes matched exactly,
+confirming that aggregation and navigation did not rewrite creator data.
 
 ### Status
 
-**In Progress — DS-009-H1 recorded.**
+**Pass — DS-009-H1 remediated and verified.**
 
 ---
 
@@ -1903,7 +1910,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Open                    | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved, but same-domain Language Profile, portable object, and nested lexical-sense collisions are not surfaced; duplicated phonological-unit targets appear resolved rather than ambiguous. | Data Safety §9; `workbench-id.ts`; `dictionary.ts`; `morphemes.ts`; `linguistic-examples.ts`; `phonology.ts`; `source-diagnostics.ts`; existing language-scope and source-diagnostics regressions | Add observational domain-aware collision diagnostics, distinguish ambiguous phonological targets from uniquely resolved targets, preserve every source, and ensure future ID-driven mutation fails closed unless one exact target is proven. |
+| DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Remediated and verified | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved and now receive domain-aware warnings; phonological relationships distinguish missing, unique, and ambiguous targets without selecting or rewriting a source. | Data Safety §9; `linguistic-identity-diagnostics.ts`; `source-diagnostics.ts`; `scripts/test-source-diagnostics.mjs`; all package regression suites; production build; permanent DS-009 duplicate-unit fixture; runtime Diagnostics/Open note verification; matching pre/post source hashes; commits `7dcadcf` and `2a6553f` | Observational diagnostics now report every affected profile, top-level object source, owning lexical note, and ambiguous realization. Identity domains remain separate, every creator source is preserved, and future mutation must still prove one exact target before acquiring authority. |
 | DS-008-H1   | Data Safety §8 / partial failure and runtime atomicity          | Remediated and verified | Medium    | Runtime linguistic state for the active language set; no direct creator-Markdown corruption or deletion                                 | Runtime linguistic reload progressively cleared and rebuilt live profiles and inventories, so an unexpected loader failure could leave mixed or incomplete runtime state until a later successful reload or restart. | Data Safety §8; `scripts/test-language-runtime.mjs`; focused active-language, case, membership, source, profile, removal, root-repair, and rename transaction regressions; production build; commits `f447726` and `78d02bf`             | Runtime reload now prepares complete detached candidate profiles and linguistic inventories before synchronous commit. Reload-aware settings transactions restore prior configuration after blocked or failed candidate preparation, while filesystem rollback follows proven physical state and never deletes additive folders merely to simulate atomicity. |
 | DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Remediated and verified | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed and contextually rejected linguistic sources remain in diagnostic accounting while excluded from clean feature indexes; retained parser/authority diagnostics and supported unresolved phonology relationships are now persistently exposed to the creator without source rewrite authority. | Data Safety §5; `WorkbenchSourceRecord`; `source-language-authority.ts`; `source-diagnostics.ts`; `diagnostics-tab.ts`; dictionary, morpheme, phonology, and linguistic-example language-scope regressions; `test:source-diagnostics`; `test:frontmatter`; production build; Diagnostics and affected-note Notice runtime verification | Remediated: retain rejected recognized sources, aggregate parser/authority/relationship diagnostics through a pure observational boundary, expose them in the persistent Diagnostics workspace, and briefly resurface current diagnostics on meaningful affected-note navigation without granting repair or rewrite authority. |
 | DS-002-H1   | Data Safety §2 / generated dictionary frontmatter                 | Remediated and verified | Medium    | Note; newly generated lexical-entry frontmatter                                                        | Generated dictionary templates directly interpolated creator/workflow strings into YAML, so accepted YAML-significant linguistic text could become malformed or acquire the wrong parsed value/type. | Data Safety §2; real Obsidian `stringifyYaml()` / `parseYaml()` characterization; `test:markdown-note-renderer`; dictionary writer and translation-repair regressions; production build; lint baseline | Generated semantic frontmatter now passes through a representation-only renderer using Obsidian `stringifyYaml()`. The four creation flows retain separate semantic authority, intentionally blank fields remain blank placeholders, and existing destination/overwrite protections are unchanged. |
