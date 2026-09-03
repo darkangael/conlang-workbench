@@ -1507,41 +1507,115 @@ confirming that aggregation and navigation did not rewrite creator data.
 
 ## 10. Broken References and Missing Targets
 
-### Relationship Types
+### Implemented Relationship Types
 
-Inventory references such as:
+Current production has two creator-authored relationship forms.
 
-- lexical relationships
-- senses
-- morphemes
-- phonological unit IDs
-- realization unit IDs
-- related examples
-- future cross-document relationships
+A lexical entry's optional `parts` list describes its compound decomposition
+using conlang surface forms. `parseStringList()` preserves usable scalar values,
+and the Dictionary details view resolves each part through the ordinary
+`byWord` index. That index contains headwords and aliases but deliberately
+excludes declared inflected forms. A part is therefore a readable lexical
+reference rather than a stable portable-ID relationship.
+
+A phonological realization's required `unit_id` refers to a canonical
+phonological unit in the same language scope. Both records remain independent
+creator sources; the relationship is interpreted observationally and does not
+replace either object with an embedded copy.
+
+Lexical-sense, morpheme, example, realization, and Language Profile IDs are
+currently identities rather than implemented cross-document references. The
+other relationship categories retained in this audit template remain future
+possibilities and must not be described as present production behavior.
 
 ### Missing Targets
 
-Preserve records that reference missing targets.
+A realization whose `unit_id` has no same-language unit remains loaded.
+Persistent Diagnostics gives its source a
+`phonology.realization.unresolved-unit` warning without editing or discarding
+the realization.
 
-### Diagnostics
+A lexical entry whose `parts` value has no matching dictionary headword or
+alias also remains loaded with the original part text intact. The Dictionary
+details view renders that part as a grey unknown chip with the tooltip
+`This part isn't in the dictionary.` It does not create a replacement entry or
+rewrite the compound note.
 
-Report broken relationships rather than silently dropping the referring data.
+Unlike the phonological relationship, an unresolved lexical part is not
+included in persistent Diagnostics. The creator sees it only after opening the
+owning lexical entry's details.
 
-### Repairs
+### Ambiguous Targets
 
-Do not guess replacement targets without explicit user intent.
+Phonological relationship diagnostics use explicit cardinality. Zero matching
+units is unresolved, one is uniquely resolved, and more than one is ambiguous.
+An ambiguous realization names every same-language candidate path rather than
+silently selecting one.
+
+Lexical-part rendering instead calls the singular `Dictionary.lookup(part)`
+without the owning entry's language. That API deliberately returns the first
+globally loaded match. When several languages are active, a missing local part
+can therefore appear resolved by a same-spelled entry from another language.
+When same-language homographs or aliases share the surface form, the first
+match is likewise presented and made clickable while the remaining candidates
+are hidden.
+
+The selected dictionary entry already retains its source language, and
+`lookupAll(part, language)` can preserve all same-language candidates. The
+current caller does not pass or use that authority.
+
+### Repairs and Mutation Authority
+
+Neither relationship display performs automatic repair. Unknown part chips are
+not clickable, resolved part chips only open an existing note, and phonological
+relationship diagnostics only navigate to creator sources. No missing or
+ambiguous target authorizes creation, replacement, deletion, or rewrite.
+
+A future repair command must require explicit creator intent and prove one
+exact target in the correct relationship domain. It must not borrow a
+same-spelled object from another language or collapse several candidates to
+their first array element.
 
 ### Renamed Targets
 
-Consider how references behave after IDs or files change.
+Neither current relationship stores a target file path. Renaming or moving a
+target note therefore does not by itself break the relationship after the
+inventories reload, provided its referenced headword, alias, or phonological
+unit ID remains unchanged.
+
+Changing or removing the referenced headword, alias, or `unit_id` can make the
+relationship unresolved. Adding another matching target can make it ambiguous.
+Diagnostics and UI resolution must always derive again from the current loaded
+sources rather than retaining a stale chosen target.
 
 ### Findings
 
-None recorded yet.
+#### DS-010-H1 — Lexical compound parts can resolve outside their language or hide ambiguity
+
+- **Severity:** Low
+- **Impact radius:** Dictionary details display and Open note navigation; no
+  creator-Markdown mutation
+- **Status:** Open
+
+The compound-parts renderer uses an unscoped singular dictionary lookup. With
+multiple active languages, a part absent from the owning lexicon can be shown
+as resolved by another language. Multiple same-language headword or alias
+matches are reduced to the first result, so the UI conceals ambiguity and its
+click action opens an arbitrarily ordered candidate.
+
+Missing parts remain preserved and visibly greyed out in the details view, but
+they do not receive persistent source diagnostics. The confirmed consequence
+is misleading relationship display and navigation rather than creator-data
+corruption.
+
+Remediation should resolve parts only inside the owning entry's language,
+distinguish zero, one, and several same-language matches, avoid a clickable
+chosen target when ambiguity remains, and surface unresolved or ambiguous
+parts through the existing observational source-diagnostics boundary.
 
 ### Status
 
-**Not Reviewed**
+**In Progress — DS-010-H1 recorded.**
 
 ---
 
@@ -1910,6 +1984,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-010-H1   | Data Safety §10 / broken references and missing targets             | Open                    | Low       | Dictionary details display and Open note navigation; no creator-Markdown mutation                                                        | Lexical compound parts use an unscoped singular lookup, so another active language or the first same-language homograph can appear to be the target; missing parts are only locally greyed out and do not reach persistent Diagnostics. | Data Safety §10; `Dictionary.lookup()` and `lookupAll()`; `DictionaryEntry.parts`; `dictionary-source.ts`; `word-tokens.ts`; `panel.ts`; dictionary language-scope regressions | Scope part resolution to the owning lexical entry, preserve zero/one/many target cardinality, keep ambiguous parts non-authoritative, and derive persistent unresolved or ambiguous part diagnostics without rewriting creator sources. |
 | DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Remediated and verified | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved and now receive domain-aware warnings; phonological relationships distinguish missing, unique, and ambiguous targets without selecting or rewriting a source. | Data Safety §9; `linguistic-identity-diagnostics.ts`; `source-diagnostics.ts`; `scripts/test-source-diagnostics.mjs`; all package regression suites; production build; permanent DS-009 duplicate-unit fixture; runtime Diagnostics/Open note verification; matching pre/post source hashes; commits `7dcadcf` and `2a6553f` | Observational diagnostics now report every affected profile, top-level object source, owning lexical note, and ambiguous realization. Identity domains remain separate, every creator source is preserved, and future mutation must still prove one exact target before acquiring authority. |
 | DS-008-H1   | Data Safety §8 / partial failure and runtime atomicity          | Remediated and verified | Medium    | Runtime linguistic state for the active language set; no direct creator-Markdown corruption or deletion                                 | Runtime linguistic reload progressively cleared and rebuilt live profiles and inventories, so an unexpected loader failure could leave mixed or incomplete runtime state until a later successful reload or restart. | Data Safety §8; `scripts/test-language-runtime.mjs`; focused active-language, case, membership, source, profile, removal, root-repair, and rename transaction regressions; production build; commits `f447726` and `78d02bf`             | Runtime reload now prepares complete detached candidate profiles and linguistic inventories before synchronous commit. Reload-aware settings transactions restore prior configuration after blocked or failed candidate preparation, while filesystem rollback follows proven physical state and never deletes additive folders merely to simulate atomicity. |
 | DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Remediated and verified | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed and contextually rejected linguistic sources remain in diagnostic accounting while excluded from clean feature indexes; retained parser/authority diagnostics and supported unresolved phonology relationships are now persistently exposed to the creator without source rewrite authority. | Data Safety §5; `WorkbenchSourceRecord`; `source-language-authority.ts`; `source-diagnostics.ts`; `diagnostics-tab.ts`; dictionary, morpheme, phonology, and linguistic-example language-scope regressions; `test:source-diagnostics`; `test:frontmatter`; production build; Diagnostics and affected-note Notice runtime verification | Remediated: retain rejected recognized sources, aggregate parser/authority/relationship diagnostics through a pure observational boundary, expose them in the persistent Diagnostics workspace, and briefly resurface current diagnostics on meaningful affected-note navigation without granting repair or rewrite authority. |
