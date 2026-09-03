@@ -100,15 +100,10 @@ try {
 
   // This third source deliberately has no configured language. Its entry has
   // no effective language and therefore must never leak into a strict scope.
-  const unscopedFiles = [
-    new TFile("Languages/Unscoped/Lexicon/orphan.md"),
-  ];
+  const unscopedFiles = [new TFile("Languages/Unscoped/Lexicon/orphan.md")];
 
   const folders = new Map([
-    [
-      "Languages/Mer/Lexicon",
-      new TFolder("Languages/Mer/Lexicon", merFiles),
-    ],
+    ["Languages/Mer/Lexicon", new TFolder("Languages/Mer/Lexicon", merFiles)],
     [
       "Languages/Test Language/Lexicon",
       new TFolder("Languages/Test Language/Lexicon", testFiles),
@@ -278,8 +273,7 @@ definition: ordinary test definition
     .allSourceRecords()
     .find(
       (record) =>
-        record.path ===
-        "Languages/Mer/Lexicon/conflicting-language-id.md",
+        record.path === "Languages/Mer/Lexicon/conflicting-language-id.md",
     );
 
   assert.ok(
@@ -348,9 +342,7 @@ definition: ordinary test definition
 
   assert.equal(dictionary.lookupAll("shared alias").length, 2);
   assert.deepEqual(
-    dictionary
-      .lookupAll("shared alias", "Mer")
-      .map((entry) => entry.language),
+    dictionary.lookupAll("shared alias", "Mer").map((entry) => entry.language),
     ["Mer"],
   );
 

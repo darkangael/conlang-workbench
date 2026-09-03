@@ -84,11 +84,7 @@ try {
   // Compatibility: omitted scope retains the old global behavior.
   // -------------------------------------------------------------------------
 
-  const globalMatch = findInflection(
-    "zzmorphfixtures",
-    dictionary,
-    rules,
-  );
+  const globalMatch = findInflection("zzmorphfixtures", dictionary, rules);
 
   assert.ok(globalMatch);
   assert.equal(
@@ -101,12 +97,7 @@ try {
   // Safety: Mer rules scoped to Mer must resolve only a Mer lemma.
   // -------------------------------------------------------------------------
 
-  const merMatch = findInflection(
-    "zzmorphfixtures",
-    dictionary,
-    rules,
-    "Mer",
-  );
+  const merMatch = findInflection("zzmorphfixtures", dictionary, rules, "Mer");
 
   assert.ok(merMatch);
   assert.equal(merMatch.lemma, merLemma);
