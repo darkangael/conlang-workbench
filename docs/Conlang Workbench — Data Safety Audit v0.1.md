@@ -1595,27 +1595,39 @@ sources rather than retaining a stale chosen target.
 - **Severity:** Low
 - **Impact radius:** Dictionary details display and Open note navigation; no
   creator-Markdown mutation
-- **Status:** Open
+- **Status:** Remediated and verified
 
-The compound-parts renderer uses an unscoped singular dictionary lookup. With
-multiple active languages, a part absent from the owning lexicon can be shown
-as resolved by another language. Multiple same-language headword or alias
-matches are reduced to the first result, so the UI conceals ambiguity and its
-click action opens an arbitrarily ordered candidate.
+The original compound-parts renderer used an unscoped singular dictionary
+lookup. With multiple active languages, a part absent from the owning lexicon
+could be shown as resolved by another language. Multiple same-language
+headword or alias matches were reduced to the first result, so the UI concealed
+ambiguity and its click action could open an arbitrarily ordered candidate.
 
-Missing parts remain preserved and visibly greyed out in the details view, but
-they do not receive persistent source diagnostics. The confirmed consequence
-is misleading relationship display and navigation rather than creator-data
-corruption.
+Lexical-part resolution now uses the owning entry as language authority and
+preserves explicit unresolved, unique, and ambiguous cardinality. Only one
+proven same-language target becomes clickable. Missing and ambiguous parts
+remain visible but inert, and both conditions flow through the existing
+observational source-diagnostics boundary without acquiring source-rewrite
+authority.
 
-Remediation should resolve parts only inside the owning entry's language,
-distinguish zero, one, and several same-language matches, avoid a clickable
-chosen target when ambiguity remains, and surface unresolved or ambiguous
-parts through the existing observational source-diagnostics boundary.
+The Dictionary now exposes the shared read-only entry-details presentation
+through explicit list/details navigation. It defaults to entries owned by the
+current primary language and can deliberately broaden to all active languages.
+Type choices, entry totals, result filtering, and selected-detail rediscovery
+derive from the same language-scoped entry set. Entry-specific inflection
+display uses the entry's owning language rather than borrowing rules from the
+primary language.
+
+Verification included the lexical-part relationship, source-diagnostics,
+dictionary-language-scope, selection-lookup, and lexical-senses regression
+suites; repeated production builds; persistent Diagnostics and Dictionary
+runtime checks; explicit unique, missing, and ambiguous interaction checks;
+and matching pre/post SHA-256 hashes for all four permanent DS-010 fixture
+sources. Relevant commits are `07c7d91`, `1d45a1a`, and `8cc53ac`.
 
 ### Status
 
-**In Progress — DS-010-H1 recorded.**
+**Pass — DS-010-H1 remediated and verified.**
 
 ---
 
@@ -1984,7 +1996,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| DS-010-H1   | Data Safety §10 / broken references and missing targets             | Open                    | Low       | Dictionary details display and Open note navigation; no creator-Markdown mutation                                                        | Lexical compound parts use an unscoped singular lookup, so another active language or the first same-language homograph can appear to be the target; missing parts are only locally greyed out and do not reach persistent Diagnostics. | Data Safety §10; `Dictionary.lookup()` and `lookupAll()`; `DictionaryEntry.parts`; `dictionary-source.ts`; `word-tokens.ts`; `panel.ts`; dictionary language-scope regressions | Scope part resolution to the owning lexical entry, preserve zero/one/many target cardinality, keep ambiguous parts non-authoritative, and derive persistent unresolved or ambiguous part diagnostics without rewriting creator sources. |
+| DS-010-H1   | Data Safety §10 / broken references and missing targets | Remediated and verified | Low | Dictionary details display and Open note navigation; no creator-Markdown mutation | Lexical compound parts formerly used an unscoped singular lookup, allowing cross-language display or an arbitrarily first same-language target while missing relationships lacked persistent diagnostics. | Data Safety §10; `lexical-part-relationships.ts`; `source-diagnostics.ts`; `panel.ts`; `test:lexical-part-relationships`; `test:source-diagnostics`; `test:dictionary-language-scope`; Selection and lexical-senses regressions; production build; permanent DS-010 fixtures; runtime zero/one/many interaction verification; matching pre/post source hashes; commits `07c7d91`, `1d45a1a`, and `8cc53ac` | Resolution is now strict to the owning lexical language and preserves unresolved, unique, and ambiguous cardinality. Only one proven target can navigate; unresolved and ambiguous relationships remain visible, inert, and persistently diagnosed without rewriting creator sources. |
 | DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Remediated and verified | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved and now receive domain-aware warnings; phonological relationships distinguish missing, unique, and ambiguous targets without selecting or rewriting a source. | Data Safety §9; `linguistic-identity-diagnostics.ts`; `source-diagnostics.ts`; `scripts/test-source-diagnostics.mjs`; all package regression suites; production build; permanent DS-009 duplicate-unit fixture; runtime Diagnostics/Open note verification; matching pre/post source hashes; commits `7dcadcf` and `2a6553f` | Observational diagnostics now report every affected profile, top-level object source, owning lexical note, and ambiguous realization. Identity domains remain separate, every creator source is preserved, and future mutation must still prove one exact target before acquiring authority. |
 | DS-008-H1   | Data Safety §8 / partial failure and runtime atomicity          | Remediated and verified | Medium    | Runtime linguistic state for the active language set; no direct creator-Markdown corruption or deletion                                 | Runtime linguistic reload progressively cleared and rebuilt live profiles and inventories, so an unexpected loader failure could leave mixed or incomplete runtime state until a later successful reload or restart. | Data Safety §8; `scripts/test-language-runtime.mjs`; focused active-language, case, membership, source, profile, removal, root-repair, and rename transaction regressions; production build; commits `f447726` and `78d02bf`             | Runtime reload now prepares complete detached candidate profiles and linguistic inventories before synchronous commit. Reload-aware settings transactions restore prior configuration after blocked or failed candidate preparation, while filesystem rollback follows proven physical state and never deletes additive folders merely to simulate atomicity. |
 | DS-005-H1   | Data Safety §5 / malformed-source diagnostics                  | Remediated and verified | Medium    | Note; affected linguistic source and its Workbench interpretation                                      | Recognized malformed and contextually rejected linguistic sources remain in diagnostic accounting while excluded from clean feature indexes; retained parser/authority diagnostics and supported unresolved phonology relationships are now persistently exposed to the creator without source rewrite authority. | Data Safety §5; `WorkbenchSourceRecord`; `source-language-authority.ts`; `source-diagnostics.ts`; `diagnostics-tab.ts`; dictionary, morpheme, phonology, and linguistic-example language-scope regressions; `test:source-diagnostics`; `test:frontmatter`; production build; Diagnostics and affected-note Notice runtime verification | Remediated: retain rejected recognized sources, aggregate parser/authority/relationship diagnostics through a pure observational boundary, expose them in the persistent Diagnostics workspace, and briefly resurface current diagnostics on meaningful affected-note navigation without granting repair or rewrite authority. |
