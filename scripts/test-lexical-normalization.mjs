@@ -195,6 +195,47 @@ export {
   assert.equal(applyCypher(decomposed, [wordSheet]), decomposed);
   assert.equal(applyCypher("s", [wordSheet]), "X");
 
+  // -----------------------------------------------------------------------
+  // Compatibility: cypher sheet order remains an ordered transformation.
+  // -----------------------------------------------------------------------
+
+  const firstPipelineSheet = {
+    name: "first pipeline sheet",
+    enabled: true,
+    rules: [
+      {
+        input: "a",
+        output: "b",
+        type: "default",
+        enabled: true,
+      },
+    ],
+  };
+
+  const secondPipelineSheet = {
+    name: "second pipeline sheet",
+    enabled: true,
+    rules: [
+      {
+        input: "b",
+        output: "c",
+        type: "default",
+        enabled: true,
+      },
+    ],
+  };
+
+  assert.equal(
+    applyCypher("a", [firstPipelineSheet, secondPipelineSheet]),
+    "c",
+    "later cypher sheets must consume the transformed output of earlier sheets",
+  );
+  assert.equal(
+    applyCypher("a", [secondPipelineSheet, firstPipelineSheet]),
+    "b",
+    "reordering cypher sheets must change the transformation pipeline",
+  );
+
   console.log("lexical normalization tests passed");
 } finally {
   rmSync(tempDir, { recursive: true, force: true });

@@ -120,6 +120,59 @@ try {
     "morphology must not borrow a lemma from another language",
   );
 
+  // -------------------------------------------------------------------------
+  // Compatibility: configured inflection order remains semantically meaningful.
+  // -------------------------------------------------------------------------
+
+  const firstMatchRules = [
+    {
+      label: "first configured interpretation",
+      enabled: true,
+      position: "suffix",
+      pattern: "s",
+      strip: "s",
+      add: "",
+      pos: "noun",
+    },
+    {
+      label: "second configured interpretation",
+      enabled: true,
+      position: "suffix",
+      pattern: "s",
+      strip: "s",
+      add: "",
+      pos: "noun",
+    },
+  ];
+
+  const firstOrderedMatch = findInflection(
+    "zzmorphfixtures",
+    dictionary,
+    firstMatchRules,
+    "Mer",
+  );
+
+  assert.ok(firstOrderedMatch);
+  assert.equal(
+    firstOrderedMatch.rule.label,
+    "first configured interpretation",
+    "when several rules can resolve the form, the first configured rule must win",
+  );
+
+  const reversedOrderedMatch = findInflection(
+    "zzmorphfixtures",
+    dictionary,
+    [...firstMatchRules].reverse(),
+    "Mer",
+  );
+
+  assert.ok(reversedOrderedMatch);
+  assert.equal(
+    reversedOrderedMatch.rule.label,
+    "second configured interpretation",
+    "reordering equally applicable rules must change which interpretation wins",
+  );
+
   console.log("inflection language-scope regression tests passed");
 } finally {
   rmSync(tempDir, { recursive: true, force: true });

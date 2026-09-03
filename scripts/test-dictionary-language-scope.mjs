@@ -120,7 +120,7 @@ try {
       {
         definition: "shared meaning",
         aliases: ["shared alias"],
-        forms: ["plural: shared-form"],
+        forms: ["plural: shared-form", "plural phrase: shared form phrase"],
       },
     ],
     [
@@ -128,7 +128,7 @@ try {
       {
         definition: "shared meaning",
         aliases: ["shared alias"],
-        forms: ["plural: shared-form"],
+        forms: ["plural: shared-form", "plural phrase: shared form phrase"],
       },
     ],
     [
@@ -390,16 +390,17 @@ definition: ordinary test definition
   const merPhraseIndex = dictionary.phraseIndex("Mer");
   const testPhraseIndex = dictionary.phraseIndex("Test Language");
 
-  // Each language contributes two phrase-index entries:
+  // Each language contributes three phrase-index entries:
   //
   // - "river way", the ordinary multi-word lexical headword
   // - "shared alias", the synthetic phrase created from the multi-word alias
+  // - "shared form phrase", the synthetic phrase created from a declared form
   //
-  // The totals therefore also verify that language scoping preserves
-  // synthetic phrase entries instead of accidentally dropping them.
-  assert.equal(globalPhraseIndex.size, 4);
-  assert.equal(merPhraseIndex.size, 2);
-  assert.equal(testPhraseIndex.size, 2);
+  // The totals therefore verify that language scoping preserves both kinds of
+  // synthetic phrase entries instead of accidentally dropping either one.
+  assert.equal(globalPhraseIndex.size, 6);
+  assert.equal(merPhraseIndex.size, 3);
+  assert.equal(testPhraseIndex.size, 3);
 
   const merRiverBucket = merPhraseIndex.byFirstWord.get("river");
   const testRiverBucket = testPhraseIndex.byFirstWord.get("river");
@@ -408,6 +409,57 @@ definition: ordinary test definition
   assert.equal(testRiverBucket?.length, 1);
   assert.equal(merRiverBucket?.[0].entry.language, "Mer");
   assert.equal(testRiverBucket?.[0].entry.language, "Test Language");
+
+  /*
+   * A multi-word declared form is represented in the phrase index by a
+   * synthetic DictionaryEntry. It must still recover the real owning lemma
+   * instead of being presented as an independent headword.
+   *
+   * Both languages deliberately declare the same surface phrase. Looking in
+   * each language-scoped phrase index proves that the synthetic entry retains
+   * its lexical ownership; lemmaForDeclaredPhrase() then has to recover the
+   * exact real entry behind that synthetic path.
+   */
+  const merSharedBucket = merPhraseIndex.byFirstWord.get("shared") ?? [];
+  const testSharedBucket = testPhraseIndex.byFirstWord.get("shared") ?? [];
+
+  const merDeclaredPhrase = merSharedBucket.find(
+    (candidate) =>
+      candidate.entry.word === "shared form phrase" &&
+      candidate.entry.viaFormLabel === "plural phrase",
+  );
+  const testDeclaredPhrase = testSharedBucket.find(
+    (candidate) =>
+      candidate.entry.word === "shared form phrase" &&
+      candidate.entry.viaFormLabel === "plural phrase",
+  );
+
+  assert.ok(
+    merDeclaredPhrase,
+    "Mer phrase index must retain its multi-word declared form",
+  );
+  assert.ok(
+    testDeclaredPhrase,
+    "Test Language phrase index must retain its multi-word declared form",
+  );
+
+  const merDeclaredLemma = dictionary.lemmaForDeclaredPhrase(
+    merDeclaredPhrase.entry,
+  );
+  const testDeclaredLemma = dictionary.lemmaForDeclaredPhrase(
+    testDeclaredPhrase.entry,
+  );
+
+  assert.equal(
+    merDeclaredLemma,
+    merShared,
+    "Mer synthetic declared form must resolve back to the Mer lemma",
+  );
+  assert.equal(
+    testDeclaredLemma,
+    testShared,
+    "Test Language synthetic declared form must resolve back to its own lemma",
+  );
 
   // -------------------------------------------------------------------------
   // Unknown language fails closed under an authoritative scope
