@@ -4,6 +4,14 @@ import type {
   WorkbenchSourceRecord,
 } from "./workbench-source";
 import type { WorkbenchIdentity } from "./workbench-id";
+import {
+  buildLinguisticIdentityDiagnostics,
+  type DiagnosticDictionaryValue,
+  type DiagnosticLanguageProfile,
+  type DiagnosticPhonologicalRealizationValue,
+  type DiagnosticPhonologicalUnitValue,
+  type DiagnosticScopedValue,
+} from "./linguistic-identity-diagnostics";
 
 /**
  * One creator-facing diagnostic group for one recognized Markdown source.
@@ -24,44 +32,29 @@ export interface SourceDiagnosticGroup {
 }
 
 /**
- * Minimal shape required to validate a canonical phonological-unit reference.
- *
- * This module deliberately depends on the relationship data it needs rather
- * than importing the complete PhonologyInventory. That keeps aggregation pure:
- * it does not know how inventories scan the vault, index values, or mutate
- * runtime state.
- */
-export interface DiagnosticPhonologicalUnit {
-  id: string;
-  language?: string;
-  languageId?: string;
-}
-
-/**
- * Minimal realization shape required for relationship validation.
- */
-export interface DiagnosticPhonologicalRealization {
-  unitId: string;
-  language?: string;
-  languageId?: string;
-}
-
-/**
  * Input for rebuilding the current creator-facing diagnostic state.
  *
- * `records` contains every recognized source whose parser/inventory diagnostics
- * should be surfaced. Phonology records are supplied separately as well because
- * relationship diagnostics require comparing clean realization values against
- * the currently loaded canonical units.
+ * `records` contains every recognized source whose existing parser or
+ * inventory diagnostics should be surfaced. Identity-bearing collections are
+ * also supplied separately because collision rules depend on document type,
+ * language scope, nested lexical ownership, and relationship cardinality.
+ *
+ * The same records may therefore appear in `records` and one specialized
+ * collection. This is deliberate: the first role preserves existing source
+ * diagnostics, while the second derives cross-record identity diagnostics.
  *
  * Readonly arrays make an important authority promise explicit: aggregation may
- * inspect the current runtime records, but it cannot replace array elements or
- * use this API as a mutation path back into the inventories.
+ * inspect current runtime records, but it cannot replace array elements or use
+ * this API as a mutation path back into the inventories.
  */
 export interface BuildSourceDiagnosticGroupsInput {
   records: readonly WorkbenchSourceRecord<unknown>[];
-  phonologyUnitRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalUnit>[];
-  phonologyRealizationRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalRealization>[];
+  languageProfiles?: readonly DiagnosticLanguageProfile[];
+  dictionaryRecords?: readonly WorkbenchSourceRecord<DiagnosticDictionaryValue>[];
+  morphemeRecords?: readonly WorkbenchSourceRecord<DiagnosticScopedValue>[];
+  exampleRecords?: readonly WorkbenchSourceRecord<DiagnosticScopedValue>[];
+  phonologyUnitRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalUnitValue>[];
+  phonologyRealizationRecords?: readonly WorkbenchSourceRecord<DiagnosticPhonologicalRealizationValue>[];
 }
 
 /**
@@ -94,44 +87,6 @@ function diagnosticKey(diagnostic: WorkbenchDiagnostic): string {
     diagnostic.field ?? "",
     diagnostic.message,
   ].join("\u0000");
-}
-
-/**
- * Determine whether one canonical unit occupies the same language scope as a
- * realization that refers to it.
- *
- * This mirrors PhonologyInventory.lookupId(id, languageId, language):
- *
- * - when the realization has a stable language ID, the unit must have that ID;
- * - when the realization has a language name, the unit must have that name;
- * - when neither scope is supplied, any loaded unit with the ID may resolve it.
- *
- * Both supplied filters must match. A same-named unit in another active
- * language must never make a broken local relationship appear valid.
- */
-function unitResolvesRealization(
-  unit: DiagnosticPhonologicalUnit,
-  realization: DiagnosticPhonologicalRealization,
-): boolean {
-  if (unit.id.trim().toLowerCase() !== realization.unitId.trim().toLowerCase()) {
-    return false;
-  }
-
-  if (
-    realization.languageId &&
-    unit.languageId !== realization.languageId
-  ) {
-    return false;
-  }
-
-  if (
-    realization.language &&
-    unit.language !== realization.language
-  ) {
-    return false;
-  }
-
-  return true;
 }
 
 /**
@@ -209,42 +164,19 @@ export function buildSourceDiagnosticGroups(
     }
   }
 
-  const unitRecords = input.phonologyUnitRecords ?? [];
-  const realizationRecords = input.phonologyRealizationRecords ?? [];
-
-  // Relationship validation belongs here rather than inside the single-source
-  // parser: a parser can establish that unit_id is structurally usable, but it
-  // cannot know whether that ID resolves until the full current unit inventory
-  // has been loaded.
-  const units = unitRecords
-    .map((record) => record.value)
-    .filter(
-      (unit): unit is DiagnosticPhonologicalUnit => unit !== null,
+  /*
+   * Cross-record identity checks remain separate from parser diagnostics.
+   * They compare only the complete, already-loaded runtime snapshot and return
+   * fresh observational warnings. Feeding them through addDiagnostic() gives
+   * every affected source its own navigable card without modifying the source
+   * record or creator-authored note.
+   */
+  for (const derived of buildLinguisticIdentityDiagnostics(input)) {
+    addDiagnostic(
+      derived.identity,
+      derived.path,
+      derived.diagnostic,
     );
-
-  for (const record of realizationRecords) {
-    const realization = record.value;
-
-    // A malformed realization already has parser diagnostics explaining why it
-    // could not become a complete value. Without a usable value there is no
-    // trustworthy relationship to validate a second time.
-    if (!realization) continue;
-
-    const resolved = units.some((unit) =>
-      unitResolvesRealization(unit, realization),
-    );
-
-    if (resolved) continue;
-
-    addDiagnostic(record.identity, record.path, {
-      code: "phonology.realization.unresolved-unit",
-      severity: "warning",
-      field: "unit_id",
-      message:
-        `Canonical unit "${realization.unitId}" does not resolve within ` +
-        "this realization's current language scope. The realization source " +
-        "is preserved and was not modified.",
-    });
   }
 
   const result: SourceDiagnosticGroup[] = Array.from(groups.values()).map(

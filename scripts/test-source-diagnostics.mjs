@@ -100,6 +100,316 @@ try {
   );
 
   // -------------------------------------------------------------------------
+  // Top-level portable IDs collide only inside one language and object type.
+  // -------------------------------------------------------------------------
+  const lexemeA = record({
+    path: "Languages/Mer/Lexicon/current-a.md",
+    linguisticID: "Shared-Lexeme",
+    value: {
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const lexemeB = record({
+    path: "Languages/Mer/Lexicon/current-b.md",
+    linguisticID: "shared-lexeme",
+    value: {
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const otherLanguageLexeme = record({
+    path: "Languages/Test Language/Lexicon/current.md",
+    linguisticID: "shared-lexeme",
+    value: {
+      language: "Test Language",
+      languageId: "test-language",
+    },
+  });
+
+  const morphemeA = record({
+    path: "Languages/Mer/Morphemes/current-a.md",
+    linguisticID: "shared-lexeme",
+    value: {
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const morphemeB = record({
+    path: "Languages/Mer/Morphemes/current-b.md",
+    linguisticID: "shared-lexeme",
+    value: {
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const topLevelCollisions = buildSourceDiagnosticGroups({
+    records: [],
+    dictionaryRecords: [
+      lexemeA,
+      lexemeB,
+      otherLanguageLexeme,
+    ],
+    morphemeRecords: [morphemeA, morphemeB],
+  });
+
+  assert.deepEqual(
+    topLevelCollisions.map((group) => group.path),
+    [
+      "Languages/Mer/Lexicon/current-a.md",
+      "Languages/Mer/Lexicon/current-b.md",
+      "Languages/Mer/Morphemes/current-a.md",
+      "Languages/Mer/Morphemes/current-b.md",
+    ],
+    "same-language collisions must affect both notes without crossing language or object-type domains",
+  );
+
+  for (const group of topLevelCollisions.slice(0, 2)) {
+    assert.equal(
+      group.diagnostics[0].code,
+      "identity.duplicate-lexeme-id",
+    );
+    assert.equal(group.diagnostics[0].field, "lexeme_id");
+  }
+
+  for (const group of topLevelCollisions.slice(2)) {
+    assert.equal(
+      group.diagnostics[0].code,
+      "identity.duplicate-morpheme-id",
+    );
+    assert.equal(group.diagnostics[0].field, "morpheme_id");
+  }
+
+  assert.ok(
+    topLevelCollisions[0].diagnostics[0].message.includes(
+      "Languages/Mer/Lexicon/current-b.md",
+    ),
+    "each collision warning must name the other note the creator can open and compare",
+  );
+
+  // -------------------------------------------------------------------------
+  // Every remaining top-level document type keeps an independent ID domain.
+  // -------------------------------------------------------------------------
+  const exampleA = record({
+    path: "Languages/Mer/Examples/example-a.md",
+    linguisticID: "shared-example",
+    value: { language: "Mer", languageId: "mer" },
+  });
+
+  const exampleB = record({
+    path: "Languages/Mer/Examples/example-b.md",
+    linguisticID: "shared-example",
+    value: { language: "Mer", languageId: "mer" },
+  });
+
+  const unitA = record({
+    path: "Languages/Mer/Phonology/unit-a.md",
+    linguisticID: "duplicate-unit",
+    value: {
+      id: "duplicate-unit",
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const unitB = record({
+    path: "Languages/Mer/Phonology/unit-b.md",
+    linguisticID: "duplicate-unit",
+    value: {
+      id: "duplicate-unit",
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const uniqueTarget = record({
+    path: "Languages/Mer/Phonology/unique-target.md",
+    linguisticID: "unique-target",
+    value: {
+      id: "unique-target",
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const realizationA = record({
+    path: "Languages/Mer/Phonology/realization-a.md",
+    linguisticID: "shared-realization",
+    value: {
+      unitId: "unique-target",
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const realizationB = record({
+    path: "Languages/Mer/Phonology/realization-b.md",
+    linguisticID: "shared-realization",
+    value: {
+      unitId: "unique-target",
+      language: "Mer",
+      languageId: "mer",
+    },
+  });
+
+  const remainingObjectCollisions = buildSourceDiagnosticGroups({
+    records: [],
+    exampleRecords: [exampleA, exampleB],
+    phonologyUnitRecords: [unitA, unitB, uniqueTarget],
+    phonologyRealizationRecords: [realizationA, realizationB],
+  });
+
+  assert.deepEqual(
+    remainingObjectCollisions.map((group) => [
+      group.path,
+      group.diagnostics[0].code,
+    ]),
+    [
+      [
+        "Languages/Mer/Examples/example-a.md",
+        "identity.duplicate-example-id",
+      ],
+      [
+        "Languages/Mer/Examples/example-b.md",
+        "identity.duplicate-example-id",
+      ],
+      [
+        "Languages/Mer/Phonology/realization-a.md",
+        "identity.duplicate-realization-id",
+      ],
+      [
+        "Languages/Mer/Phonology/realization-b.md",
+        "identity.duplicate-realization-id",
+      ],
+      [
+        "Languages/Mer/Phonology/unit-a.md",
+        "identity.duplicate-unit-id",
+      ],
+      [
+        "Languages/Mer/Phonology/unit-b.md",
+        "identity.duplicate-unit-id",
+      ],
+    ],
+    "examples, units, and realizations must report collisions only inside their own object domains",
+  );
+
+  assert.equal(
+    remainingObjectCollisions.some(
+      (group) => group.path === uniqueTarget.path,
+    ),
+    false,
+    "a uniquely identified relationship target must not receive a diagnostic",
+  );
+
+  // -------------------------------------------------------------------------
+  // Language Profile IDs are source-wide; sense IDs are lexeme-local.
+  // -------------------------------------------------------------------------
+  const senseCollisionEntry = record({
+    path: "Languages/Mer/Lexicon/polysemous.md",
+    linguisticID: "lex-polysemous",
+    value: {
+      language: "Mer",
+      languageId: "mer",
+      senses: [
+        { id: "current" },
+        { id: "current" },
+        { id: "flow" },
+      ],
+    },
+  });
+
+  const independentSenseEntry = record({
+    path: "Languages/Mer/Lexicon/independent.md",
+    linguisticID: "lex-independent",
+    value: {
+      language: "Mer",
+      languageId: "mer",
+      senses: [{ id: "current" }],
+    },
+  });
+
+  const nestedAndProfileCollisions = buildSourceDiagnosticGroups({
+    records: [],
+    languageProfiles: [
+      {
+        id: "shared-language-id",
+        path: "Reference/Mer Profile.md",
+      },
+      {
+        id: "shared-language-id",
+        path: "Reference/Test Profile.md",
+      },
+      {
+        // Repeating one physical path must not create a third source.
+        id: "shared-language-id",
+        path: "Reference/Mer Profile.md",
+      },
+      {
+        id: "unique-language-id",
+        path: "Reference/Unique Profile.md",
+      },
+    ],
+    dictionaryRecords: [
+      senseCollisionEntry,
+      independentSenseEntry,
+    ],
+  });
+
+  assert.equal(
+    nestedAndProfileCollisions.length,
+    3,
+    "two profile notes and one lexical note should receive diagnostics",
+  );
+
+  const senseGroup = nestedAndProfileCollisions.find(
+    (group) => group.path === senseCollisionEntry.path,
+  );
+
+  assert.ok(senseGroup);
+  assert.equal(
+    senseGroup.diagnostics[0].code,
+    "identity.duplicate-lexical-sense-id",
+  );
+  assert.equal(senseGroup.diagnostics[0].field, "Senses / ID");
+  assert.ok(
+    senseGroup.diagnostics[0].message.includes("appears 2 times"),
+    "the owning lexical note should explain how many nested senses collide",
+  );
+
+  assert.equal(
+    nestedAndProfileCollisions.some(
+      (group) => group.path === independentSenseEntry.path,
+    ),
+    false,
+    "the same sense ID in another lexeme belongs to a different nested domain",
+  );
+
+  const profileGroups = nestedAndProfileCollisions.filter(
+    (group) =>
+      group.diagnostics[0].code === "identity.duplicate-language-id",
+  );
+
+  assert.deepEqual(
+    profileGroups.map((group) => group.path),
+    [
+      "Reference/Mer Profile.md",
+      "Reference/Test Profile.md",
+    ],
+    "each distinct colliding profile note must receive one navigable diagnostic",
+  );
+
+  assert.ok(
+    profileGroups[0].diagnostics[0].message.includes(
+      "Reference/Test Profile.md",
+    ),
+    "each profile warning must name the other affected note",
+  );
+
+  // -------------------------------------------------------------------------
   // Repeated collection of the same source issue must not duplicate it.
   // -------------------------------------------------------------------------
   const sharedIdentity = identityFor(
@@ -196,6 +506,62 @@ try {
     }),
     [],
   );
+
+  // -------------------------------------------------------------------------
+  // More than one same-language unit makes the relationship ambiguous.
+  // -------------------------------------------------------------------------
+  const duplicateTestUnit = record({
+    path: "Languages/Test Language/Phonology/p-copy.md",
+    linguisticID: "p",
+    value: {
+      id: "p",
+      language: "Test Language",
+      languageId: "test-language",
+    },
+  });
+
+  const ambiguousRelationship = buildSourceDiagnosticGroups({
+    records: [],
+    phonologyUnitRecords: [testUnit, duplicateTestUnit],
+    phonologyRealizationRecords: [testRealization],
+  });
+
+  assert.equal(
+    ambiguousRelationship.length,
+    3,
+    "both duplicate unit notes and the realization note must be diagnosed",
+  );
+
+  const ambiguousRealizationGroup = ambiguousRelationship.find(
+    (group) => group.path === testRealization.path,
+  );
+
+  assert.ok(ambiguousRealizationGroup);
+  assert.equal(
+    ambiguousRealizationGroup.diagnostics[0].code,
+    "phonology.realization.ambiguous-unit",
+  );
+  assert.ok(
+    ambiguousRealizationGroup.diagnostics[0].message.includes(
+      testUnit.path,
+    ) &&
+      ambiguousRealizationGroup.diagnostics[0].message.includes(
+        duplicateTestUnit.path,
+      ),
+    "the realization warning must name every candidate target note",
+  );
+
+  for (const unitPath of [testUnit.path, duplicateTestUnit.path]) {
+    const unitGroup = ambiguousRelationship.find(
+      (group) => group.path === unitPath,
+    );
+
+    assert.ok(unitGroup);
+    assert.equal(
+      unitGroup.diagnostics[0].code,
+      "identity.duplicate-unit-id",
+    );
+  }
 
   // -------------------------------------------------------------------------
   // Severity and stable path ordering.

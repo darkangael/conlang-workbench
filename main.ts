@@ -1296,10 +1296,14 @@ export default class ConlangPlugin extends Plugin {
    * source type. This accessor merely gathers the already-established source
    * records and passes them to the pure diagnostic aggregator.
    *
-   * Phonology records are supplied twice on purpose:
+   * Inventory records are supplied twice on purpose:
    * - once in `records`, so parser/authority diagnostics become ordinary cards;
-   * - once in their specialized arrays, so source-diagnostics.ts can validate
-   *   realization -> unit relationships.
+   * - once in separate document-type arrays, so cross-record identity checks
+   *   cannot manufacture collisions between unrelated object types.
+   *
+   * Loaded Language Profiles are supplied separately because they are canonical
+   * identity sources but do not use the ordinary WorkbenchSourceRecord adapters.
+   * Their paths still produce ordinary navigable diagnostic cards.
    *
    * The aggregator deduplicates repeated diagnostics by Workbench source
    * identity. Nothing in this method grants authority to edit creator files.
@@ -1320,6 +1324,10 @@ export default class ConlangPlugin extends Plugin {
         ...phonologyUnitRecords,
         ...phonologyRealizationRecords,
       ],
+      languageProfiles: Array.from(this.languageProfiles.values()),
+      dictionaryRecords,
+      morphemeRecords,
+      exampleRecords,
       phonologyUnitRecords,
       phonologyRealizationRecords,
     });

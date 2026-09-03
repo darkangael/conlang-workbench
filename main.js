@@ -12303,6 +12303,217 @@ async function applyLanguageRemovalState(request) {
   return { status: "blocked", name: approvedName };
 }
 
+// linguistic-identity-diagnostics.ts
+function normalizeObjectIdentity(id) {
+  return id.trim().toLowerCase();
+}
+function languageIdentityScope(value) {
+  var _a, _b;
+  const languageId = (_a = value.languageId) == null ? void 0 : _a.trim();
+  if (languageId) return `language-id:${languageId}`;
+  const language = (_b = value.language) == null ? void 0 : _b.trim();
+  if (language) return `language-name:${language}`;
+  return "language-unscoped";
+}
+function describeOtherPaths(paths) {
+  return paths.map((path) => `"${path}"`).join(", ");
+}
+function collectObjectDomainCollisions(domain) {
+  var _a;
+  const buckets = /* @__PURE__ */ new Map();
+  for (const record of domain.records) {
+    const value = record.value;
+    const linguisticId = record.identity.linguisticID;
+    if (!value || !linguisticId) continue;
+    const normalizedId = normalizeObjectIdentity(linguisticId);
+    if (!normalizedId) continue;
+    const key = `${languageIdentityScope(value)}\0${normalizedId}`;
+    const bucket = (_a = buckets.get(key)) != null ? _a : [];
+    if (!bucket.some(
+      (candidate) => candidate.identity.workbenchID === record.identity.workbenchID
+    )) {
+      bucket.push(record);
+      buckets.set(key, bucket);
+    }
+  }
+  const diagnostics = [];
+  for (const bucket of buckets.values()) {
+    if (bucket.length < 2) continue;
+    for (const record of bucket) {
+      const otherPaths = bucket.filter(
+        (candidate) => candidate.identity.workbenchID !== record.identity.workbenchID
+      ).map((candidate) => candidate.path).sort((left, right) => left.localeCompare(right));
+      diagnostics.push({
+        identity: record.identity,
+        path: record.path,
+        diagnostic: {
+          code: `identity.duplicate-${domain.field.replace(/_/g, "-")}`,
+          severity: "warning",
+          field: domain.field,
+          message: `${domain.objectLabel} ID "${record.identity.linguisticID}" is also used by ${describeOtherPaths(otherPaths)} in the same language and document-type identity domain. Every source was preserved; open the affected notes and decide whether they should remain separate, receive distinct IDs, be merged, or be deleted.`
+        }
+      });
+    }
+  }
+  return diagnostics;
+}
+function collectLexicalSenseCollisions(records) {
+  var _a, _b, _c;
+  const diagnostics = [];
+  for (const record of records) {
+    const senses = (_a = record.value) == null ? void 0 : _a.senses;
+    if (!senses || senses.length < 2) continue;
+    const counts = /* @__PURE__ */ new Map();
+    for (const sense of senses) {
+      const id = (_b = sense.id) == null ? void 0 : _b.trim();
+      if (!id) continue;
+      counts.set(id, ((_c = counts.get(id)) != null ? _c : 0) + 1);
+    }
+    for (const [id, count] of counts) {
+      if (count < 2) continue;
+      diagnostics.push({
+        identity: record.identity,
+        path: record.path,
+        diagnostic: {
+          code: "identity.duplicate-lexical-sense-id",
+          severity: "warning",
+          field: "Senses / ID",
+          message: `Lexical sense ID "${id}" appears ${count} times in this lexical entry. Every sense was preserved; open the note and decide whether the senses should be merged, deleted, or assigned distinct IDs.`
+        }
+      });
+    }
+  }
+  return diagnostics;
+}
+function unitMatchesRealization(unit, realization) {
+  if (normalizeObjectIdentity(unit.id) !== normalizeObjectIdentity(realization.unitId)) {
+    return false;
+  }
+  if (realization.languageId && unit.languageId !== realization.languageId) {
+    return false;
+  }
+  if (realization.language && unit.language !== realization.language) {
+    return false;
+  }
+  return true;
+}
+function collectPhonologyRelationshipDiagnostics(unitRecords, realizationRecords) {
+  const diagnostics = [];
+  const completeUnits = unitRecords.filter(
+    (record) => record.value !== null
+  );
+  for (const record of realizationRecords) {
+    const realization = record.value;
+    if (!realization) continue;
+    const targets = completeUnits.filter(
+      (unitRecord) => unitMatchesRealization(unitRecord.value, realization)
+    );
+    if (targets.length === 1) continue;
+    if (targets.length === 0) {
+      diagnostics.push({
+        identity: record.identity,
+        path: record.path,
+        diagnostic: {
+          code: "phonology.realization.unresolved-unit",
+          severity: "warning",
+          field: "unit_id",
+          message: `Canonical unit "${realization.unitId}" does not resolve within this realization's current language scope. The realization source was preserved and was not modified.`
+        }
+      });
+      continue;
+    }
+    const targetPaths = targets.map((target) => target.path).sort((left, right) => left.localeCompare(right));
+    diagnostics.push({
+      identity: record.identity,
+      path: record.path,
+      diagnostic: {
+        code: "phonology.realization.ambiguous-unit",
+        severity: "warning",
+        field: "unit_id",
+        message: `Canonical unit "${realization.unitId}" resolves to multiple same-language unit notes: ${describeOtherPaths(targetPaths)}. The realization and every candidate unit were preserved; open the affected notes and resolve the duplicate unit identity before relying on this relationship.`
+      }
+    });
+  }
+  return diagnostics;
+}
+function collectLanguageProfileCollisions(profiles) {
+  var _a;
+  const profilesByPath = /* @__PURE__ */ new Map();
+  for (const profile of profiles) {
+    if (!profilesByPath.has(profile.path)) {
+      profilesByPath.set(profile.path, profile);
+    }
+  }
+  const buckets = /* @__PURE__ */ new Map();
+  for (const profile of profilesByPath.values()) {
+    const id = profile.id.trim();
+    if (!id) continue;
+    const bucket = (_a = buckets.get(id)) != null ? _a : [];
+    bucket.push(profile);
+    buckets.set(id, bucket);
+  }
+  const diagnostics = [];
+  for (const bucket of buckets.values()) {
+    if (bucket.length < 2) continue;
+    for (const profile of bucket) {
+      const otherPaths = bucket.filter((candidate) => candidate.path !== profile.path).map((candidate) => candidate.path).sort((left, right) => left.localeCompare(right));
+      diagnostics.push({
+        identity: createObsidianWorkbenchIdentity(profile.path, profile.id),
+        path: profile.path,
+        diagnostic: {
+          code: "identity.duplicate-language-id",
+          severity: "warning",
+          field: "language_id",
+          message: `Language Profile ID "${profile.id}" is also used by ${describeOtherPaths(otherPaths)}. Every profile source was preserved; open the affected notes and decide whether they describe one language that should share a single profile or distinct languages that require distinct IDs.`
+        }
+      });
+    }
+  }
+  return diagnostics;
+}
+function buildLinguisticIdentityDiagnostics(input) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  const diagnostics = [
+    ...collectLanguageProfileCollisions((_a = input.languageProfiles) != null ? _a : []),
+    ...collectLexicalSenseCollisions((_b = input.dictionaryRecords) != null ? _b : []),
+    ...collectPhonologyRelationshipDiagnostics(
+      (_c = input.phonologyUnitRecords) != null ? _c : [],
+      (_d = input.phonologyRealizationRecords) != null ? _d : []
+    )
+  ];
+  const domains = [
+    {
+      records: (_e = input.dictionaryRecords) != null ? _e : [],
+      field: "lexeme_id",
+      objectLabel: "Lexeme"
+    },
+    {
+      records: (_f = input.morphemeRecords) != null ? _f : [],
+      field: "morpheme_id",
+      objectLabel: "Morpheme"
+    },
+    {
+      records: (_g = input.exampleRecords) != null ? _g : [],
+      field: "example_id",
+      objectLabel: "Linguistic example"
+    },
+    {
+      records: (_h = input.phonologyUnitRecords) != null ? _h : [],
+      field: "unit_id",
+      objectLabel: "Phonological unit"
+    },
+    {
+      records: (_i = input.phonologyRealizationRecords) != null ? _i : [],
+      field: "realization_id",
+      objectLabel: "Phonological realization"
+    }
+  ];
+  for (const domain of domains) {
+    diagnostics.push(...collectObjectDomainCollisions(domain));
+  }
+  return diagnostics;
+}
+
 // source-diagnostics.ts
 function highestSeverity(left, right) {
   return left === "error" || right === "error" ? "error" : "warning";
@@ -12316,20 +12527,7 @@ function diagnosticKey(diagnostic) {
     diagnostic.message
   ].join("\0");
 }
-function unitResolvesRealization(unit, realization) {
-  if (unit.id.trim().toLowerCase() !== realization.unitId.trim().toLowerCase()) {
-    return false;
-  }
-  if (realization.languageId && unit.languageId !== realization.languageId) {
-    return false;
-  }
-  if (realization.language && unit.language !== realization.language) {
-    return false;
-  }
-  return true;
-}
 function buildSourceDiagnosticGroups(input) {
-  var _a, _b;
   const groups = /* @__PURE__ */ new Map();
   const addDiagnostic = (identity, path, diagnostic) => {
     const key = identity.workbenchID;
@@ -12360,24 +12558,12 @@ function buildSourceDiagnosticGroups(input) {
       addDiagnostic(record.identity, record.path, diagnostic);
     }
   }
-  const unitRecords = (_a = input.phonologyUnitRecords) != null ? _a : [];
-  const realizationRecords = (_b = input.phonologyRealizationRecords) != null ? _b : [];
-  const units = unitRecords.map((record) => record.value).filter(
-    (unit) => unit !== null
-  );
-  for (const record of realizationRecords) {
-    const realization = record.value;
-    if (!realization) continue;
-    const resolved = units.some(
-      (unit) => unitResolvesRealization(unit, realization)
+  for (const derived of buildLinguisticIdentityDiagnostics(input)) {
+    addDiagnostic(
+      derived.identity,
+      derived.path,
+      derived.diagnostic
     );
-    if (resolved) continue;
-    addDiagnostic(record.identity, record.path, {
-      code: "phonology.realization.unresolved-unit",
-      severity: "warning",
-      field: "unit_id",
-      message: `Canonical unit "${realization.unitId}" does not resolve within this realization's current language scope. The realization source is preserved and was not modified.`
-    });
   }
   const result = Array.from(groups.values()).map(
     ({ identity, path, severity, diagnostics }) => ({
@@ -13192,10 +13378,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
    * source type. This accessor merely gathers the already-established source
    * records and passes them to the pure diagnostic aggregator.
    *
-   * Phonology records are supplied twice on purpose:
+   * Inventory records are supplied twice on purpose:
    * - once in `records`, so parser/authority diagnostics become ordinary cards;
-   * - once in their specialized arrays, so source-diagnostics.ts can validate
-   *   realization -> unit relationships.
+   * - once in separate document-type arrays, so cross-record identity checks
+   *   cannot manufacture collisions between unrelated object types.
+   *
+   * Loaded Language Profiles are supplied separately because they are canonical
+   * identity sources but do not use the ordinary WorkbenchSourceRecord adapters.
+   * Their paths still produce ordinary navigable diagnostic cards.
    *
    * The aggregator deduplicates repeated diagnostics by Workbench source
    * identity. Nothing in this method grants authority to edit creator files.
@@ -13214,6 +13404,10 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
         ...phonologyUnitRecords,
         ...phonologyRealizationRecords
       ],
+      languageProfiles: Array.from(this.languageProfiles.values()),
+      dictionaryRecords,
+      morphemeRecords,
+      exampleRecords,
       phonologyUnitRecords,
       phonologyRealizationRecords
     });
