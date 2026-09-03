@@ -61,8 +61,9 @@ export interface ApplyCaseSensitiveMatchingStateRequest {
   /**
    * Rebuild linguistic runtime state under the currently configured policy.
    *
-   * "blocked" has a special safety guarantee: source preflight rejected the
-   * reload before any previous linguistic indexes were replaced.
+   * reloadActiveLanguage() builds a detached candidate runtime and commits it
+   * only after preparation succeeds. Both a returned "blocked" result and a
+   * thrown preparation error therefore leave previous indexes untouched.
    */
   reload: () => Promise<CaseSensitiveMatchingReloadResult>;
 }
@@ -76,9 +77,10 @@ export interface ApplyCaseSensitiveMatchingStateRequest {
  * 2. Initial persistence failure restores the previous in-memory policy.
  * 3. A preflight-blocked reload restores and re-persists the previous policy,
  *    because the old runtime indexes are proven untouched.
- * 4. A thrown reload exception is NOT treated as a safe rollback point. Once
- *    preflight succeeds, dictionary replacement may already have begun, so
- *    changing the setting back would not reconstruct the old indexes.
+ * 4. A thrown detached-preparation error also restores and re-persists the
+ *    previous policy because the candidate runtime was never committed.
+ * 5. A successfully rolled-back thrown reload remains "reload-failed" so the
+ *    caller retains the original failure reason.
  */
 export async function applyCaseSensitiveMatchingState(
   request: ApplyCaseSensitiveMatchingStateRequest,
@@ -114,13 +116,18 @@ export async function applyCaseSensitiveMatchingState(
     reload = await request.reload();
   } catch (error) {
     /*
-     * Do NOT restore the previous setting here.
-     *
-     * reloadActiveLanguage() can throw after preflight has succeeded and after
-     * dictionary replacement has begun. Leaving the successfully persisted
-     * requested policy in place is more truthful than claiming an old runtime
-     * state that this transaction cannot reconstruct.
+     * Detached runtime preparation cannot partially replace the committed
+     * dictionary. A thrown preparation error leaves the previous indexes
+     * authoritative, so restore and persist the policy that still matches them.
      */
+    request.state.caseSensitiveMatching = previousValue;
+
+    try {
+      await request.save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
+
     return { status: "reload-failed", error };
   }
 
@@ -132,9 +139,9 @@ export async function applyCaseSensitiveMatchingState(
   }
 
   /*
-   * "blocked" is the one reload result that guarantees runtime was untouched.
-   * Restore the setting corresponding to those still-authoritative indexes and
-   * persist that rollback.
+   * This branch handles an explicit preflight refusal. Runtime is untouched here
+   * just as it is after a thrown candidate-preparation error. Restore the policy
+   * corresponding to those still-authoritative indexes and persist the rollback.
    */
   request.state.caseSensitiveMatching = previousValue;
 

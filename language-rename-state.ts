@@ -3,10 +3,10 @@ import type { LanguageConfig } from "./types";
 /**
  * Result returned by the normal active-language reload boundary.
  *
- * "blocked" has a stronger safety meaning than a thrown exception:
- * reloadActiveLanguage() returns blocked only when source preflight refused the
- * requested configuration before replacing any currently loaded linguistic
- * state.
+ * Runtime reload is prepared against detached candidate inventories. A
+ * returned "blocked" result means source preflight refused the renamed
+ * configuration, while a thrown error means candidate preparation failed.
+ * Neither failure path replaces the currently authoritative runtime.
  */
 export type LanguageRenameReloadResult =
   { status: "loaded"; dictionaryCount: number } | { status: "blocked" };
@@ -110,9 +110,15 @@ export type LanguageRenameStateResult =
       rootRestored: true;
     }
   | {
+      status: "reload-failed-rollback-rename-failed";
+      error: unknown;
+      rollbackError: unknown;
+      rootRenamed: true;
+    }
+  | {
       status: "reload-failed";
       error: unknown;
-      rootRenamed: true;
+      rootRestored: true;
     };
 
 /**
@@ -178,9 +184,9 @@ export interface ApplyLanguageRenameStateRequest {
   /**
    * Re-establish runtime inventories when the renamed language was active.
    *
-   * Only an explicit "blocked" result proves runtime replacement never began.
-   * A thrown exception must therefore leave the newly persisted rename in
-   * place rather than pretending the previous runtime was restored.
+   * Both explicit preflight blocking and a thrown detached-preparation error
+   * leave the previous runtime authoritative. Either failure therefore permits
+   * an exact structural/configuration rollback attempt.
    */
   reload: () => Promise<LanguageRenameReloadResult>;
 }
@@ -265,12 +271,13 @@ function restoreLanguageRename(
  * keeping the new in-memory paths aligned with the root's actual new location
  * is more truthful than restoring settings to paths that no longer exist.
  *
- * A blocked active reload has the same safe runtime boundary: H3 guarantees old
- * runtime data is untouched. The root can therefore be moved back, old settings
+ * A blocked active reload or thrown detached candidate-preparation error leaves
+ * old runtime data untouched. The root can therefore be moved back, old settings
  * restored, and the rollback persisted.
  *
- * A thrown reload exception is different. Runtime replacement may already have
- * begun, so the successful physical/configuration rename remains authoritative.
+ * Structural truth remains authoritative during compensation: if the reverse
+ * filesystem rename fails, the transaction keeps the new in-memory paths aligned
+ * with the root that still physically exists at the new location.
  */
 export async function applyLanguageRenameState(
   request: ApplyLanguageRenameStateRequest,
@@ -377,18 +384,48 @@ export async function applyLanguageRenameState(
       status: "reload-blocked",
       rootRestored: true,
     };
-  } catch (error) {
+  } catch (reloadError) {
     /*
-     * Do NOT reverse the root or restore old settings here.
-     *
-     * reloadActiveLanguage() can throw after its source preflight passes and
-     * runtime replacement begins. Rolling filesystem/settings state backward
-     * would falsely claim the old runtime authority had also been restored.
+     * Detached candidate preparation failed before runtime commit, so the old
+     * runtime is still authoritative. First reverse the exact structural move.
+     * Do not restore old settings unless that physical rollback succeeds.
      */
+    try {
+      await request.renameRoot(plan.newRoot, plan.oldRoot);
+    } catch (rollbackError) {
+      /*
+       * The root still physically lives at the new location. Keep the new
+       * in-memory identity/paths aligned with that vault structure rather than
+       * manufacturing an old configuration that points somewhere else.
+       */
+      return {
+        status: "reload-failed-rollback-rename-failed",
+        error: reloadError,
+        rollbackError,
+        rootRenamed: true,
+      };
+    }
+
+    restoreLanguageRename(request.language, request.settings, previous);
+
+    try {
+      await request.save();
+    } catch (error) {
+      /*
+       * Vault structure, memory, and runtime now reflect the old authority, but
+       * durable settings could not be confirmed restored.
+       */
+      return {
+        status: "rollback-save-failed",
+        error,
+        rootRestored: true,
+      };
+    }
+
     return {
       status: "reload-failed",
-      error,
-      rootRenamed: true,
+      error: reloadError,
+      rootRestored: true,
     };
   }
 }

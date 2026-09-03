@@ -171,30 +171,26 @@ export class ConlangSettingTab extends PluginSettingTab {
 
           if (result.status === "rollback-save-failed") {
             new Notice(
-              "Made Up Words: reload was blocked and the previous membership " +
-                "setting was restored in memory, but the rollback could not be saved. " +
-                "Review settings before restarting Obsidian.",
+              "Made Up Words: the previous membership setting was restored in memory, " +
+                "but the rollback could not be saved. Review settings before restarting Obsidian.",
             );
             this.rerender();
             return;
           }
 
           /*
-           * A thrown reload may occur after runtime replacement has begun.
-           * The transaction therefore keeps the requested persisted policy
-           * rather than falsely claiming that restoring the old setting could
-           * reconstruct the previous runtime indexes.
+           * Detached runtime preparation failed before anything was committed.
+           * The transaction restored and re-persisted the previous membership
+           * policy, which still matches the authoritative runtime indexes.
            */
           console.error(
-            "Made Up Words: language membership reload failed after it began",
+            "Made Up Words: language membership reload failed; previous membership was restored",
             result.error,
           );
           new Notice(
-            "Made Up Words: language membership reload failed after it began. " +
+            "Made Up Words: language membership reload failed; the previous membership setting was restored. " +
               "See the developer console.",
           );
-          this.plugin.refreshPanel();
-          this.plugin.refreshHighlights();
           this.rerender();
         });
       });
@@ -438,17 +434,17 @@ export class ConlangSettingTab extends PluginSettingTab {
           result.error,
         );
         new Notice(
-          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+          "Made Up Words: the previous language selection was restored in memory, but the rollback could not be saved. Check the developer console.",
         );
         return false;
 
       case "reload-failed":
         console.error(
-          "Made Up Words: active-language reload failed after preflight:",
+          "Made Up Words: active-language reload failed; previous selection was restored:",
           result.error,
         );
         new Notice(
-          "Made Up Words: language data failed to reload after source validation. Check the developer console.",
+          "Made Up Words: language data failed to reload; the previous language selection was restored. Check the developer console.",
         );
         return false;
 
@@ -511,24 +507,22 @@ export class ConlangSettingTab extends PluginSettingTab {
           result.error,
         );
         new Notice(
-          "Made Up Words: the source change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+          "Made Up Words: the previous source was restored in memory, but the rollback could not be saved. Check the developer console.",
         );
         return false;
 
       case "reload-failed":
         /*
-         * Do not claim the previous source was restored here. Once H3 preflight
-         * has passed, reloadActiveLanguage() may already have replaced part of
-         * the runtime state before another loader throws. Automatically rolling
-         * the setting back could therefore make persisted configuration disagree
-         * with the partially established runtime even more severely.
+         * Detached candidate preparation failed before runtime commit. The
+         * transaction has restored and re-persisted the previous canonical
+         * source, which still describes the authoritative runtime.
          */
         console.error(
-          "Made Up Words: language-source reload failed after preflight:",
+          "Made Up Words: language-source reload failed; previous source was restored:",
           result.error,
         );
         new Notice(
-          "Made Up Words: language data failed to reload after source validation. The requested source was kept because automatic rollback is no longer known to be safe. Check the developer console.",
+          "Made Up Words: language data failed to reload; the previous source was restored. Check the developer console.",
         );
         return false;
 
@@ -547,9 +541,9 @@ export class ConlangSettingTab extends PluginSettingTab {
    * transaction instead of mutating LanguageConfig directly from this control.
    *
    * The helper deliberately mirrors the established H7 source-change reporting:
-   * a blocked reload is already explained by H3 diagnostics; known-safe failures
-   * restore the previous path; and a post-preflight reload exception does not
-   * claim rollback because runtime replacement may already have begun.
+   * a blocked reload is already explained by H3 diagnostics, while either
+   * preflight blocking or detached candidate-preparation failure leaves old
+   * runtime authoritative and allows the previous path to be restored.
    */
   private async commitLanguageProfile(
     lang: LanguageConfig,
@@ -585,22 +579,22 @@ export class ConlangSettingTab extends PluginSettingTab {
           result.error,
         );
         new Notice(
-          "Made Up Words: the profile change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+          "Made Up Words: the previous profile path was restored in memory, but the rollback could not be saved. Check the developer console.",
         );
         return false;
 
       case "reload-failed":
         /*
-         * Once H3 preflight has passed, reloadActiveLanguage() may already have
-         * replaced the profile map or profile-derived inventories. Keep the
-         * requested persisted path rather than manufacturing an unsafe rollback.
+         * Detached candidate preparation failed before runtime commit. The
+         * transaction has restored and re-persisted the previous profile path,
+         * which still matches the authoritative profile-derived runtime.
          */
         console.error(
-          "Made Up Words: language-profile reload failed after preflight:",
+          "Made Up Words: language-profile reload failed; previous profile path was restored:",
           result.error,
         );
         new Notice(
-          "Made Up Words: language data failed to reload after profile validation. The requested profile path was kept because automatic rollback is no longer known to be safe. Check the developer console.",
+          "Made Up Words: language data failed to reload; the previous profile path was restored. Check the developer console.",
         );
         return false;
 
@@ -718,24 +712,23 @@ export class ConlangSettingTab extends PluginSettingTab {
           result.error,
         );
         new Notice(
-          "Made Up Words: repair was blocked and restored in memory, but the rollback could not be saved. Created folders were preserved. Review settings before restarting the app.",
+          "Made Up Words: the previous language-root configuration was restored in memory, but the rollback could not be saved. Created folders were preserved. Review settings before restarting the app.",
         );
         this.rerender();
         return;
 
       case "reload-failed":
         /*
-         * Once H3 preflight has passed, a thrown loader error may occur after
-         * runtime replacement has begun. The transaction therefore keeps the
-         * repaired persisted configuration instead of claiming that restoring
-         * old settings would also restore old runtime authority.
+         * Detached runtime preparation failed before commit. The transaction
+         * restored and re-persisted the previous repair-owned configuration,
+         * while preserving the additively established folders.
          */
         console.error(
-          "Made Up Words: language-root reload failed after preflight:",
+          "Made Up Words: language-root reload failed; previous configuration was restored:",
           result.error,
         );
         new Notice(
-          "Made Up Words: the repaired configuration was saved, but language data failed to reload after validation. Automatic rollback is no longer known to be safe. Created folders and the repaired configuration were kept. Check the developer console.",
+          "Made Up Words: language data failed to reload; the previous language-root configuration was restored. Created folders were preserved. Check the developer console.",
         );
         this.rerender();
         return;
@@ -1065,30 +1058,27 @@ export class ConlangSettingTab extends PluginSettingTab {
 
             if (result.status === "rollback-save-failed") {
               new Notice(
-                "Conlang workbench: the case-matching change was blocked and " +
-                  "restored in memory, but the rollback could not be saved.",
+                "Conlang workbench: the previous case-matching setting was restored " +
+                  "in memory, but the rollback could not be saved.",
               );
               this.rerender();
               return;
             }
 
             /*
-             * A thrown reload may occur after dictionary replacement has begun.
-             * The transaction therefore leaves the requested persisted setting
-             * in place rather than pretending that restoring one boolean could
-             * restore the previous runtime indexes. Refresh visible consumers
-             * to avoid leaving stale UI around an uncertain runtime state.
+             * Detached dictionary preparation failed before runtime commit. The
+             * transaction restored and re-persisted the previous matching policy,
+             * so the existing dictionary and visible consumers remain authoritative.
              */
             console.error(
-              "[Conlang] Case-sensitive matching reload failed:",
+              "[Conlang] Case-sensitive matching reload failed; previous setting was restored:",
               result.error,
             );
             new Notice(
-              "Conlang workbench: case-matching reload failed after it began. " +
+              "Conlang workbench: case-matching reload failed; the previous setting was restored. " +
                 "See the developer console.",
             );
-            this.plugin.refreshPanel();
-            this.plugin.refreshHighlights();
+            this.rerender();
           }),
       );
 
@@ -1435,14 +1425,30 @@ export class ConlangSettingTab extends PluginSettingTab {
             return;
           }
 
+          if (result.status === "reload-failed-rollback-rename-failed") {
+            console.error(
+              "Made Up Words: language reload failed and filesystem rollback failed",
+              result.error,
+              result.rollbackError,
+            );
+            new Notice(
+              "Made Up Words: language data failed to reload and the renamed root could not be moved back. " +
+                "The new root and settings remain in place, while the previous runtime data is still loaded. " +
+                "Review the language configuration before continuing.",
+              12000,
+            );
+            this.rerender();
+            return;
+          }
+
           if (result.status === "reload-failed") {
             console.error(
-              "Made Up Words: language rename reload failed after preflight",
+              "Made Up Words: language rename reload failed; rename was restored",
               result.error,
             );
             new Notice(
-              "Made Up Words: the language rename was saved, but runtime reload failed after validation began. " +
-                "The renamed root and settings were kept because automatic rollback is no longer known to be safe.",
+              "Made Up Words: language data failed to reload, so the language root and settings were restored. " +
+                "Check the developer console.",
               12000,
             );
             this.rerender();
@@ -1483,10 +1489,9 @@ export class ConlangSettingTab extends PluginSettingTab {
      * keystroke.
      *
      * After every transaction, read the displayed value back from LanguageConfig
-     * instead of assuming whether rollback happened. A blocked preflight restores
-     * the previous path, while a post-preflight reload exception deliberately
-     * retains the requested path because automatic rollback is no longer known
-     * to be safe.
+     * instead of assuming whether rollback happened. Source preflight blocking
+     * and detached candidate-preparation failure both restore the previous path
+     * when the transaction can safely persist that rollback.
      */
     const addSourceFolderText = (
       row: Setting,
@@ -2055,25 +2060,31 @@ export class ConlangSettingTab extends PluginSettingTab {
       return;
     }
 
+    if (result.status === "reload-failed") {
+      /*
+       * Detached runtime preparation failed, so the removal transaction restored
+       * and re-persisted the complete previous language configuration. Keep its
+       * presentation state as well; from the creator's perspective the removal
+       * did not become authoritative.
+       */
+      console.error(
+        "Made Up Words: language removal reload failed; removal was restored:",
+        result.error,
+      );
+      new Notice(
+        "Made Up Words: language data failed to reload; the language removal was restored. Check the developer console.",
+      );
+      this.rerender();
+      return;
+    }
+
     /*
-     * Both "applied" and "reload-failed" leave the successfully persisted
-     * removal authoritative. Remove presentation keys only now, after the
-     * transaction has established that the language configuration remains
-     * removed.
+     * Only "applied" leaves the removal authoritative. Presentation keys belong
+     * to that successful removal and must not be discarded on rollback paths.
      */
     this.openCards.delete(result.name);
     this.openSheets.delete(result.name);
     this.openInflections.delete(result.name);
-
-    if (result.status === "reload-failed") {
-      console.error(
-        "Made Up Words: language was removed, but language data reload failed:",
-        result.error,
-      );
-      new Notice(
-        "Made Up Words: the language was removed, but language data could not be fully reloaded. Review the language data before continuing.",
-      );
-    }
 
     this.plugin.refreshPanel();
     this.plugin.refreshHighlights();

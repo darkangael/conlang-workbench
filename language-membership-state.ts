@@ -52,8 +52,9 @@ export interface ApplyLanguageMembershipStateRequest {
   /**
    * Mutable settings-backed state owned by the plugin.
    *
-   * Runtime loaders read this property directly, so rollback is safe only when
-   * we can prove that the previous runtime indexes remain authoritative.
+   * Runtime loaders read this property directly. reloadActiveLanguage() now
+   * prepares replacements off to the side, so blocked or thrown preparation
+   * failures both prove that the previous runtime indexes remain authoritative.
    */
   state: LanguageMembershipState;
 
@@ -66,9 +67,9 @@ export interface ApplyLanguageMembershipStateRequest {
   /**
    * Rebuild active linguistic runtime state under the current membership policy.
    *
-   * "blocked" has a stronger meaning than a thrown exception:
-   * reloadActiveLanguage() returns it only when source preflight rejects the
-   * reload before any existing linguistic runtime state is replaced.
+   * reloadActiveLanguage() returns "blocked" when source preflight rejects the
+   * reload. It can also throw while preparing detached candidate inventories.
+   * Neither failure path commits replacement runtime state.
    */
   reload: () => Promise<LanguageMembershipReloadResult>;
 }
@@ -83,10 +84,10 @@ export interface ApplyLanguageMembershipStateRequest {
  *    runtime replacement has not begun.
  * 3. A preflight-blocked reload restores and re-persists the previous policy
  *    because the old runtime indexes are proven untouched.
- * 4. A thrown reload exception is NOT treated as a safe rollback point. Once
- *    preflight succeeds, one or more runtime inventories may already have begun
- *    replacement. Restoring only the setting would falsely claim that the
- *    previous runtime had also been reconstructed.
+ * 4. A thrown detached-preparation error also restores and re-persists the
+ *    previous policy because no candidate runtime was committed.
+ * 5. The original thrown error remains visible as "reload-failed" after a
+ *    successful rollback.
  */
 export async function applyLanguageMembershipState(
   request: ApplyLanguageMembershipStateRequest,
@@ -125,14 +126,18 @@ export async function applyLanguageMembershipState(
     reload = await request.reload();
   } catch (error) {
     /*
-     * Fail closed with respect to rollback authority.
-     *
-     * After source preflight succeeds, reloadActiveLanguage() can throw while
-     * dictionary, morpheme, example, or phonology runtime state is already being
-     * replaced. Keep the successfully persisted requested policy rather than
-     * pretending that changing this setting back could reconstruct the old
-     * runtime state.
+     * Candidate inventories are prepared without replacing the committed
+     * runtime. If preparation throws, the previous membership policy still
+     * describes the authoritative indexes and can safely be restored.
      */
+    request.state.languageMembership = previousMembership;
+
+    try {
+      await request.save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
+
     return { status: "reload-failed", error };
   }
 
@@ -144,9 +149,10 @@ export async function applyLanguageMembershipState(
   }
 
   /*
-   * "blocked" is the one result that proves runtime authority was untouched.
-   * Restore the membership policy corresponding to those still-authoritative
-   * indexes and persist that rollback before releasing the transaction.
+   * This branch handles an explicit preflight refusal. Runtime authority remains
+   * untouched here just as it does after a thrown candidate-preparation error.
+   * Restore the matching membership policy and persist that rollback before
+   * releasing the transaction.
    */
   request.state.languageMembership = previousMembership;
 

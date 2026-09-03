@@ -4610,20 +4610,18 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
         }
         if (result.status === "rollback-save-failed") {
           new import_obsidian15.Notice(
-            "Made Up Words: reload was blocked and the previous membership setting was restored in memory, but the rollback could not be saved. Review settings before restarting Obsidian."
+            "Made Up Words: the previous membership setting was restored in memory, but the rollback could not be saved. Review settings before restarting Obsidian."
           );
           this.rerender();
           return;
         }
         console.error(
-          "Made Up Words: language membership reload failed after it began",
+          "Made Up Words: language membership reload failed; previous membership was restored",
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: language membership reload failed after it began. See the developer console."
+          "Made Up Words: language membership reload failed; the previous membership setting was restored. See the developer console."
         );
-        this.plugin.refreshPanel();
-        this.plugin.refreshHighlights();
         this.rerender();
       });
     });
@@ -4782,16 +4780,16 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+          "Made Up Words: the previous language selection was restored in memory, but the rollback could not be saved. Check the developer console."
         );
         return false;
       case "reload-failed":
         console.error(
-          "Made Up Words: active-language reload failed after preflight:",
+          "Made Up Words: active-language reload failed; previous selection was restored:",
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: language data failed to reload after source validation. Check the developer console."
+          "Made Up Words: language data failed to reload; the previous language selection was restored. Check the developer console."
         );
         return false;
       case "invalid-request":
@@ -4839,16 +4837,16 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: the source change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+          "Made Up Words: the previous source was restored in memory, but the rollback could not be saved. Check the developer console."
         );
         return false;
       case "reload-failed":
         console.error(
-          "Made Up Words: language-source reload failed after preflight:",
+          "Made Up Words: language-source reload failed; previous source was restored:",
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: language data failed to reload after source validation. The requested source was kept because automatic rollback is no longer known to be safe. Check the developer console."
+          "Made Up Words: language data failed to reload; the previous source was restored. Check the developer console."
         );
         return false;
       case "invalid-request":
@@ -4865,9 +4863,9 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
    * transaction instead of mutating LanguageConfig directly from this control.
    *
    * The helper deliberately mirrors the established H7 source-change reporting:
-   * a blocked reload is already explained by H3 diagnostics; known-safe failures
-   * restore the previous path; and a post-preflight reload exception does not
-   * claim rollback because runtime replacement may already have begun.
+   * a blocked reload is already explained by H3 diagnostics, while either
+   * preflight blocking or detached candidate-preparation failure leaves old
+   * runtime authoritative and allows the previous path to be restored.
    */
   async commitLanguageProfile(lang, profilePath) {
     const result = await this.plugin.setLanguageProfileState(lang, profilePath);
@@ -4891,16 +4889,16 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: the profile change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+          "Made Up Words: the previous profile path was restored in memory, but the rollback could not be saved. Check the developer console."
         );
         return false;
       case "reload-failed":
         console.error(
-          "Made Up Words: language-profile reload failed after preflight:",
+          "Made Up Words: language-profile reload failed; previous profile path was restored:",
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: language data failed to reload after profile validation. The requested profile path was kept because automatic rollback is no longer known to be safe. Check the developer console."
+          "Made Up Words: language data failed to reload; the previous profile path was restored. Check the developer console."
         );
         return false;
       case "invalid-request":
@@ -4983,17 +4981,17 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: repair was blocked and restored in memory, but the rollback could not be saved. Created folders were preserved. Review settings before restarting the app."
+          "Made Up Words: the previous language-root configuration was restored in memory, but the rollback could not be saved. Created folders were preserved. Review settings before restarting the app."
         );
         this.rerender();
         return;
       case "reload-failed":
         console.error(
-          "Made Up Words: language-root reload failed after preflight:",
+          "Made Up Words: language-root reload failed; previous configuration was restored:",
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: the repaired configuration was saved, but language data failed to reload after validation. Automatic rollback is no longer known to be safe. Created folders and the repaired configuration were kept. Check the developer console."
+          "Made Up Words: language data failed to reload; the previous language-root configuration was restored. Created folders were preserved. Check the developer console."
         );
         this.rerender();
         return;
@@ -5228,20 +5226,19 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
         }
         if (result.status === "rollback-save-failed") {
           new import_obsidian15.Notice(
-            "Conlang workbench: the case-matching change was blocked and restored in memory, but the rollback could not be saved."
+            "Conlang workbench: the previous case-matching setting was restored in memory, but the rollback could not be saved."
           );
           this.rerender();
           return;
         }
         console.error(
-          "[Conlang] Case-sensitive matching reload failed:",
+          "[Conlang] Case-sensitive matching reload failed; previous setting was restored:",
           result.error
         );
         new import_obsidian15.Notice(
-          "Conlang workbench: case-matching reload failed after it began. See the developer console."
+          "Conlang workbench: case-matching reload failed; the previous setting was restored. See the developer console."
         );
-        this.plugin.refreshPanel();
-        this.plugin.refreshHighlights();
+        this.rerender();
       })
     );
     new import_obsidian15.Setting(containerEl).setName("Show declared forms in hover tooltip").setDesc(
@@ -5496,13 +5493,26 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           this.rerender();
           return;
         }
+        if (result.status === "reload-failed-rollback-rename-failed") {
+          console.error(
+            "Made Up Words: language reload failed and filesystem rollback failed",
+            result.error,
+            result.rollbackError
+          );
+          new import_obsidian15.Notice(
+            "Made Up Words: language data failed to reload and the renamed root could not be moved back. The new root and settings remain in place, while the previous runtime data is still loaded. Review the language configuration before continuing.",
+            12e3
+          );
+          this.rerender();
+          return;
+        }
         if (result.status === "reload-failed") {
           console.error(
-            "Made Up Words: language rename reload failed after preflight",
+            "Made Up Words: language rename reload failed; rename was restored",
             result.error
           );
           new import_obsidian15.Notice(
-            "Made Up Words: the language rename was saved, but runtime reload failed after validation began. The renamed root and settings were kept because automatic rollback is no longer known to be safe.",
+            "Made Up Words: language data failed to reload, so the language root and settings were restored. Check the developer console.",
             12e3
           );
           this.rerender();
@@ -5947,18 +5957,20 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
       this.rerender();
       return;
     }
-    this.openCards.delete(result.name);
-    this.openSheets.delete(result.name);
-    this.openInflections.delete(result.name);
     if (result.status === "reload-failed") {
       console.error(
-        "Made Up Words: language was removed, but language data reload failed:",
+        "Made Up Words: language removal reload failed; removal was restored:",
         result.error
       );
       new import_obsidian15.Notice(
-        "Made Up Words: the language was removed, but language data could not be fully reloaded. Review the language data before continuing."
+        "Made Up Words: language data failed to reload; the language removal was restored. Check the developer console."
       );
+      this.rerender();
+      return;
     }
+    this.openCards.delete(result.name);
+    this.openSheets.delete(result.name);
+    this.openInflections.delete(result.name);
     this.plugin.refreshPanel();
     this.plugin.refreshHighlights();
     this.rerender();
@@ -7892,16 +7904,16 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
           result.error
         );
         new import_obsidian20.Notice(
-          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console."
+          "Made Up Words: the previous language selection was restored in memory, but the rollback could not be saved. Check the developer console."
         );
         break;
       case "reload-failed":
         console.error(
-          "Made Up Words: active-language reload failed after preflight:",
+          "Made Up Words: active-language reload failed; previous selection was restored:",
           result.error
         );
         new import_obsidian20.Notice(
-          "Made Up Words: language data failed to reload after source validation. Check the developer console."
+          "Made Up Words: language data failed to reload; the previous language selection was restored. Check the developer console."
         );
         break;
       case "invalid-request":
@@ -10843,6 +10855,12 @@ async function applyActiveLanguageState(request) {
   try {
     reload = await request.reload();
   } catch (error) {
+    restorePreviousState();
+    try {
+      await request.save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
     return { status: "reload-failed", error };
   }
   if (reload.status === "loaded") {
@@ -11453,6 +11471,12 @@ async function applyCaseSensitiveMatchingState(request) {
   try {
     reload = await request.reload();
   } catch (error) {
+    request.state.caseSensitiveMatching = previousValue;
+    try {
+      await request.save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
     return { status: "reload-failed", error };
   }
   if (reload.status === "loaded") {
@@ -11488,6 +11512,12 @@ async function applyLanguageMembershipState(request) {
   try {
     reload = await request.reload();
   } catch (error) {
+    request.state.languageMembership = previousMembership;
+    try {
+      await request.save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
     return { status: "reload-failed", error };
   }
   if (reload.status === "loaded") {
@@ -11559,6 +11589,12 @@ async function applyLanguageSourceState(request) {
     }
     return { status: "blocked" };
   } catch (error) {
+    setSourceValue(language, setting, previousValue);
+    try {
+      await save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
     return { status: "reload-failed", error };
   }
 }
@@ -11601,6 +11637,12 @@ async function applyLanguageProfileState(request) {
     }
     return { status: "blocked" };
   } catch (error) {
+    language.profilePath = previousProfilePath;
+    try {
+      await save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
     return { status: "reload-failed", error };
   }
 }
@@ -11777,10 +11819,20 @@ async function applyLanguageRootRepairState(request) {
       status: "reload-blocked",
       foldersEstablished: true
     };
-  } catch (error) {
+  } catch (reloadError) {
+    restoreLanguageRootRepair(request.language, previous);
+    try {
+      await request.save();
+    } catch (error) {
+      return {
+        status: "rollback-save-failed",
+        error,
+        foldersEstablished: true
+      };
+    }
     return {
       status: "reload-failed",
-      error,
+      error: reloadError,
       foldersEstablished: true
     };
   }
@@ -12137,11 +12189,31 @@ async function applyLanguageRenameState(request) {
       status: "reload-blocked",
       rootRestored: true
     };
-  } catch (error) {
+  } catch (reloadError) {
+    try {
+      await request.renameRoot(plan.newRoot, plan.oldRoot);
+    } catch (rollbackError) {
+      return {
+        status: "reload-failed-rollback-rename-failed",
+        error: reloadError,
+        rollbackError,
+        rootRenamed: true
+      };
+    }
+    restoreLanguageRename(request.language, request.settings, previous);
+    try {
+      await request.save();
+    } catch (error) {
+      return {
+        status: "rollback-save-failed",
+        error,
+        rootRestored: true
+      };
+    }
     return {
       status: "reload-failed",
-      error,
-      rootRenamed: true
+      error: reloadError,
+      rootRestored: true
     };
   }
 }
@@ -12194,8 +12266,22 @@ async function applyLanguageRemovalState(request) {
   let reload;
   try {
     reload = await request.reload();
-  } catch (error) {
-    return { status: "reload-failed", name: approvedName, error };
+  } catch (reloadError) {
+    restoreLanguageRemoval(request.state, previous);
+    try {
+      await request.save();
+    } catch (error) {
+      return {
+        status: "rollback-save-failed",
+        name: approvedName,
+        error
+      };
+    }
+    return {
+      status: "reload-failed",
+      name: approvedName,
+      error: reloadError
+    };
   }
   if (reload.status === "loaded") {
     return {

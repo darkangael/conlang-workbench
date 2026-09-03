@@ -176,7 +176,7 @@ try {
     assert.equal(saveCalls, 2);
   }
 
-  async function testReloadThrowDoesNotPretendRollbackIsSafe() {
+  async function testReloadThrowRestoresPreviousPath() {
     const language = makeLanguage();
     const requested = "Reference/Profile B.md";
     const reloadError = new Error("loader failed after preflight");
@@ -197,8 +197,12 @@ try {
 
     assert.equal(result.status, "reload-failed");
     assert.equal(result.error, reloadError);
-    assert.equal(language.profilePath, requested);
-    assert.equal(saveCalls, 1);
+    assert.equal(
+      language.profilePath,
+      makeLanguage().profilePath,
+      "thrown candidate preparation must restore the path matching old runtime",
+    );
+    assert.equal(saveCalls, 2);
   }
 
   async function testInactiveLanguagePersistsWithoutReload() {
@@ -366,7 +370,7 @@ try {
   await testInitialSaveFailureRestoresPreviousPath();
   await testBlockedReloadRestoresAndPersistsPreviousPath();
   await testRollbackSaveFailureKeepsPreviousMemoryPath();
-  await testReloadThrowDoesNotPretendRollbackIsSafe();
+  await testReloadThrowRestoresPreviousPath();
   await testInactiveLanguagePersistsWithoutReload();
   await testProfileCanBeRemoved();
   await testOverlappingFailedProfileChangesDoNotRetainProvisionalAuthority();

@@ -76,13 +76,10 @@ export interface ApplyLanguageSourceStateRequest {
   /**
    * In production this is ConlangPlugin.reloadActiveLanguage().
    *
-   * A returned "blocked" result is special: H3 guarantees preflight refused the
-   * reload before any currently loaded language state was replaced. That makes
-   * restoring and re-saving the previous source configuration safe.
-   *
-   * A thrown error is different. Once preflight has passed, runtime replacement
-   * may already have begun, so this transaction must not pretend that restoring
-   * settings would also restore runtime authority.
+   * A returned "blocked" result means H3 preflight refused the reload before
+   * candidate preparation. A thrown error can occur later while preparing the
+   * detached candidate runtime. Neither path commits replacement runtime state,
+   * so restoring and re-saving the previous source configuration is safe.
    */
   reload: () => Promise<LanguageSourceReloadResult>;
 }
@@ -205,13 +202,19 @@ export async function applyLanguageSourceState(
     return { status: "blocked" };
   } catch (error) {
     /*
-     * Do NOT restore the previous setting here.
-     *
-     * Unlike a preflight block, an exception can occur after runtime replacement
-     * has begun. Rolling settings back would create a false claim that the old
-     * runtime authority was restored too. Leave the requested persisted state in
-     * place and report the uncertainty to the caller.
+     * Runtime candidates are prepared off to the side and installed only after
+     * all loaders succeed. A thrown preparation error therefore leaves the old
+     * runtime authoritative. Restore its source configuration and persist that
+     * rollback before reporting the original reload failure.
      */
+    setSourceValue(language, setting, previousValue);
+
+    try {
+      await save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
+
     return { status: "reload-failed", error };
   }
 }

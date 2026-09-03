@@ -72,9 +72,10 @@ export interface ApplyActiveLanguageStateRequest {
    * Attempt to establish runtime linguistic state corresponding to the newly
    * persisted configuration.
    *
-   * A "blocked" result has a special safety meaning: reload preflight rejected
-   * the requested source authority before replacing any previously loaded
-   * linguistic indexes. That makes rollback to the previous configuration safe.
+   * reloadActiveLanguage() prepares the complete next linguistic runtime in
+   * detached candidate objects. A returned "blocked" result or a thrown
+   * preparation error therefore leaves the previously committed runtime
+   * untouched, making rollback to the previous configuration safe.
    */
   reload: () => Promise<ActiveLanguageReloadResult>;
 }
@@ -88,14 +89,11 @@ export interface ApplyActiveLanguageStateRequest {
  * 2. Restore the previous in-memory values if the initial save fails.
  * 3. If reload preflight returns "blocked", restore the previous configuration
  *    and persist that rollback so settings agree with the untouched old runtime.
- * 4. Never claim that an arbitrary thrown reload exception is equivalent to a
- *    blocked preflight. Once preflight succeeds, reload may already have begun
- *    replacing runtime inventories, so blindly restoring configuration could
- *    create a different authority mismatch.
- *
- * The final point is intentionally narrow. This transaction repairs the known
- * safe rollback case established by reloadActiveLanguage(): status "blocked".
- * General post-preflight reload atomicity is a separate concern.
+ * 4. If detached runtime preparation throws, restore and re-persist the previous
+ *    configuration for the same reason: atomic runtime preparation guarantees
+ *    that no candidate inventories were committed before the exception escaped.
+ * 5. Preserve "reload-failed" as the result of a successfully rolled-back thrown
+ *    reload so callers still know why the requested operation was rejected.
  */
 export async function applyActiveLanguageState(
   request: ApplyActiveLanguageStateRequest,
@@ -170,11 +168,24 @@ export async function applyActiveLanguageState(
     reload = await request.reload();
   } catch (error) {
     /*
-     * Do NOT roll settings back here.
-     *
-     * A thrown reload is not the same as a preflight-blocked reload. Runtime
-     * rebuilding may already have started, so we cannot safely assert that the
-     * previous configuration still matches runtime authority.
+     * Runtime preparation is detached and commits only after every candidate
+     * inventory has loaded successfully. A thrown preparation error therefore
+     * leaves the previous runtime authoritative, so restore the configuration
+     * that still describes it and persist that rollback.
+     */
+    restorePreviousState();
+
+    try {
+      await request.save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
+
+    /*
+     * Keep the original reload error after a successful rollback. "reload-failed"
+     * describes why the requested change was rejected; "rollback-save-failed"
+     * is reserved for the more serious case where persistence could not be
+     * returned to the known-good configuration.
      */
     return { status: "reload-failed", error };
   }
@@ -187,10 +198,10 @@ export async function applyActiveLanguageState(
   }
 
   /*
-   * "blocked" is the one reload result with a documented atomicity guarantee:
-   * preflight rejected the requested source state before any old runtime
-   * linguistic indexes were replaced. Restore the configuration that still
-   * matches those indexes, then persist that rollback.
+   * This branch handles an explicit preflight refusal. Like the thrown
+   * candidate-preparation path above, it leaves the previous runtime untouched.
+   * Restore the configuration that still matches that authoritative runtime,
+   * then persist the rollback.
    */
   restorePreviousState();
 

@@ -16,10 +16,10 @@ export interface LanguageRemovalState {
 /**
  * Result returned by the normal active-language reload boundary.
  *
- * "blocked" has a stronger safety meaning than a thrown exception:
- * reloadActiveLanguage() returns blocked only when source preflight refused the
- * requested configuration before replacing any currently loaded linguistic
- * state.
+ * Runtime reload is prepared against detached candidate inventories. A
+ * returned "blocked" result means source preflight refused the requested
+ * configuration, while a thrown error means candidate preparation failed.
+ * Neither failure path replaces the currently authoritative runtime.
  */
 export type LanguageRemovalReloadResult =
   { status: "loaded"; dictionaryCount: number } | { status: "blocked" };
@@ -68,8 +68,9 @@ export interface ApplyLanguageRemovalStateRequest {
   /**
    * Re-establish runtime linguistic state after the persisted removal.
    *
-   * A returned "blocked" result proves preflight stopped before replacing old
-   * runtime indexes. A thrown error does not provide that guarantee.
+   * Both a returned "blocked" result and a thrown candidate-preparation error
+   * leave the previous runtime authoritative. The transaction can therefore
+   * restore the settings snapshot after either failure.
    */
   reload: () => Promise<LanguageRemovalReloadResult>;
 }
@@ -109,10 +110,10 @@ function restoreLanguageRemoval(
  *    defense-in-depth before taking the rollback snapshot.
  * 4. Remove configuration only; never delete or rename vault folders/files.
  * 5. Persist the requested configuration before rebuilding runtime state.
- * 6. Roll back only when reload returns the explicit preflight "blocked"
- *    result, which guarantees the old runtime was left untouched.
- * 7. Never manufacture a settings rollback after an arbitrary thrown reload;
- *    runtime replacement may already have begun.
+ * 6. If reload is blocked or detached candidate preparation throws, restore
+ *    the complete previous settings snapshot while old runtime remains live.
+ * 7. Persist that compensating rollback before reporting the reload failure as
+ *    safely restored.
  *
  * This module deliberately owns no Obsidian UI state. Expansion/collapse sets
  * are presentation state and remain the responsibility of Settings.
@@ -208,15 +209,34 @@ export async function applyLanguageRemovalState(
 
   try {
     reload = await request.reload();
-  } catch (error) {
+  } catch (reloadError) {
     /*
-     * Do NOT restore the removed language here.
-     *
-     * The removal was successfully persisted and reload may already have begun
-     * replacing runtime inventories. Restoring old settings would falsely claim
-     * that the old runtime authority had also been reconstructed.
+     * Runtime preparation is detached, so a thrown loader error cannot have
+     * replaced the old authoritative inventories. Restore the complete settings
+     * snapshot that still matches that runtime and persist the compensation.
      */
-    return { status: "reload-failed", name: approvedName, error };
+    restoreLanguageRemoval(request.state, previous);
+
+    try {
+      await request.save();
+    } catch (error) {
+      /*
+       * Memory and runtime still agree on the previous language authority, but
+       * durable settings could not be confirmed restored. Surface the rollback
+       * persistence error because it describes the transaction's final state.
+       */
+      return {
+        status: "rollback-save-failed",
+        name: approvedName,
+        error,
+      };
+    }
+
+    return {
+      status: "reload-failed",
+      name: approvedName,
+      error: reloadError,
+    };
   }
 
   if (reload.status === "loaded") {
@@ -228,9 +248,9 @@ export async function applyLanguageRemovalState(
   }
 
   /*
-   * "blocked" proves source preflight stopped before touching old runtime
-   * linguistic state. Restore the configuration matching that untouched
-   * runtime and persist the compensating rollback.
+   * Explicit preflight blocking also leaves old runtime untouched. Restore the
+   * configuration matching that authoritative runtime and persist the
+   * compensating rollback.
    */
   restoreLanguageRemoval(request.state, previous);
 

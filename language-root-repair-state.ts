@@ -7,10 +7,10 @@ import type {
 /**
  * Result returned by the normal active-language reload boundary.
  *
- * "blocked" has a stronger safety meaning than a thrown exception:
- * reloadActiveLanguage() returns blocked only when source preflight refused the
- * requested configuration before replacing any currently loaded linguistic
- * state.
+ * Runtime reload is prepared against detached candidate inventories. A
+ * returned "blocked" result means source preflight refused the repaired
+ * configuration, while a thrown error means candidate preparation failed.
+ * Neither failure path replaces the currently authoritative runtime.
  */
 export type LanguageRootRepairReloadResult =
   { status: "loaded"; dictionaryCount: number } | { status: "blocked" };
@@ -120,8 +120,9 @@ export interface ApplyLanguageRootRepairStateRequest {
   /**
    * Establish active runtime data after the repaired configuration is saved.
    *
-   * Only an explicit "blocked" result authorizes configuration rollback.
-   * Arbitrary exceptions may happen after runtime replacement has begun.
+   * Both explicit preflight blocking and a thrown detached-preparation error
+   * leave the previous runtime authoritative, so either failure authorizes
+   * configuration rollback. Additively created folders are still preserved.
    */
   reload: () => Promise<LanguageRootRepairReloadResult>;
 }
@@ -170,8 +171,8 @@ function applyPlannedLanguageRootRepair(
  * 3. Change configuration only after folder establishment succeeds.
  * 4. Persist repaired configuration.
  * 5. Reload only when the language is currently active.
- * 6. Roll configuration back only when reload explicitly reports that H3
- *    preflight blocked before runtime replacement began.
+ * 6. If reload is blocked or detached candidate preparation throws, restore
+ *    and re-persist the previous repair-owned configuration.
  *
  * Created folders are never deleted during rollback. A folder created by this
  * transaction may have become creator-visible or received content immediately,
@@ -248,9 +249,9 @@ export async function applyLanguageRootRepairState(
     }
 
     /*
-     * H3 guarantees that "blocked" means runtime replacement never began.
-     * Therefore the old configuration still corresponds to the untouched old
-     * runtime and can safely be restored.
+     * Explicit source-preflight blocking leaves the previous runtime untouched.
+     * Restore the configuration corresponding to that authoritative runtime.
+     * Additively established folders deliberately remain in the vault.
      */
     restoreLanguageRootRepair(request.language, previous);
 
@@ -268,17 +269,32 @@ export async function applyLanguageRootRepairState(
       status: "reload-blocked",
       foldersEstablished: true,
     };
-  } catch (error) {
+  } catch (reloadError) {
     /*
-     * Do NOT restore the previous configuration here.
-     *
-     * reloadActiveLanguage() can throw after preflight succeeds and runtime
-     * replacement begins. Restoring settings would then falsely imply that the
-     * old runtime authority had also been restored.
+     * Detached candidate preparation failed before runtime commit, so the
+     * previous runtime remains authoritative. Restore its corresponding
+     * configuration, but deliberately preserve the additively created folders.
      */
+    restoreLanguageRootRepair(request.language, previous);
+
+    try {
+      await request.save();
+    } catch (error) {
+      /*
+       * Memory and runtime agree on the previous configuration, and created
+       * folders remain preserved, but durable settings could not be confirmed
+       * restored.
+       */
+      return {
+        status: "rollback-save-failed",
+        error,
+        foldersEstablished: true,
+      };
+    }
+
     return {
       status: "reload-failed",
-      error,
+      error: reloadError,
       foldersEstablished: true,
     };
   }

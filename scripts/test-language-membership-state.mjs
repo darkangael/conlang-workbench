@@ -279,13 +279,13 @@ try {
     assert.equal(result.error, reloadError);
     assert.equal(
       state.languageMembership,
-      "respect-explicit",
-      "post-preflight reload failure must not pretend old runtime was restored",
+      "folder",
+      "thrown candidate preparation must restore the policy matching old runtime",
     );
     assert.equal(
       saveCalls,
-      1,
-      "reload exceptions must not trigger an unjustified rollback save",
+      2,
+      "thrown candidate preparation must persist both the request and rollback",
     );
   }
 

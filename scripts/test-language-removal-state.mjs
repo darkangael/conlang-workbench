@@ -259,27 +259,69 @@ try {
   }
 
   /*
-   * A thrown post-preflight reload is NOT a rollback point. The successfully
-   * persisted removal remains authoritative because runtime replacement may
-   * already have begun.
+   * A thrown detached candidate reload leaves old runtime untouched. Restore
+   * the complete previous configuration and persist that compensating rollback
+   * before reporting the original reload failure.
    */
   {
     const { first, second, state } = makeState();
+    let saves = 0;
+    const reloadError = new Error("reload exploded");
 
     const result = await applyLanguageRemovalState({
       state,
       language: first,
       confirm: async () => true,
-      save: async () => {},
+      save: async () => {
+        saves += 1;
+      },
+      reload: async () => {
+        throw reloadError;
+      },
+    });
+
+    assert.equal(result.status, "reload-failed");
+    assert.equal(result.error, reloadError);
+    assert.deepEqual(state.languages, [first, second]);
+    assert.deepEqual(state.activeLanguages, ["First", "Second"]);
+    assert.equal(state.primaryLanguage, "First");
+    assert.equal(
+      saves,
+      2,
+      "thrown candidate preparation must persist both removal and rollback",
+    );
+  }
+
+  /*
+   * If persistence of that reload-exception rollback fails, memory must still
+   * retain the complete previous configuration matching old runtime authority.
+   */
+  {
+    const { first, second, state } = makeState();
+    let saves = 0;
+    const rollbackError = new Error("rollback save failed");
+
+    const result = await applyLanguageRemovalState({
+      state,
+      language: first,
+      confirm: async () => true,
+      save: async () => {
+        saves += 1;
+        if (saves === 2) {
+          throw rollbackError;
+        }
+      },
       reload: async () => {
         throw new Error("reload exploded");
       },
     });
 
-    assert.equal(result.status, "reload-failed");
-    assert.deepEqual(state.languages, [second]);
-    assert.deepEqual(state.activeLanguages, ["Second"]);
-    assert.equal(state.primaryLanguage, "Second");
+    assert.equal(result.status, "rollback-save-failed");
+    assert.equal(result.error, rollbackError);
+    assert.deepEqual(state.languages, [first, second]);
+    assert.deepEqual(state.activeLanguages, ["First", "Second"]);
+    assert.equal(state.primaryLanguage, "First");
+    assert.equal(saves, 2);
   }
 
   /*

@@ -435,17 +435,17 @@ export class TranslationPanelView extends ItemView {
           result.error,
         );
         new Notice(
-          "Made Up Words: the language change was blocked and restored in memory, but the rollback could not be saved. Check the developer console.",
+          "Made Up Words: the previous language selection was restored in memory, but the rollback could not be saved. Check the developer console.",
         );
         break;
 
       case "reload-failed":
         console.error(
-          "Made Up Words: active-language reload failed after preflight:",
+          "Made Up Words: active-language reload failed; previous selection was restored:",
           result.error,
         );
         new Notice(
-          "Made Up Words: language data failed to reload after source validation. Check the developer console.",
+          "Made Up Words: language data failed to reload; the previous language selection was restored. Check the developer console.",
         );
         break;
 
@@ -460,8 +460,8 @@ export class TranslationPanelView extends ItemView {
 
     /*
      * Render from whatever state the transaction actually established. After
-     * success this is the requested state; after blocked preflight it is the
-     * safely restored previous state.
+     * success this is the requested state; after blocked preflight or a thrown
+     * candidate-preparation failure it is the safely restored previous state.
      */
     this.renderHeader();
     this.renderBrowser();

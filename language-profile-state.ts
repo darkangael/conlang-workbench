@@ -56,9 +56,10 @@ export interface ApplyLanguageProfileStateRequest {
   /**
    * Re-establish active linguistic runtime authority.
    *
-   * A returned "blocked" result proves H3 source preflight rejected the reload
-   * before any existing profiles or inventories were replaced. A thrown error
-   * does not provide that guarantee and therefore cannot justify rollback.
+   * A returned "blocked" result proves H3 source preflight rejected the reload.
+   * A thrown error can occur while detached profiles or inventories are being
+   * prepared. Neither failure path commits replacement runtime state, so both
+   * justify restoring the previous profile configuration.
    */
   reload: () => Promise<LanguageProfileReloadResult>;
 }
@@ -80,8 +81,8 @@ export interface ApplyLanguageProfileStateRequest {
  *    loaded profile-derived runtime state.
  * 4. A preflight-blocked active reload restores and re-persists the previous
  *    path because runtime state is proven untouched.
- * 5. A thrown post-preflight reload error does not roll settings back because
- *    runtime replacement may already have begun.
+ * 5. A thrown detached-preparation error does the same because the candidate
+ *    profile map and inventories were never committed.
  */
 export async function applyLanguageProfileState(
   request: ApplyLanguageProfileStateRequest,
@@ -145,11 +146,18 @@ export async function applyLanguageProfileState(
     return { status: "blocked" };
   } catch (error) {
     /*
-     * Do not manufacture a rollback after an arbitrary reload exception.
-     * reloadActiveLanguage() may already have replaced the profile map or one
-     * of the profile-derived inventories. Keep the persisted requested path and
-     * report the uncertain runtime state to the caller.
+     * Detached candidate preparation leaves the committed profile map and
+     * profile-derived inventories untouched if a loader throws. Restore the
+     * profile path corresponding to that still-authoritative runtime.
      */
+    language.profilePath = previousProfilePath;
+
+    try {
+      await save();
+    } catch (rollbackError) {
+      return { status: "rollback-save-failed", error: rollbackError };
+    }
+
     return { status: "reload-failed", error };
   }
 }

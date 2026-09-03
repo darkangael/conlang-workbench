@@ -466,22 +466,23 @@ try {
   }
 
   /*
-   * A reload exception may happen after runtime replacement starts. Neither
-   * filesystem nor settings rollback is justified at that point.
+   * A thrown detached candidate reload leaves old runtime untouched. Reverse
+   * the physical root first, then restore and persist the old configuration.
    */
-  async function testReloadThrowKeepsRenamedState() {
+  async function testReloadThrowReversesRootAndRestoresOldState() {
     const language = makeLanguage();
     const settings = makeSettings();
+    const original = snapshot(language, settings);
     const reloadError = new Error("loader failed after preflight");
-    let renameCalls = 0;
+    const renameCalls = [];
     let saveCalls = 0;
 
     const result = await applyLanguageRenameState({
       language,
       settings,
       plan: () => makePlan(),
-      renameRoot: async () => {
-        renameCalls++;
+      renameRoot: async (from, to) => {
+        renameCalls.push(`${from} -> ${to}`);
       },
       save: async () => {
         saveCalls++;
@@ -491,16 +492,91 @@ try {
       },
     });
 
-    assert.equal(result.status, "reload-failed");
+    assert.deepEqual(result, {
+      status: "reload-failed",
+      error: reloadError,
+      rootRestored: true,
+    });
+    assert.deepEqual(renameCalls, [
+      `${oldRoot} -> ${newRoot}`,
+      `${newRoot} -> ${oldRoot}`,
+    ]);
+    assert.deepEqual(snapshot(language, settings), original);
+    assert.equal(saveCalls, 2);
+  }
+
+  /*
+   * If structural rollback after a thrown reload fails, the root still lives at
+   * the new location. Keep new in-memory paths aligned with that physical truth.
+   */
+  async function testReloadThrowReverseRenameFailureKeepsNewState() {
+    const language = makeLanguage();
+    const settings = makeSettings();
+    const reloadError = new Error("loader failed after preflight");
+    const rollbackError = new Error("reverse rename failed");
+    let renameCalls = 0;
+    let saveCalls = 0;
+
+    const result = await applyLanguageRenameState({
+      language,
+      settings,
+      plan: () => makePlan(),
+      renameRoot: async () => {
+        renameCalls++;
+        if (renameCalls === 2) throw rollbackError;
+      },
+      save: async () => {
+        saveCalls++;
+      },
+      reload: async () => {
+        throw reloadError;
+      },
+    });
+
+    assert.equal(result.status, "reload-failed-rollback-rename-failed");
     assert.equal(result.error, reloadError);
+    assert.equal(result.rollbackError, rollbackError);
     assert.equal(result.rootRenamed, true);
     assert.deepEqual(snapshot(language, settings), expectedRenamed());
-    assert.equal(renameCalls, 1);
+    assert.equal(renameCalls, 2);
     assert.equal(
       saveCalls,
       1,
-      "post-preflight reload exceptions must not trigger rollback persistence",
+      "failed structural rollback must not persist an old configuration",
     );
+  }
+
+  /*
+   * If the reverse root move succeeds but persistence of the restored settings
+   * fails, vault structure, memory, and old runtime remain aligned while durable
+   * settings are explicitly uncertain.
+   */
+  async function testReloadThrowRollbackSaveFailureKeepsOldMemory() {
+    const language = makeLanguage();
+    const settings = makeSettings();
+    const original = snapshot(language, settings);
+    const rollbackSaveError = new Error("rollback settings save failed");
+    let saveCalls = 0;
+
+    const result = await applyLanguageRenameState({
+      language,
+      settings,
+      plan: () => makePlan(),
+      renameRoot: async () => {},
+      save: async () => {
+        saveCalls++;
+        if (saveCalls === 2) throw rollbackSaveError;
+      },
+      reload: async () => {
+        throw new Error("loader failed after preflight");
+      },
+    });
+
+    assert.equal(result.status, "rollback-save-failed");
+    assert.equal(result.error, rollbackSaveError);
+    assert.equal(result.rootRestored, true);
+    assert.deepEqual(snapshot(language, settings), original);
+    assert.equal(saveCalls, 2);
   }
 
   /*
@@ -631,7 +707,9 @@ try {
   await testBlockedReloadReversesRootAndRestoresOldState();
   await testBlockedReloadReverseRenameFailureKeepsNewState();
   await testBlockedReloadRollbackSaveFailureKeepsOldMemory();
-  await testReloadThrowKeepsRenamedState();
+  await testReloadThrowReversesRootAndRestoresOldState();
+  await testReloadThrowReverseRenameFailureKeepsNewState();
+  await testReloadThrowRollbackSaveFailureKeepsOldMemory();
 
   console.log("language rename state regression tests passed");
 } finally {

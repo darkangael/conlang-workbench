@@ -378,13 +378,13 @@ try {
   }
 
   /*
-   * A thrown reload exception is fundamentally different from "blocked".
-   * Runtime replacement may already have begun, so restoring old configuration
-   * would falsely claim that old runtime authority had also been restored.
+   * A thrown detached candidate reload leaves old runtime untouched. Restore
+   * and re-persist the previous repair-owned configuration while preserving
+   * the folders that were already established additively.
    */
-  async function testReloadThrowDoesNotPerformUnsafeRollback() {
+  async function testReloadThrowRestoresPreviousConfiguration() {
     const language = makeLanguage();
-    const originalProfile = language.profilePath;
+    const original = snapshotSources(language);
     const reloadError = new Error("loader failed after preflight");
     let saveCalls = 0;
 
@@ -403,16 +403,51 @@ try {
 
     assert.equal(result.status, "reload-failed");
     assert.equal(result.error, reloadError);
-    assert.equal(result.foldersEstablished, true);
-    assert.deepEqual(
-      snapshotSources(language),
-      expectedRepairedSources(originalProfile),
+    assert.equal(
+      result.foldersEstablished,
+      true,
+      "additively established folders must remain preserved after rollback",
     );
+    assert.deepEqual(snapshotSources(language), original);
     assert.equal(
       saveCalls,
-      1,
-      "reload exceptions must not trigger an unjustified rollback save",
+      2,
+      "thrown candidate preparation must persist both repair and rollback",
     );
+  }
+
+  /*
+   * If persistence of the reload-exception rollback fails, the previous
+   * configuration must still remain in memory alongside the untouched old
+   * runtime. Established folders remain intentionally preserved.
+   */
+  async function testReloadThrowRollbackSaveFailureKeepsRestoredMemory() {
+    const language = makeLanguage();
+    const original = snapshotSources(language);
+    const rollbackError = new Error("rollback persistence failed");
+    let saveCalls = 0;
+
+    const result = await applyLanguageRootRepairState({
+      language,
+      activeLanguages: ["Test Language"],
+      plan: () => makePlan(),
+      createMissingFolders: async () => {},
+      save: async () => {
+        saveCalls++;
+        if (saveCalls === 2) {
+          throw rollbackError;
+        }
+      },
+      reload: async () => {
+        throw new Error("loader failed after preflight");
+      },
+    });
+
+    assert.equal(result.status, "rollback-save-failed");
+    assert.equal(result.error, rollbackError);
+    assert.equal(result.foldersEstablished, true);
+    assert.deepEqual(snapshotSources(language), original);
+    assert.equal(saveCalls, 2);
   }
 
   /*
@@ -538,7 +573,8 @@ try {
   await testActiveRepairAppliesAfterLoadedReload();
   await testBlockedReloadRestoresAndPersistsPreviousConfiguration();
   await testRollbackSaveFailureKeepsRestoredMemory();
-  await testReloadThrowDoesNotPerformUnsafeRollback();
+  await testReloadThrowRestoresPreviousConfiguration();
+  await testReloadThrowRollbackSaveFailureKeepsRestoredMemory();
 
   console.log("language root repair state regression tests passed");
 } finally {

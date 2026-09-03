@@ -159,7 +159,7 @@ try {
     assert.equal(saveCalls, 2);
   }
 
-  async function testReloadThrowDoesNotPretendRollbackIsSafe() {
+  async function testReloadThrowRestoresPreviousSource() {
     const language = makeLanguage();
     const requested = "Languages/Test Language/New Examples";
     const reloadError = new Error("loader failed after preflight");
@@ -181,11 +181,15 @@ try {
 
     assert.equal(result.status, "reload-failed");
     assert.equal(result.error, reloadError);
-    assert.equal(language.exampleFolder, requested);
+    assert.equal(
+      language.exampleFolder,
+      makeLanguage().exampleFolder,
+      "thrown candidate preparation must restore the source matching old runtime",
+    );
     assert.equal(
       saveCalls,
-      1,
-      "reload exceptions must not trigger an unjustified rollback save",
+      2,
+      "thrown candidate preparation must persist both the request and rollback",
     );
   }
 
@@ -418,7 +422,7 @@ try {
   await testInitialSaveFailureRestoresMemoryAndSkipsReload();
   await testBlockedReloadRestoresAndPersistsPreviousSource();
   await testRollbackSaveFailureLeavesPreviousMemoryState();
-  await testReloadThrowDoesNotPretendRollbackIsSafe();
+  await testReloadThrowRestoresPreviousSource();
   await testInactiveLanguagePersistsWithoutReload();
   await testOptionalSourceCanBeRemoved();
   await testProactiveRefusalPreventsMutationSaveAndReload();

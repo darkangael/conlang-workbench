@@ -316,16 +316,56 @@ try {
     assert.equal(result.status, "reload-failed");
     assert.deepEqual(
       state,
-      {
-        activeLanguages: ["Language B"],
-        primaryLanguage: "Language B",
-      },
-      "arbitrary reload exceptions must not be treated as safe rollback points",
+      makeState(),
+      "thrown candidate preparation must restore the configuration matching old runtime",
     );
     assert.equal(
       saveCalls,
-      1,
-      "reload exceptions must not trigger an unjustified rollback save",
+      2,
+      "thrown candidate preparation must persist both the request and rollback",
+    );
+  }
+
+  {
+    const state = makeState();
+    let saveCalls = 0;
+    const reloadError = new Error("loader failed after preflight");
+    const rollbackError = new Error("rollback save failed");
+
+    const result = await applyActiveLanguageState({
+      state,
+      activeLanguages: ["Language B"],
+      primaryLanguage: "Language B",
+      save: async () => {
+        saveCalls++;
+        if (saveCalls === 2) {
+          throw rollbackError;
+        }
+      },
+      reload: async () => {
+        throw reloadError;
+      },
+    });
+
+    assert.equal(
+      result.status,
+      "rollback-save-failed",
+      "failed persistence of a reload-exception rollback must be reported explicitly",
+    );
+    assert.equal(
+      result.error,
+      rollbackError,
+      "rollback persistence failure is the transaction's most important final error",
+    );
+    assert.deepEqual(
+      state,
+      makeState(),
+      "compound memory state must remain restored even when its compensating save fails",
+    );
+    assert.equal(
+      saveCalls,
+      2,
+      "the transaction must attempt the initial save and compensating rollback save",
     );
   }
 
