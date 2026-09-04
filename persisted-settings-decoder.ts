@@ -185,6 +185,34 @@ function validateLanguage(
 
   validateRequiredString(value, "name", path, issues);
   validateRequiredString(value, "dictionaryFolder", path, issues);
+
+  /*
+   * Older LanguageConfig objects legitimately predate stable configured-language
+   * identity, so absence remains a compatibility case handled by migration.
+   *
+   * A PRESENT malformed value is different. Runtime code will use workbenchID
+   * as object identity, so persisted uncertainty must fail closed rather than
+   * being coerced into or silently replaced by a newly manufactured identity.
+   */
+  validateOptionalString(value, "workbenchID", path, issues);
+
+  /*
+   * Absence is the legacy compatibility case. A present blank string is not:
+   * it claims that configured-language identity exists while supplying no
+   * usable identity. Reject it here rather than letting migration silently
+   * manufacture a replacement for malformed persisted authority.
+   */
+  if (
+    typeof value.workbenchID === "string" &&
+    value.workbenchID.trim().length === 0
+  ) {
+    issues.push({
+      path: `${path}.workbenchID`,
+      expected: "nonblank string",
+      actual: "blank string",
+    });
+  }
+
   validateRequiredBoolean(value, "hoverEnabled", path, issues);
 
   // Older persisted language configurations legitimately omit this preference.

@@ -225,6 +225,19 @@ export interface LanguageConfig {
   name: string;
 
   /**
+   * Stable Workbench identity for this configured language.
+   *
+   * This is deliberately separate from the creator-facing language name,
+   * structural root path, and portable Language Profile `language_id`.
+   *
+   * Older persisted configurations may omit this field. Startup migration
+   * establishes one from the configuration authority that already existed
+   * before Workbench IDs were introduced. Once established, rename and repair
+   * transactions preserve this value unchanged.
+   */
+  workbenchID?: string;
+
+  /**
    * Structural ownership boundary for this configured language.
    *
    * Everything beneath this folder belongs to this language's vault tree.

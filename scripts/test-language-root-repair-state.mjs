@@ -68,9 +68,20 @@ try {
     phonology: `${repairedRoot}/Phonology`,
   };
 
+  const stableWorkbenchID = "wb:language:test-root-repair";
+
   function makeLanguage() {
     return {
       name: "Test Language",
+
+      /*
+       * Root repair owns structural/source configuration, not configured
+       * language identity. Carrying workbenchID through the shared fixture makes
+       * every success and rollback snapshot below prove that H7 leaves this
+       * stable relationship identity untouched.
+       */
+      workbenchID: stableWorkbenchID,
+
       rootFolder: oldRoot,
       dictionaryFolder: `${oldRoot}/Old Lexicon`,
       morphemeFolder: `${oldRoot}/Old Morphemes`,
@@ -108,6 +119,14 @@ try {
 
   function snapshotSources(language) {
     return {
+      /*
+       * Include stable configured-language identity in every transaction
+       * snapshot assertion. Repair may update the structural fields below, but
+       * it must never replace or regenerate the Workbench ID that relationships
+       * use to refer to this configured language.
+       */
+      workbenchID: language.workbenchID,
+
       rootFolder: language.rootFolder,
       dictionaryFolder: language.dictionaryFolder,
       morphemeFolder: language.morphemeFolder,
@@ -119,6 +138,7 @@ try {
 
   function expectedRepairedSources(profilePath) {
     return {
+      workbenchID: stableWorkbenchID,
       rootFolder: repairedRoot,
       dictionaryFolder: repairedPaths.lexicon,
       morphemeFolder: repairedPaths.morphemes,

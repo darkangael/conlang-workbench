@@ -26,7 +26,7 @@ __export(main_exports, {
   default: () => ConlangPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian28 = require("obsidian");
+var import_obsidian30 = require("obsidian");
 
 // types.ts
 var DEFAULT_SETTINGS = {
@@ -473,6 +473,19 @@ function firstParsedFrontmatterValue(candidates, parser) {
 }
 
 // workbench-id.ts
+function createConfiguredLanguageWorkbenchID(name, authorityPath) {
+  const normalizedName = name.trim();
+  const normalizedAuthorityPath = authorityPath.trim();
+  if (!normalizedName) {
+    throw new Error("configured language name must not be blank");
+  }
+  if (!normalizedAuthorityPath) {
+    throw new Error(
+      "configured language identity authority path must not be blank"
+    );
+  }
+  return `wb:language:${encodeURIComponent(normalizedName)}:` + encodeURIComponent(normalizedAuthorityPath);
+}
 function createObsidianWorkbenchIdentity(path, linguisticID) {
   const sourceID = `obsidian-file:${path}`;
   return {
@@ -1428,7 +1441,7 @@ _Dictionary.TOOLTIP_FORM_LIMIT = 8;
 var Dictionary = _Dictionary;
 
 // dictionary-entry-writer.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian2 = require("obsidian");
 
 // vault-paths.ts
 function validateVaultRelativePath(path) {
@@ -1472,65 +1485,6 @@ function isPathWithinFolder(path, folder) {
     return safePath === safeFolder || safePath.startsWith(`${safeFolder}/`);
   } catch (e) {
     return false;
-  }
-}
-
-// vault-folder-writer.ts
-var import_obsidian2 = require("obsidian");
-function inspectVaultFolderPaths(app, paths) {
-  const issues = [];
-  for (const requestedPath of paths) {
-    let safePath;
-    try {
-      safePath = validateVaultRelativePath(requestedPath);
-    } catch (error) {
-      issues.push({
-        requestedPath,
-        blockingPath: requestedPath,
-        kind: "invalid-path",
-        detail: error instanceof Error ? error.message : String(error)
-      });
-      continue;
-    }
-    const parts = safePath.split("/");
-    let current = "";
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      const existing = app.vault.getAbstractFileByPath(current);
-      if (!existing || existing instanceof import_obsidian2.TFolder) {
-        continue;
-      }
-      issues.push({
-        requestedPath: safePath,
-        blockingPath: current,
-        kind: "not-folder",
-        detail: `"${current}" exists but is not a folder`
-      });
-      break;
-    }
-  }
-  return issues;
-}
-async function ensureVaultFolderStrict(app, path) {
-  const safePath = validateVaultRelativePath(path);
-  const parts = safePath.split("/");
-  let current = "";
-  for (const part of parts) {
-    current = current ? `${current}/${part}` : part;
-    const existing = app.vault.getAbstractFileByPath(current);
-    if (existing instanceof import_obsidian2.TFolder) {
-      continue;
-    }
-    if (existing) {
-      throw new Error(`"${current}" exists but is not a folder`);
-    }
-    try {
-      await app.vault.createFolder(current);
-    } catch (error) {
-      if (!(app.vault.getAbstractFileByPath(current) instanceof import_obsidian2.TFolder)) {
-        throw error;
-      }
-    }
   }
 }
 
@@ -1601,7 +1555,7 @@ function analyzeDictionaryDestination(app, dictionaryFolder, form, definition) {
       safeName
     };
   }
-  if (!(existing instanceof import_obsidian3.TFile)) {
+  if (!(existing instanceof import_obsidian2.TFile)) {
     return {
       status: "blocked",
       error: `existing vault object "${path}" is not a file. It was preserved unchanged and no new entry was created`
@@ -1703,6 +1657,15 @@ async function writeDictionaryEntry(request) {
     );
     wordOverride = true;
   }
+  const dictionaryFolder = request.app.vault.getAbstractFileByPath(
+    request.dictionaryFolder
+  );
+  if (!(dictionaryFolder instanceof import_obsidian2.TFolder)) {
+    return {
+      status: "blocked",
+      error: dictionaryFolder ? `configured dictionary path "${request.dictionaryFolder}" is not a folder. It was preserved unchanged; repair the language structure before creating lexical entries` : `configured dictionary folder "${request.dictionaryFolder}" is missing. Repair the language root before creating lexical entries`
+    };
+  }
   let content;
   let portableIdOmitted = false;
   try {
@@ -1723,13 +1686,13 @@ async function writeDictionaryEntry(request) {
       error: `couldn't prepare dictionary entry content: ${message}`
     };
   }
-  try {
-    await ensureVaultFolderStrict(request.app, request.dictionaryFolder);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  const currentDictionaryFolder = request.app.vault.getAbstractFileByPath(
+    request.dictionaryFolder
+  );
+  if (!(currentDictionaryFolder instanceof import_obsidian2.TFolder)) {
     return {
-      status: "failed",
-      error: `couldn't prepare dictionary folder "${request.dictionaryFolder}": ${message}`
+      status: "blocked",
+      error: currentDictionaryFolder ? `configured dictionary path "${request.dictionaryFolder}" is no longer a folder. It was preserved unchanged; repair the language structure before creating lexical entries` : `configured dictionary folder "${request.dictionaryFolder}" is no longer present. Repair the language root before creating lexical entries`
     };
   }
   try {
@@ -1751,11 +1714,11 @@ async function writeDictionaryEntry(request) {
 }
 
 // markdown-note-renderer.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 var SAFE_BLANK_FRONTMATTER_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 function renderMarkdownNote(request) {
   var _a;
-  const yaml = (0, import_obsidian4.stringifyYaml)(request.frontmatter);
+  const yaml = (0, import_obsidian3.stringifyYaml)(request.frontmatter);
   const serialized = yaml.endsWith("\n") ? yaml.slice(0, -1) : yaml;
   const lines = ["---"];
   if (serialized) {
@@ -1780,7 +1743,7 @@ function renderMarkdownNote(request) {
 }
 
 // morphemes.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // morpheme-source.ts
 function addRejectedAliasDiagnostics2(diagnostics, result) {
@@ -2011,7 +1974,7 @@ var MorphemeInventory = class {
       const folderPath = source.folder.trim();
       if (!folderPath) continue;
       const folder = this.app.vault.getAbstractFileByPath(folderPath);
-      if (!(folder instanceof import_obsidian5.TFolder)) continue;
+      if (!(folder instanceof import_obsidian4.TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
         const record = this.readMorphemeSource(file);
@@ -2050,9 +2013,9 @@ var MorphemeInventory = class {
     const out = [];
     const walk = (current) => {
       for (const child of current.children) {
-        if (child instanceof import_obsidian5.TFile && child.extension === "md") {
+        if (child instanceof import_obsidian4.TFile && child.extension === "md") {
           out.push(child);
-        } else if (child instanceof import_obsidian5.TFolder) {
+        } else if (child instanceof import_obsidian4.TFolder) {
           walk(child);
         }
       }
@@ -2101,7 +2064,7 @@ var MorphemeInventory = class {
 };
 
 // linguistic-examples.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // linguistic-example-source.ts
 function readOptionalString(frontmatter, key, diagnostics) {
@@ -2271,7 +2234,7 @@ var LinguisticExampleInventory = class {
       const folderPath = source.folder.trim();
       if (!folderPath) continue;
       const folder = this.app.vault.getAbstractFileByPath(folderPath);
-      if (!(folder instanceof import_obsidian6.TFolder)) continue;
+      if (!(folder instanceof import_obsidian5.TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
         const record = this.readSource(file);
@@ -2314,9 +2277,9 @@ var LinguisticExampleInventory = class {
     const out = [];
     const walk = (current) => {
       for (const child of current.children) {
-        if (child instanceof import_obsidian6.TFile && child.extension === "md") {
+        if (child instanceof import_obsidian5.TFile && child.extension === "md") {
           out.push(child);
-        } else if (child instanceof import_obsidian6.TFolder) {
+        } else if (child instanceof import_obsidian5.TFolder) {
           walk(child);
         }
       }
@@ -2351,7 +2314,7 @@ var LinguisticExampleInventory = class {
 };
 
 // phonology.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // phonology-source.ts
 function addRejectedAliasDiagnostics3(diagnostics, result) {
@@ -2724,7 +2687,7 @@ var PhonologyInventory = class {
       const folderPath = source.folder.trim();
       if (!folderPath) continue;
       const folder = this.app.vault.getAbstractFileByPath(folderPath);
-      if (!(folder instanceof import_obsidian7.TFolder)) continue;
+      if (!(folder instanceof import_obsidian6.TFolder)) continue;
       const files = this.collectMarkdownFiles(folder);
       for (const file of files) {
         const parsedSource = this.readSource(file);
@@ -2796,9 +2759,9 @@ var PhonologyInventory = class {
     const out = [];
     const walk = (current) => {
       for (const child of current.children) {
-        if (child instanceof import_obsidian7.TFile && child.extension === "md") {
+        if (child instanceof import_obsidian6.TFile && child.extension === "md") {
           out.push(child);
-        } else if (child instanceof import_obsidian7.TFolder) {
+        } else if (child instanceof import_obsidian6.TFolder) {
           walk(child);
         }
       }
@@ -2877,7 +2840,7 @@ var PhonologyInventory = class {
 };
 
 // language-profile.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 function parseLanguageProfileFrontmatter(path, frontmatter) {
   var _a, _b, _c, _d, _e, _f;
   const asString = (value) => {
@@ -2919,7 +2882,7 @@ function validateLanguageProfilePath(app, profilePath) {
     };
   }
   const abstractFile = app.vault.getAbstractFileByPath(safePath);
-  if (!(abstractFile instanceof import_obsidian8.TFile)) {
+  if (!(abstractFile instanceof import_obsidian7.TFile)) {
     return {
       status: "invalid",
       error: `Language profile path "${safePath}" does not resolve to a file.`
@@ -2951,7 +2914,7 @@ function loadLanguageProfile(app, config) {
   const profilePath = (_a = config.profilePath) == null ? void 0 : _a.trim();
   if (!profilePath) return null;
   const abstractFile = app.vault.getAbstractFileByPath(profilePath);
-  if (!(abstractFile instanceof import_obsidian8.TFile)) return null;
+  if (!(abstractFile instanceof import_obsidian7.TFile)) return null;
   if (abstractFile.extension !== "md") return null;
   const cache = app.metadataCache.getFileCache(abstractFile);
   if (!(cache == null ? void 0 : cache.frontmatter)) return null;
@@ -3274,14 +3237,14 @@ function classifyLookupQuery(sourceText) {
 }
 
 // phrase-confirm-modal.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 function confirmPhraseTranslation(app, selectedText) {
   return new Promise((resolve) => {
     const modal = new PhraseConfirmModal(app, selectedText, resolve);
     modal.open();
   });
 }
-var PhraseConfirmModal = class extends import_obsidian9.Modal {
+var PhraseConfirmModal = class extends import_obsidian8.Modal {
   constructor(app, selectedText, resolve) {
     super(app);
     this.decided = false;
@@ -3326,14 +3289,14 @@ var PhraseConfirmModal = class extends import_obsidian9.Modal {
 };
 
 // translation-commit-modal.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 function confirmTranslationCommit(app, preview) {
   return new Promise((resolve) => {
     const modal = new TranslationCommitModal(app, preview, resolve);
     modal.open();
   });
 }
-var TranslationCommitModal = class extends import_obsidian10.Modal {
+var TranslationCommitModal = class extends import_obsidian9.Modal {
   constructor(app, preview, resolve) {
     super(app);
     /**
@@ -3404,7 +3367,7 @@ var TranslationCommitModal = class extends import_obsidian10.Modal {
 };
 
 // translation-unresolved-modal.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 function promptTranslationUnresolved(app, unresolved, postRepair = false) {
   return new Promise((resolve) => {
     const modal = new TranslationUnresolvedModal(
@@ -3416,7 +3379,7 @@ function promptTranslationUnresolved(app, unresolved, postRepair = false) {
     modal.open();
   });
 }
-var TranslationUnresolvedModal = class extends import_obsidian11.Modal {
+var TranslationUnresolvedModal = class extends import_obsidian10.Modal {
   constructor(app, unresolved, resolve, postRepair) {
     super(app);
     this.decided = false;
@@ -4178,6 +4141,45 @@ function findPreset(id) {
 }
 
 // language-identity.ts
+function validateConfiguredLanguageWorkbenchIdentities(languages) {
+  var _a;
+  const seen = /* @__PURE__ */ new Map();
+  for (let index = 0; index < languages.length; index += 1) {
+    const language = languages[index];
+    const workbenchID = (_a = language.workbenchID) == null ? void 0 : _a.trim();
+    if (!workbenchID) {
+      return {
+        ok: false,
+        reason: "missing",
+        languageIndex: index,
+        languageName: language.name
+      };
+    }
+    const prior = seen.get(workbenchID);
+    if (prior) {
+      return {
+        ok: false,
+        reason: "duplicate",
+        workbenchID,
+        firstLanguageIndex: prior.languageIndex,
+        firstLanguageName: prior.languageName,
+        duplicateLanguageIndex: index,
+        duplicateLanguageName: language.name
+      };
+    }
+    seen.set(workbenchID, {
+      languageIndex: index,
+      languageName: language.name
+    });
+  }
+  return { ok: true };
+}
+function findConfiguredLanguageWorkbenchIDConflict(candidateWorkbenchID, existingLanguages) {
+  var _a;
+  return (_a = existingLanguages.find(
+    (language) => language.workbenchID === candidateWorkbenchID
+  )) != null ? _a : null;
+}
 function validateLanguageRename(languages, current, proposedName) {
   const name = proposedName.trim();
   if (!name) {
@@ -4193,8 +4195,8 @@ function validateLanguageRename(languages, current, proposedName) {
 }
 
 // language-rename-modal.ts
-var import_obsidian12 = require("obsidian");
-var LanguageRenameConfirmModal = class extends import_obsidian12.Modal {
+var import_obsidian11 = require("obsidian");
+var LanguageRenameConfirmModal = class extends import_obsidian11.Modal {
   constructor(app, oldName, newName, resolveResult) {
     super(app);
     this.oldName = oldName;
@@ -4210,7 +4212,7 @@ var LanguageRenameConfirmModal = class extends import_obsidian12.Modal {
     this.contentEl.createEl("p", {
       text: "This renames the language's existing owned root folder and updates configured paths beneath that root. Workbench does not rewrite creator-authored Markdown or YAML metadata. Obsidian may update links according to your normal link-update preference."
     });
-    new import_obsidian12.Setting(this.contentEl).addButton(
+    new import_obsidian11.Setting(this.contentEl).addButton(
       (button) => button.setButtonText("Cancel").onClick(() => {
         this.finish(false);
         this.close();
@@ -4237,7 +4239,7 @@ function confirmLanguageRename(app, oldName, newName) {
     new LanguageRenameConfirmModal(app, oldName, newName, resolve).open();
   });
 }
-var LanguageRenameBlockedModal = class extends import_obsidian12.Modal {
+var LanguageRenameBlockedModal = class extends import_obsidian11.Modal {
   constructor(app, message) {
     super(app);
     this.message = message;
@@ -4247,7 +4249,7 @@ var LanguageRenameBlockedModal = class extends import_obsidian12.Modal {
     this.contentEl.createEl("p", {
       text: this.message
     });
-    new import_obsidian12.Setting(this.contentEl).addButton(
+    new import_obsidian11.Setting(this.contentEl).addButton(
       (button) => button.setButtonText("OK").setCta().onClick(() => {
         this.close();
       })
@@ -4259,6 +4261,368 @@ var LanguageRenameBlockedModal = class extends import_obsidian12.Modal {
 };
 function showLanguageRenameBlocked(app, message) {
   new LanguageRenameBlockedModal(app, message).open();
+}
+
+// language-root-authority.ts
+var LANGUAGE_CONTAINER = "Languages";
+function configuredCanonicalSources(language) {
+  var _a, _b, _c;
+  const sources = [
+    {
+      setting: "dictionaryFolder",
+      path: language.dictionaryFolder
+    }
+  ];
+  if ((_a = language.morphemeFolder) == null ? void 0 : _a.trim()) {
+    sources.push({
+      setting: "morphemeFolder",
+      path: language.morphemeFolder
+    });
+  }
+  if ((_b = language.exampleFolder) == null ? void 0 : _b.trim()) {
+    sources.push({
+      setting: "exampleFolder",
+      path: language.exampleFolder
+    });
+  }
+  if ((_c = language.phonologyFolder) == null ? void 0 : _c.trim()) {
+    sources.push({
+      setting: "phonologyFolder",
+      path: language.phonologyFolder
+    });
+  }
+  return sources;
+}
+function validateLanguageRoot(rootFolder) {
+  let safeRoot;
+  try {
+    safeRoot = validateVaultRelativePath(rootFolder);
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: "invalid-root-path",
+      detail: `language root "${rootFolder}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  const parts = safeRoot.split("/");
+  if (safeRoot === LANGUAGE_CONTAINER) {
+    return {
+      status: "invalid",
+      reason: "root-is-container",
+      detail: `"${LANGUAGE_CONTAINER}" is the shared language container, not an individual language root.`
+    };
+  }
+  if (parts.length !== 2 || parts[0] !== LANGUAGE_CONTAINER) {
+    return {
+      status: "invalid",
+      reason: "root-not-direct-child",
+      detail: `language root "${safeRoot}" must be one immediate child beneath "${LANGUAGE_CONTAINER}/".`
+    };
+  }
+  return {
+    status: "valid",
+    root: safeRoot
+  };
+}
+function rootFromCanonicalSource(setting, sourcePath) {
+  let safePath;
+  try {
+    safePath = validateVaultRelativePath(sourcePath);
+  } catch (error) {
+    return {
+      status: "unresolved",
+      reason: "invalid-source-path",
+      detail: `${setting} "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  const parts = safePath.split("/");
+  if (safePath === LANGUAGE_CONTAINER) {
+    return {
+      status: "unresolved",
+      reason: "source-is-language-container",
+      detail: `${setting} points at "${LANGUAGE_CONTAINER}", which is the shared language container rather than an individual language tree.`
+    };
+  }
+  if (parts.length < 2 || parts[0] !== LANGUAGE_CONTAINER) {
+    return {
+      status: "unresolved",
+      reason: "outside-language-container",
+      detail: `${setting} "${safePath}" is not inside a language root beneath "${LANGUAGE_CONTAINER}/".`
+    };
+  }
+  return {
+    status: "resolved",
+    root: `${LANGUAGE_CONTAINER}/${parts[1]}`
+  };
+}
+function configuredLanguageRootClaims(language) {
+  if (language.rootFolder) {
+    const explicit = validateLanguageRoot(language.rootFolder);
+    if (explicit.status === "valid") {
+      return [explicit.root];
+    }
+  }
+  const claims = /* @__PURE__ */ new Set();
+  for (const source of configuredCanonicalSources(language)) {
+    const resolved = rootFromCanonicalSource(source.setting, source.path);
+    if (resolved.status === "resolved") {
+      claims.add(resolved.root);
+    }
+  }
+  return [...claims];
+}
+function findLanguageRootClaimConflict(rootFolder, language, languages) {
+  for (const other of languages) {
+    if (other === language) {
+      continue;
+    }
+    for (const claimedRoot of configuredLanguageRootClaims(other)) {
+      if (languageRootsOverlap(rootFolder, claimedRoot)) {
+        return {
+          language: other.name,
+          root: claimedRoot
+        };
+      }
+    }
+  }
+  return null;
+}
+function inferLegacyLanguageRoot(language) {
+  const sources = configuredCanonicalSources(language);
+  let inferredRoot = null;
+  for (const source of sources) {
+    const resolved = rootFromCanonicalSource(source.setting, source.path);
+    if (resolved.status === "unresolved") {
+      return resolved;
+    }
+    if (inferredRoot === null) {
+      inferredRoot = resolved.root;
+      continue;
+    }
+    if (resolved.root !== inferredRoot) {
+      return {
+        status: "unresolved",
+        reason: "inconsistent-language-roots",
+        detail: `configured canonical sources identify both "${inferredRoot}" and "${resolved.root}" as language roots; Workbench cannot choose between them safely.`
+      };
+    }
+  }
+  if (inferredRoot === null) {
+    throw new Error(
+      "LanguageConfig contained no canonical source from which to infer a root."
+    );
+  }
+  return {
+    status: "inferred",
+    root: inferredRoot
+  };
+}
+function validateCanonicalSourceWithinRoot(rootFolder, sourcePath) {
+  const rootResult = validateLanguageRoot(rootFolder);
+  if (rootResult.status === "invalid") {
+    return {
+      status: "invalid",
+      reason: "invalid-root",
+      detail: rootResult.detail
+    };
+  }
+  let safeSource;
+  try {
+    safeSource = validateVaultRelativePath(sourcePath);
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: "invalid-source",
+      detail: `canonical source "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
+    };
+  }
+  if (safeSource === rootResult.root) {
+    return {
+      status: "invalid",
+      reason: "outside-language-root",
+      detail: `canonical source "${safeSource}" must be inside language root "${rootResult.root}", not the root folder itself.`
+    };
+  }
+  if (!isPathWithinFolder(safeSource, rootResult.root)) {
+    return {
+      status: "invalid",
+      reason: "outside-language-root",
+      detail: `canonical source "${safeSource}" is outside language root "${rootResult.root}".`
+    };
+  }
+  return { status: "valid" };
+}
+function validateLanguageSourceChange(request) {
+  const { language, languages, setting, value, pathState } = request;
+  if (setting === "dictionaryFolder" && !(value == null ? void 0 : value.trim())) {
+    return {
+      status: "invalid",
+      reason: "blank-dictionary",
+      detail: "The dictionary folder cannot be blank."
+    };
+  }
+  if (setting !== "dictionaryFolder" && value === void 0) {
+    return { status: "valid" };
+  }
+  if (!language.rootFolder) {
+    return {
+      status: "invalid",
+      reason: "root-unresolved",
+      detail: `Language "${language.name}" has no established Languages/<root> ownership boundary. Repair the language root before changing its canonical source folders.`
+    };
+  }
+  const root = validateLanguageRoot(language.rootFolder);
+  if (root.status === "invalid") {
+    return {
+      status: "invalid",
+      reason: "invalid-root",
+      detail: root.detail
+    };
+  }
+  const rootState = pathState(root.root);
+  if (rootState === "missing") {
+    return {
+      status: "invalid",
+      reason: "missing-root",
+      detail: `Language root "${root.root}" does not exist. Repair the configured language root before changing canonical sources.`
+    };
+  }
+  if (rootState === "other") {
+    return {
+      status: "invalid",
+      reason: "root-not-folder",
+      detail: `Language root "${root.root}" exists but is not a folder.`
+    };
+  }
+  const conflict = findLanguageRootClaimConflict(
+    root.root,
+    language,
+    languages
+  );
+  if (conflict) {
+    return {
+      status: "invalid",
+      reason: "root-conflict",
+      detail: `Language root "${root.root}" conflicts with "${conflict.root}", already reserved by "${conflict.language}".`
+    };
+  }
+  const structural = validateCanonicalSourceWithinRoot(root.root, value);
+  if (structural.status === "invalid") {
+    return {
+      status: "invalid",
+      reason: structural.reason === "outside-language-root" ? "outside-language-root" : "invalid-source",
+      detail: structural.detail
+    };
+  }
+  const sourceState = pathState(value);
+  if (sourceState === "missing") {
+    return {
+      status: "invalid",
+      reason: "missing-source",
+      detail: `Canonical source folder "${value}" does not exist.`
+    };
+  }
+  if (sourceState === "other") {
+    return {
+      status: "invalid",
+      reason: "source-not-folder",
+      detail: `Canonical source path "${value}" exists but is not a folder.`
+    };
+  }
+  return { status: "valid" };
+}
+function languageRootsOverlap(firstRoot, secondRoot) {
+  return isPathWithinFolder(firstRoot, secondRoot) || isPathWithinFolder(secondRoot, firstRoot);
+}
+
+// language-root-action.ts
+function chooseLanguageRootAction(configuredRoot, pathState) {
+  if (!configuredRoot) {
+    return {
+      status: "unavailable",
+      detail: "This language has no configured root ownership boundary, so Repair and Recreate are unavailable."
+    };
+  }
+  const validation = validateLanguageRoot(configuredRoot);
+  if (validation.status === "invalid") {
+    return {
+      status: "unavailable",
+      detail: validation.detail
+    };
+  }
+  const state = pathState(validation.root);
+  switch (state) {
+    case "folder":
+      return {
+        status: "repair",
+        root: validation.root
+      };
+    case "missing":
+      return {
+        status: "recreate",
+        root: validation.root
+      };
+    case "other":
+      return {
+        status: "blocked",
+        root: validation.root,
+        detail: `The configured root "${validation.root}" is occupied by a non-folder object. Move or rename that object before repairing this language.`
+      };
+  }
+}
+
+// language-root-recreation-modal.ts
+var import_obsidian12 = require("obsidian");
+var LanguageRootRecreationConfirmModal = class extends import_obsidian12.Modal {
+  constructor(app, languageName, root, resolveResult) {
+    super(app);
+    this.languageName = languageName;
+    this.root = root;
+    this.resolveResult = resolveResult;
+    this.resolved = false;
+  }
+  onOpen() {
+    this.setTitle("Recreate language root?");
+    this.contentEl.createEl("p", {
+      text: `Recreate the missing configured root "${this.root}" for "${this.languageName}"?`
+    });
+    this.contentEl.createEl("p", {
+      text: "Workbench will create a new language root at this configured location and establish its standard child folders. It will not search for, move, or adopt a root that may have been renamed or moved elsewhere, and it will not delete creator-authored files."
+    });
+    this.contentEl.createEl("p", {
+      text: 'The shared "Languages" folder must already exist. If the original language root was moved or renamed, cancel and reconcile that location instead of recreating a second root.'
+    });
+    new import_obsidian12.Setting(this.contentEl).addButton(
+      (button) => button.setButtonText("Cancel").onClick(() => {
+        this.finish(false);
+        this.close();
+      })
+    ).addButton(
+      (button) => button.setButtonText("Recreate root").setCta().onClick(() => {
+        this.finish(true);
+        this.close();
+      })
+    );
+  }
+  onClose() {
+    this.finish(false);
+    this.contentEl.empty();
+  }
+  finish(confirmed) {
+    if (this.resolved) return;
+    this.resolved = true;
+    this.resolveResult(confirmed);
+  }
+};
+function confirmLanguageRootRecreation(app, languageName, root) {
+  return new Promise((resolve) => {
+    new LanguageRootRecreationConfirmModal(
+      app,
+      languageName,
+      root,
+      resolve
+    ).open();
+  });
 }
 
 // delete-confirm-modal.ts
@@ -4997,6 +5361,93 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
         return;
     }
   }
+  /**
+   * Ask the creator to explicitly recreate one configured language root that
+   * is currently missing.
+   *
+   * This settings-layer method owns presentation only. The plugin transaction
+   * holds the shared settings-authority queue, calculates the planner twice,
+   * revalidates the exact LanguageConfig after confirmation, performs the full
+   * hierarchy preflight, and delegates the final root race to the specialized
+   * writer.
+   *
+   * Recreate does not search for, move, adopt, or delete creator-authored data.
+   * It creates a new canonical root only at the already-configured location.
+   */
+  async recreateLanguageRoot(lang) {
+    var _a;
+    const wasActive = this.plugin.settings.activeLanguages.includes(lang.name);
+    const result = await this.plugin.recreateLanguageRoot(
+      lang,
+      (approvedName, approvedRoot) => confirmLanguageRootRecreation(this.app, approvedName, approvedRoot)
+    );
+    switch (result.status) {
+      case "cancelled":
+        return;
+      case "target-missing":
+        new import_obsidian15.Notice(
+          "Made Up Words: the language is no longer configured, so its root was not recreated."
+        );
+        this.rerender();
+        return;
+      case "target-changed":
+        new import_obsidian15.Notice(
+          "Made Up Words: the language changed while root recreation confirmation was open. No root was recreated."
+        );
+        this.rerender();
+        return;
+      case "blocked":
+        new import_obsidian15.Notice(`Made Up Words: ${result.detail}`);
+        this.rerender();
+        return;
+      case "root-establishment-failed":
+        console.error(
+          "Made Up Words: language-root recreation failed before root establishment:",
+          result.error
+        );
+        new import_obsidian15.Notice(
+          "Made Up Words: the language root could not be safely recreated. No child folders were established by this operation. Check the developer console."
+        );
+        this.rerender();
+        return;
+      case "folder-establishment-failed":
+        console.error(
+          "Made Up Words: recreated language root but could not establish all canonical child folders:",
+          result.error
+        );
+        new import_obsidian15.Notice(
+          "Made Up Words: the language root was recreated, but not all standard folders could be established. Existing folders were preserved; use Repair language root to finish restoring the structure."
+        );
+        this.rerender();
+        return;
+      case "reload-blocked":
+        new import_obsidian15.Notice(
+          "Made Up Words: the language root and standard folders were recreated, but the active language data could not be safely reloaded. The previous runtime remains in use."
+        );
+        this.rerender();
+        return;
+      case "reload-failed":
+        console.error(
+          "Made Up Words: recreated language root but active runtime reload failed:",
+          result.error
+        );
+        new import_obsidian15.Notice(
+          "Made Up Words: the language root and standard folders were recreated, but language data failed to reload. The previous runtime remains in use. Check the developer console."
+        );
+        this.rerender();
+        return;
+      case "applied":
+        if (wasActive) {
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+        }
+        this.rerender();
+        new import_obsidian15.Notice(
+          wasActive ? `Made Up Words: recreated "${result.name}" and reloaded ${(_a = result.dictionaryCount) != null ? _a : 0} dictionary entries across active languages.` : `Made Up Words: recreated the language root for "${result.name}". It remains inactive.`
+        );
+        return;
+    }
+  }
   // ===== Behaviour sections =====
   renderHoverSection(containerEl) {
     new import_obsidian15.Setting(containerEl).setName("Hover tooltips").setHeading();
@@ -5709,13 +6160,35 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           isActive ? `Reloaded \u2014 ${result.dictionaryCount} dictionary entries across active languages` : `${lang.name} is inactive; activate it to load its language data.`
         );
       })
-    ).addButton(
-      (b) => b.setButtonText("Repair language root").setTooltip(
-        "Restore this language's standard folders and canonical source paths inside its existing owned root."
-      ).onClick(async () => {
-        await this.repairLanguageRoot(lang);
-      })
     ).addButton((b) => {
+      const action = chooseLanguageRootAction(lang.rootFolder, (root) => {
+        const existing = this.app.vault.getAbstractFileByPath(root);
+        if (!existing) return "missing";
+        return existing instanceof import_obsidian15.TFolder ? "folder" : "other";
+      });
+      switch (action.status) {
+        case "unavailable":
+          b.setButtonText("Language root unavailable").setTooltip(action.detail).setDisabled(true);
+          return;
+        case "repair":
+          b.setButtonText("Repair language root").setTooltip(
+            "Restore this language's standard folders and canonical source paths inside its existing owned root."
+          ).onClick(async () => {
+            await this.repairLanguageRoot(lang);
+          });
+          return;
+        case "recreate":
+          b.setButtonText("Recreate language root").setTooltip(
+            "Create a new standard root at this language's already-configured location. This does not search for or adopt a moved root."
+          ).onClick(async () => {
+            await this.recreateLanguageRoot(lang);
+          });
+          return;
+        case "blocked":
+          b.setButtonText("Language root blocked").setTooltip(action.detail).setDisabled(true);
+          return;
+      }
+    }).addButton((b) => {
       var _a2;
       b.setButtonText("Remove language").onClick(async () => {
         await this.removeLanguage(lang);
@@ -10783,6 +11256,14 @@ function validateLanguage(value, path, issues) {
   }
   validateRequiredString(value, "name", path, issues);
   validateRequiredString(value, "dictionaryFolder", path, issues);
+  validateOptionalString(value, "workbenchID", path, issues);
+  if (typeof value.workbenchID === "string" && value.workbenchID.trim().length === 0) {
+    issues.push({
+      path: `${path}.workbenchID`,
+      expected: "nonblank string",
+      actual: "blank string"
+    });
+  }
   validateRequiredBoolean(value, "hoverEnabled", path, issues);
   if (value.includePortableIds !== void 0) {
     validateRequiredBoolean(value, "includePortableIds", path, issues);
@@ -11240,7 +11721,66 @@ var SettingsAuthorityQueue = class {
 };
 
 // language-creator.ts
+var import_obsidian28 = require("obsidian");
+
+// vault-folder-writer.ts
 var import_obsidian27 = require("obsidian");
+function inspectVaultFolderPaths(app, paths) {
+  const issues = [];
+  for (const requestedPath of paths) {
+    let safePath;
+    try {
+      safePath = validateVaultRelativePath(requestedPath);
+    } catch (error) {
+      issues.push({
+        requestedPath,
+        blockingPath: requestedPath,
+        kind: "invalid-path",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+      continue;
+    }
+    const parts = safePath.split("/");
+    let current = "";
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      const existing = app.vault.getAbstractFileByPath(current);
+      if (!existing || existing instanceof import_obsidian27.TFolder) {
+        continue;
+      }
+      issues.push({
+        requestedPath: safePath,
+        blockingPath: current,
+        kind: "not-folder",
+        detail: `"${current}" exists but is not a folder`
+      });
+      break;
+    }
+  }
+  return issues;
+}
+async function ensureVaultFolderStrict(app, path) {
+  const safePath = validateVaultRelativePath(path);
+  const parts = safePath.split("/");
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    const existing = app.vault.getAbstractFileByPath(current);
+    if (existing instanceof import_obsidian27.TFolder) {
+      continue;
+    }
+    if (existing) {
+      throw new Error(`"${current}" exists but is not a folder`);
+    }
+    try {
+      await app.vault.createFolder(current);
+    } catch (error) {
+      if (!(app.vault.getAbstractFileByPath(current) instanceof import_obsidian27.TFolder)) {
+        throw error;
+      }
+    }
+  }
+}
 
 // language-standard-paths.ts
 function buildStandardLanguagePathsFromRoot(root) {
@@ -11257,278 +11797,6 @@ function buildStandardLanguagePathsFromRoot(root) {
 function buildStandardLanguagePaths(languageName) {
   const root = joinVaultPath("Languages", languageName);
   return buildStandardLanguagePathsFromRoot(root);
-}
-
-// language-root-authority.ts
-var LANGUAGE_CONTAINER = "Languages";
-function configuredCanonicalSources(language) {
-  var _a, _b, _c;
-  const sources = [
-    {
-      setting: "dictionaryFolder",
-      path: language.dictionaryFolder
-    }
-  ];
-  if ((_a = language.morphemeFolder) == null ? void 0 : _a.trim()) {
-    sources.push({
-      setting: "morphemeFolder",
-      path: language.morphemeFolder
-    });
-  }
-  if ((_b = language.exampleFolder) == null ? void 0 : _b.trim()) {
-    sources.push({
-      setting: "exampleFolder",
-      path: language.exampleFolder
-    });
-  }
-  if ((_c = language.phonologyFolder) == null ? void 0 : _c.trim()) {
-    sources.push({
-      setting: "phonologyFolder",
-      path: language.phonologyFolder
-    });
-  }
-  return sources;
-}
-function validateLanguageRoot(rootFolder) {
-  let safeRoot;
-  try {
-    safeRoot = validateVaultRelativePath(rootFolder);
-  } catch (error) {
-    return {
-      status: "invalid",
-      reason: "invalid-root-path",
-      detail: `language root "${rootFolder}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  const parts = safeRoot.split("/");
-  if (safeRoot === LANGUAGE_CONTAINER) {
-    return {
-      status: "invalid",
-      reason: "root-is-container",
-      detail: `"${LANGUAGE_CONTAINER}" is the shared language container, not an individual language root.`
-    };
-  }
-  if (parts.length !== 2 || parts[0] !== LANGUAGE_CONTAINER) {
-    return {
-      status: "invalid",
-      reason: "root-not-direct-child",
-      detail: `language root "${safeRoot}" must be one immediate child beneath "${LANGUAGE_CONTAINER}/".`
-    };
-  }
-  return {
-    status: "valid",
-    root: safeRoot
-  };
-}
-function rootFromCanonicalSource(setting, sourcePath) {
-  let safePath;
-  try {
-    safePath = validateVaultRelativePath(sourcePath);
-  } catch (error) {
-    return {
-      status: "unresolved",
-      reason: "invalid-source-path",
-      detail: `${setting} "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  const parts = safePath.split("/");
-  if (safePath === LANGUAGE_CONTAINER) {
-    return {
-      status: "unresolved",
-      reason: "source-is-language-container",
-      detail: `${setting} points at "${LANGUAGE_CONTAINER}", which is the shared language container rather than an individual language tree.`
-    };
-  }
-  if (parts.length < 2 || parts[0] !== LANGUAGE_CONTAINER) {
-    return {
-      status: "unresolved",
-      reason: "outside-language-container",
-      detail: `${setting} "${safePath}" is not inside a language root beneath "${LANGUAGE_CONTAINER}/".`
-    };
-  }
-  return {
-    status: "resolved",
-    root: `${LANGUAGE_CONTAINER}/${parts[1]}`
-  };
-}
-function configuredLanguageRootClaims(language) {
-  if (language.rootFolder) {
-    const explicit = validateLanguageRoot(language.rootFolder);
-    if (explicit.status === "valid") {
-      return [explicit.root];
-    }
-  }
-  const claims = /* @__PURE__ */ new Set();
-  for (const source of configuredCanonicalSources(language)) {
-    const resolved = rootFromCanonicalSource(source.setting, source.path);
-    if (resolved.status === "resolved") {
-      claims.add(resolved.root);
-    }
-  }
-  return [...claims];
-}
-function findLanguageRootClaimConflict(rootFolder, language, languages) {
-  for (const other of languages) {
-    if (other === language) {
-      continue;
-    }
-    for (const claimedRoot of configuredLanguageRootClaims(other)) {
-      if (languageRootsOverlap(rootFolder, claimedRoot)) {
-        return {
-          language: other.name,
-          root: claimedRoot
-        };
-      }
-    }
-  }
-  return null;
-}
-function inferLegacyLanguageRoot(language) {
-  const sources = configuredCanonicalSources(language);
-  let inferredRoot = null;
-  for (const source of sources) {
-    const resolved = rootFromCanonicalSource(source.setting, source.path);
-    if (resolved.status === "unresolved") {
-      return resolved;
-    }
-    if (inferredRoot === null) {
-      inferredRoot = resolved.root;
-      continue;
-    }
-    if (resolved.root !== inferredRoot) {
-      return {
-        status: "unresolved",
-        reason: "inconsistent-language-roots",
-        detail: `configured canonical sources identify both "${inferredRoot}" and "${resolved.root}" as language roots; Workbench cannot choose between them safely.`
-      };
-    }
-  }
-  if (inferredRoot === null) {
-    throw new Error(
-      "LanguageConfig contained no canonical source from which to infer a root."
-    );
-  }
-  return {
-    status: "inferred",
-    root: inferredRoot
-  };
-}
-function validateCanonicalSourceWithinRoot(rootFolder, sourcePath) {
-  const rootResult = validateLanguageRoot(rootFolder);
-  if (rootResult.status === "invalid") {
-    return {
-      status: "invalid",
-      reason: "invalid-root",
-      detail: rootResult.detail
-    };
-  }
-  let safeSource;
-  try {
-    safeSource = validateVaultRelativePath(sourcePath);
-  } catch (error) {
-    return {
-      status: "invalid",
-      reason: "invalid-source",
-      detail: `canonical source "${sourcePath}" is not a safe vault path: ` + (error instanceof Error ? error.message : String(error))
-    };
-  }
-  if (safeSource === rootResult.root) {
-    return {
-      status: "invalid",
-      reason: "outside-language-root",
-      detail: `canonical source "${safeSource}" must be inside language root "${rootResult.root}", not the root folder itself.`
-    };
-  }
-  if (!isPathWithinFolder(safeSource, rootResult.root)) {
-    return {
-      status: "invalid",
-      reason: "outside-language-root",
-      detail: `canonical source "${safeSource}" is outside language root "${rootResult.root}".`
-    };
-  }
-  return { status: "valid" };
-}
-function validateLanguageSourceChange(request) {
-  const { language, languages, setting, value, pathState } = request;
-  if (setting === "dictionaryFolder" && !(value == null ? void 0 : value.trim())) {
-    return {
-      status: "invalid",
-      reason: "blank-dictionary",
-      detail: "The dictionary folder cannot be blank."
-    };
-  }
-  if (setting !== "dictionaryFolder" && value === void 0) {
-    return { status: "valid" };
-  }
-  if (!language.rootFolder) {
-    return {
-      status: "invalid",
-      reason: "root-unresolved",
-      detail: `Language "${language.name}" has no established Languages/<root> ownership boundary. Repair the language root before changing its canonical source folders.`
-    };
-  }
-  const root = validateLanguageRoot(language.rootFolder);
-  if (root.status === "invalid") {
-    return {
-      status: "invalid",
-      reason: "invalid-root",
-      detail: root.detail
-    };
-  }
-  const rootState = pathState(root.root);
-  if (rootState === "missing") {
-    return {
-      status: "invalid",
-      reason: "missing-root",
-      detail: `Language root "${root.root}" does not exist. Repair the configured language root before changing canonical sources.`
-    };
-  }
-  if (rootState === "other") {
-    return {
-      status: "invalid",
-      reason: "root-not-folder",
-      detail: `Language root "${root.root}" exists but is not a folder.`
-    };
-  }
-  const conflict = findLanguageRootClaimConflict(
-    root.root,
-    language,
-    languages
-  );
-  if (conflict) {
-    return {
-      status: "invalid",
-      reason: "root-conflict",
-      detail: `Language root "${root.root}" conflicts with "${conflict.root}", already reserved by "${conflict.language}".`
-    };
-  }
-  const structural = validateCanonicalSourceWithinRoot(root.root, value);
-  if (structural.status === "invalid") {
-    return {
-      status: "invalid",
-      reason: structural.reason === "outside-language-root" ? "outside-language-root" : "invalid-source",
-      detail: structural.detail
-    };
-  }
-  const sourceState = pathState(value);
-  if (sourceState === "missing") {
-    return {
-      status: "invalid",
-      reason: "missing-source",
-      detail: `Canonical source folder "${value}" does not exist.`
-    };
-  }
-  if (sourceState === "other") {
-    return {
-      status: "invalid",
-      reason: "source-not-folder",
-      detail: `Canonical source path "${value}" exists but is not a folder.`
-    };
-  }
-  return { status: "valid" };
-}
-function languageRootsOverlap(firstRoot, secondRoot) {
-  return isPathWithinFolder(firstRoot, secondRoot) || isPathWithinFolder(secondRoot, firstRoot);
 }
 
 // language-creator.ts
@@ -11592,6 +11860,15 @@ async function createStandardLanguage(app, languageName, existingLanguages, incl
   const language = {
     name: languageName,
     /*
+     * Establish configured-language identity before this LanguageConfig can be
+     * registered in settings. The name/root are only the creation seed; later
+     * authorized rename or repair operations preserve this stored ID unchanged.
+     *
+     * This local Workbench identity is distinct from a Language Profile's
+     * portable `language_id`, which belongs to creator-authored language data.
+     */
+    workbenchID: createConfiguredLanguageWorkbenchID(languageName, paths.root),
+    /*
      * Record the structural ownership boundary independently from the display
      * name. A later settings-controlled language rename therefore does not
      * silently move authority to a different vault subtree.
@@ -11613,6 +11890,16 @@ async function createStandardLanguage(app, languageName, existingLanguages, incl
     includePortableIds,
     sheets: []
   };
+  const identityConflict = findConfiguredLanguageWorkbenchIDConflict(
+    language.workbenchID,
+    existingLanguages
+  );
+  if (identityConflict) {
+    return {
+      status: "blocked",
+      error: `configured language Workbench ID "${language.workbenchID}" is already claimed by "${identityConflict.name}"`
+    };
+  }
   for (const existingLanguage of existingLanguages) {
     for (const claimedRoot of configuredLanguageRootClaims(existingLanguage)) {
       if (languageRootsOverlap(paths.root, claimedRoot)) {
@@ -11631,7 +11918,7 @@ async function createStandardLanguage(app, languageName, existingLanguages, incl
     };
   }
   const existingRoot = app.vault.getAbstractFileByPath(paths.root);
-  if (existingRoot instanceof import_obsidian27.TFolder) {
+  if (existingRoot instanceof import_obsidian28.TFolder) {
     return {
       status: "blocked",
       error: `language root "${paths.root}" already exists but is not configured. Use Import Language to explicitly adopt an existing language root.`
@@ -12119,6 +12406,267 @@ async function applyLanguageRootRepairState(request) {
       foldersEstablished: true
     };
   }
+}
+
+// language-root-recreation.ts
+function planLanguageRootRecreation(request) {
+  const { language, languages, pathState } = request;
+  if (!language.rootFolder) {
+    return {
+      status: "blocked",
+      reason: "root-unresolved",
+      detail: `Language "${language.name}" has no established Languages/<root> ownership boundary. Workbench cannot choose a root to recreate.`
+    };
+  }
+  const validatedRoot = validateLanguageRoot(language.rootFolder);
+  if (validatedRoot.status === "invalid") {
+    return {
+      status: "blocked",
+      reason: "invalid-root",
+      detail: validatedRoot.detail
+    };
+  }
+  const conflict = findLanguageRootClaimConflict(
+    validatedRoot.root,
+    language,
+    languages
+  );
+  if (conflict) {
+    return {
+      status: "blocked",
+      reason: "root-conflict",
+      detail: `Language root "${validatedRoot.root}" conflicts with "${conflict.root}", already reserved by "${conflict.language}".`
+    };
+  }
+  const containerState = pathState(LANGUAGE_CONTAINER);
+  if (containerState === "missing") {
+    return {
+      status: "blocked",
+      reason: "container-missing",
+      detail: `The shared "${LANGUAGE_CONTAINER}" folder is missing. Workbench will not recreate that shared container while recreating one configured language. Restore it in the vault before using Recreate language root.`
+    };
+  }
+  if (containerState === "other") {
+    return {
+      status: "blocked",
+      reason: "container-not-folder",
+      detail: `The shared "${LANGUAGE_CONTAINER}" path is occupied by an object that is not a folder. Workbench will not replace or reinterpret it.`
+    };
+  }
+  const rootState = pathState(validatedRoot.root);
+  if (rootState === "folder") {
+    return {
+      status: "blocked",
+      reason: "root-now-folder",
+      detail: `A folder now exists at "${validatedRoot.root}". Workbench did not recreate the language root because it will not assume this newly present folder is the same root that was previously missing. You may wish to try Repair language root instead.`
+    };
+  }
+  if (rootState === "other") {
+    return {
+      status: "blocked",
+      reason: "root-not-folder",
+      detail: `The configured language root path "${validatedRoot.root}" is now occupied by an object that is not a folder. Workbench will not replace or reinterpret it.`
+    };
+  }
+  const paths = buildStandardLanguagePathsFromRoot(validatedRoot.root);
+  return {
+    status: "planned",
+    root: validatedRoot.root,
+    paths,
+    foldersToEstablish: [
+      paths.root,
+      paths.lexicon,
+      paths.morphemes,
+      paths.inflections,
+      paths.cyphers,
+      paths.examples,
+      paths.phonology
+    ]
+  };
+}
+
+// language-root-recreation-state.ts
+async function applyLanguageRootRecreationState(request) {
+  if (!request.state.languages.includes(request.language)) {
+    return { status: "target-missing" };
+  }
+  const initialPlan = request.plan();
+  if (initialPlan.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: initialPlan.reason,
+      detail: initialPlan.detail
+    };
+  }
+  const approvedName = request.language.name;
+  const approvedRoot = initialPlan.root;
+  const approvedWorkbenchID = request.language.workbenchID;
+  const confirmed = await request.confirm(approvedName, approvedRoot);
+  if (!confirmed) {
+    return {
+      status: "cancelled",
+      name: approvedName,
+      root: approvedRoot
+    };
+  }
+  if (!request.state.languages.includes(request.language)) {
+    return { status: "target-missing" };
+  }
+  if (request.language.name !== approvedName || request.language.rootFolder !== approvedRoot || request.language.workbenchID !== approvedWorkbenchID) {
+    return {
+      status: "target-changed",
+      name: approvedName,
+      root: approvedRoot
+    };
+  }
+  const freshPlan = request.plan();
+  if (freshPlan.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: freshPlan.reason,
+      detail: freshPlan.detail
+    };
+  }
+  if (freshPlan.root !== approvedRoot) {
+    return {
+      status: "target-changed",
+      name: approvedName,
+      root: approvedRoot
+    };
+  }
+  const hierarchy = request.preflightHierarchy(freshPlan);
+  if (hierarchy.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: hierarchy.reason,
+      detail: hierarchy.detail
+    };
+  }
+  let rootResult;
+  try {
+    rootResult = await request.establishRoot(freshPlan);
+  } catch (error) {
+    return {
+      status: "root-establishment-failed",
+      error
+    };
+  }
+  if (rootResult.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: rootResult.reason,
+      detail: rootResult.detail
+    };
+  }
+  try {
+    await request.establishChildren(freshPlan);
+  } catch (error) {
+    return {
+      status: "folder-establishment-failed",
+      error,
+      rootEstablished: true
+    };
+  }
+  const isActive = request.state.activeLanguages.includes(
+    request.language.name
+  );
+  if (!isActive) {
+    return {
+      status: "applied",
+      name: approvedName,
+      root: approvedRoot,
+      foldersEstablished: true
+    };
+  }
+  try {
+    const reload = await request.reload();
+    if (reload.status === "loaded") {
+      return {
+        status: "applied",
+        name: approvedName,
+        root: approvedRoot,
+        dictionaryCount: reload.dictionaryCount,
+        foldersEstablished: true
+      };
+    }
+    return {
+      status: "reload-blocked",
+      name: approvedName,
+      root: approvedRoot,
+      foldersEstablished: true
+    };
+  } catch (error) {
+    return {
+      status: "reload-failed",
+      name: approvedName,
+      root: approvedRoot,
+      error,
+      foldersEstablished: true
+    };
+  }
+}
+
+// language-root-recreation-writer.ts
+var import_obsidian29 = require("obsidian");
+function inspectLanguageContainer(app) {
+  const container = app.vault.getAbstractFileByPath(LANGUAGE_CONTAINER);
+  if (container === null) {
+    return {
+      status: "blocked",
+      reason: "container-missing",
+      detail: `The shared "${LANGUAGE_CONTAINER}" folder is missing. Workbench will not recreate that shared container while recreating one configured language. Restore it in the vault before using Recreate language root.`
+    };
+  }
+  if (!(container instanceof import_obsidian29.TFolder)) {
+    return {
+      status: "blocked",
+      reason: "container-not-folder",
+      detail: `The shared "${LANGUAGE_CONTAINER}" path is occupied by an object that is not a folder. Workbench will not replace or reinterpret it.`
+    };
+  }
+  return null;
+}
+function inspectConfiguredRoot(app, root) {
+  const existing = app.vault.getAbstractFileByPath(root);
+  if (existing instanceof import_obsidian29.TFolder) {
+    return {
+      status: "blocked",
+      reason: "root-now-folder",
+      detail: `A folder now exists at "${root}". Workbench did not recreate the language root because it will not assume this newly present folder is the same root that was previously missing. You may wish to try Repair language root instead.`
+    };
+  }
+  if (existing !== null) {
+    return {
+      status: "blocked",
+      reason: "root-not-folder",
+      detail: `The configured language root path "${root}" is now occupied by an object that is not a folder. Workbench will not replace or reinterpret it.`
+    };
+  }
+  return null;
+}
+async function establishLanguageRootForRecreation(app, root) {
+  const containerProblem = inspectLanguageContainer(app);
+  if (containerProblem) {
+    return containerProblem;
+  }
+  const rootProblem = inspectConfiguredRoot(app, root);
+  if (rootProblem) {
+    return rootProblem;
+  }
+  try {
+    await app.vault.createFolder(root);
+  } catch (error) {
+    const currentContainerProblem = inspectLanguageContainer(app);
+    if (currentContainerProblem) {
+      return currentContainerProblem;
+    }
+    const currentRootProblem = inspectConfiguredRoot(app, root);
+    if (currentRootProblem) {
+      return currentRootProblem;
+    }
+    throw error;
+  }
+  return { status: "established" };
 }
 
 // language-rename.ts
@@ -12919,7 +13467,7 @@ function buildSourceDiagnosticGroups(input) {
 }
 
 // main.ts
-var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
+var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -12994,7 +13542,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     this.lastNotifiedDiagnosticPath = null;
     // Trailing-edge debounce (resetTimer=true): a burst of vault events results
     // in one reload ~500ms after the last event.
-    this.scheduleDictionaryReload = (0, import_obsidian28.debounce)(
+    this.scheduleDictionaryReload = (0, import_obsidian30.debounce)(
       () => void this.performDictionaryReload(),
       500,
       true
@@ -13078,7 +13626,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
         if (result.status === "blocked") return;
         this.refreshPanel();
         this.refreshHighlights();
-        new import_obsidian28.Notice(
+        new import_obsidian30.Notice(
           `Made Up Words: loaded ${result.dictionaryCount} dictionary entries`
         );
       }
@@ -13120,11 +13668,11 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
             "Made Up Words: failed to save highlighting preference",
             result.error
           );
-          new import_obsidian28.Notice("Made Up Words: could not save the highlighting change.");
+          new import_obsidian30.Notice("Made Up Words: could not save the highlighting change.");
           return;
         }
         if (result.status === "unchanged") return;
-        new import_obsidian28.Notice(
+        new import_obsidian30.Notice(
           `Made Up Words: highlighting ${this.settings.highlightKnownWords ? "on" : "off"}`
         );
       }
@@ -13169,7 +13717,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
         "Conlang Workbench: startup blocked by malformed persisted settings. The settings file was not changed.",
         decoded.issues
       );
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         "Conlang Workbench could not start because its saved settings are malformed. Creator data was preserved; see the developer console for details.",
         12e3
       );
@@ -13179,6 +13727,23 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     this.settings = decoded.settings;
     this.migrateSettings();
+    const identityValidation = validateConfiguredLanguageWorkbenchIdentities(
+      this.settings.languages
+    );
+    if (!identityValidation.ok) {
+      const detail = identityValidation.reason === "missing" ? `language "${identityValidation.languageName}" has no configured Workbench ID` : `languages "${identityValidation.firstLanguageName}" and "${identityValidation.duplicateLanguageName}" share Workbench ID "${identityValidation.workbenchID}"`;
+      console.error(
+        "Conlang Workbench: startup blocked by ambiguous configured-language identity. The settings file was not changed.",
+        identityValidation
+      );
+      new import_obsidian30.Notice(
+        "Conlang Workbench could not start because configured-language identity is ambiguous. Creator data was preserved; see the developer console for details.",
+        12e3
+      );
+      throw new Error(
+        "Conlang Workbench configured-language identity validation failed: " + detail
+      );
+    }
   }
   /**
    * Migrate older single-active-language settings to the multi-active format.
@@ -13186,13 +13751,20 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
    * is empty or doesn't contain a valid name.
    */
   migrateSettings() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     for (const language of this.settings.languages) {
       if (!language.rootFolder) {
         const inferred = inferLegacyLanguageRoot(language);
         if (inferred.status === "inferred") {
           language.rootFolder = inferred.root;
         }
+      }
+      if (!language.workbenchID) {
+        const authorityPath = ((_a = language.rootFolder) == null ? void 0 : _a.trim()) || language.dictionaryFolder;
+        language.workbenchID = createConfiguredLanguageWorkbenchID(
+          language.name,
+          authorityPath
+        );
       }
     }
     const known = new Set(this.settings.languages.map((l) => l.name));
@@ -13207,7 +13779,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       this.settings.activeLanguages = [this.settings.languages[0].name];
     }
     if (!this.settings.primaryLanguage || !known.has(this.settings.primaryLanguage)) {
-      this.settings.primaryLanguage = (_c = (_b = this.settings.activeLanguages[0]) != null ? _b : (_a = this.settings.languages[0]) == null ? void 0 : _a.name) != null ? _c : "";
+      this.settings.primaryLanguage = (_d = (_c = this.settings.activeLanguages[0]) != null ? _c : (_b = this.settings.languages[0]) == null ? void 0 : _b.name) != null ? _d : "";
     }
     if (this.settings.activeLanguages.length > 0 && !this.settings.activeLanguages.includes(this.settings.primaryLanguage)) {
       this.settings.primaryLanguage = this.settings.activeLanguages[0];
@@ -13419,7 +13991,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
           pathState: (path) => {
             const existing = this.app.vault.getAbstractFileByPath(path);
             if (!existing) return "missing";
-            return existing instanceof import_obsidian28.TFolder ? "folder" : "other";
+            return existing instanceof import_obsidian30.TFolder ? "folder" : "other";
           }
         }),
         save: () => this.saveSettings(),
@@ -13473,7 +14045,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     const pathState = (path) => {
       const existing = this.app.vault.getAbstractFileByPath(path);
       if (!existing) return "missing";
-      return existing instanceof import_obsidian28.TFolder ? "folder" : "other";
+      return existing instanceof import_obsidian30.TFolder ? "folder" : "other";
     };
     return this.settingsAuthorityQueue.run(
       () => applyLanguageRootRepairState({
@@ -13493,6 +14065,79 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
           }
         },
         save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage()
+      })
+    );
+  }
+  /**
+   * Recreate one missing configured language root as an explicit filesystem
+   * authority transaction.
+   *
+   * Recreate is intentionally narrower than Add Language. It may establish the
+   * already-configured language root, but it may not create or replace the
+   * shared Languages container. The pure planner checks that broader boundary
+   * before confirmation, while the dedicated writer re-checks it immediately
+   * adjacent to root creation so a filesystem race cannot widen authority.
+   *
+   * Once this transaction positively establishes the configured root, the six
+   * canonical children use ordinary additive folder semantics. Existing child
+   * folders may therefore be reused, while non-folder collisions still fail
+   * closed. Recreate never changes settings and never deletes partial additive
+   * structure during failure handling.
+   *
+   * The common settings-authority queue remains held through confirmation and
+   * the complete operation. That prevents another settings transaction from
+   * changing the configured identity being authorized while the creator is
+   * deciding.
+   */
+  async recreateLanguageRoot(language, confirm) {
+    const pathState = (path) => {
+      const existing = this.app.vault.getAbstractFileByPath(path);
+      if (!existing) return "missing";
+      return existing instanceof import_obsidian30.TFolder ? "folder" : "other";
+    };
+    return this.settingsAuthorityQueue.run(
+      () => applyLanguageRootRecreationState({
+        state: this.settings,
+        language,
+        /*
+         * Planning is deliberately supplied as a callback because the state
+         * transaction invokes it both before confirmation and again after the
+         * creator approves. Both plans therefore observe current authority.
+         */
+        plan: () => planLanguageRootRecreation({
+          language,
+          languages: this.settings.languages,
+          pathState
+        }),
+        confirm,
+        preflightHierarchy: (plan) => {
+          const issues = inspectVaultFolderPaths(
+            this.app,
+            plan.foldersToEstablish
+          );
+          if (issues.length === 0) {
+            return { status: "clear" };
+          }
+          const issue = issues[0];
+          return {
+            status: "blocked",
+            reason: "hierarchy-not-folder",
+            detail: `folder preflight failed for "${issue.requestedPath}": ` + issue.detail
+          };
+        },
+        /*
+         * Root creation has different authority from ordinary folder creation:
+         * it must not create Languages/ and must not adopt a root folder that
+         * appears concurrently. Keep that policy in the dedicated, regression-
+         * tested writer rather than reproducing it in this coordinator.
+         */
+        establishRoot: (plan) => establishLanguageRootForRecreation(this.app, plan.root),
+        establishChildren: async (plan) => {
+          for (const folder of plan.foldersToEstablish.slice(1)) {
+            await ensureVaultFolderStrict(this.app, folder);
+          }
+        },
         reload: () => this.reloadActiveLanguage()
       })
     );
@@ -13552,7 +14197,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     const pathState = (path) => {
       const existing = this.app.vault.getAbstractFileByPath(path);
       if (!existing) return "missing";
-      return existing instanceof import_obsidian28.TFolder ? "folder" : "other";
+      return existing instanceof import_obsidian30.TFolder ? "folder" : "other";
     };
     return this.settingsAuthorityQueue.run(
       () => applyLanguageRenameState({
@@ -13573,7 +14218,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
         }),
         renameRoot: async (from, to) => {
           const source = this.app.vault.getAbstractFileByPath(from);
-          if (!(source instanceof import_obsidian28.TFolder)) {
+          if (!(source instanceof import_obsidian30.TFolder)) {
             throw new Error(
               `Cannot rename language root "${from}": it is no longer a folder.`
             );
@@ -13619,7 +14264,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       );
     }
     const message = "Made Up Words is loaded. Open the side panel via the book-open icon in the left ribbon, or via the command palette \u2192 'Made Up Words: Open panel'.";
-    new import_obsidian28.Notice(message, 12e3);
+    new import_obsidian30.Notice(message, 12e3);
   }
   /**
    * Return the primary language config (the one used for new entries and
@@ -13684,7 +14329,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
    * again.
    */
   maybeNotifyForDiagnosticFile(file) {
-    if (!(file instanceof import_obsidian28.TFile)) {
+    if (!(file instanceof import_obsidian30.TFile)) {
       this.lastNotifiedDiagnosticPath = null;
       return;
     }
@@ -13701,7 +14346,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     this.lastNotifiedDiagnosticPath = file.path;
     const issueCount = group.diagnostics.length;
     const diagnosticLabel = issueCount === 1 ? "diagnostic" : "diagnostics";
-    new import_obsidian28.Notice(
+    new import_obsidian30.Notice(
       `Conlang Workbench: ${file.name} has ${issueCount} ${diagnosticLabel}.`,
       2e3
     );
@@ -13775,7 +14420,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       (path) => {
         const existing = this.app.vault.getAbstractFileByPath(path);
         if (!existing) return "missing";
-        return existing instanceof import_obsidian28.TFolder ? "folder" : "other";
+        return existing instanceof import_obsidian30.TFolder ? "folder" : "other";
       }
     );
     if (issues.length > 0) {
@@ -13864,14 +14509,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
         leaf = this.app.workspace.getLeaf(true);
       }
       if (!leaf) {
-        new import_obsidian28.Notice("Made Up Words: could not open panel (no available leaf)");
+        new import_obsidian30.Notice("Made Up Words: could not open panel (no available leaf)");
         return;
       }
       await leaf.setViewState({ type: VIEW_TYPE_PANEL, active: true });
       await this.app.workspace.revealLeaf(leaf);
     } catch (e) {
       console.error("[Conlang] openPanel failed:", e);
-      new import_obsidian28.Notice("Made Up Words: failed to open panel \u2014 see developer console");
+      new import_obsidian30.Notice("Made Up Words: failed to open panel \u2014 see developer console");
     }
   }
   refreshPanel() {
@@ -13957,7 +14602,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof import_obsidian28.MarkdownView)) continue;
+      if (!(view instanceof import_obsidian30.MarkdownView)) continue;
       const cm = view.editor.cm;
       if (cm) {
         try {
@@ -14015,11 +14660,11 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
   async previewToConlang(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian28.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian30.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     const translated = this.translateToConlang(sel.text);
-    new import_obsidian28.Notice(`${sel.text}  \u2192  ${translated}`, 6e3);
+    new import_obsidian30.Notice(`${sel.text}  \u2192  ${translated}`, 6e3);
   }
   /**
    * Preview and explicitly authorize replacement of creator-authored text.
@@ -14036,20 +14681,20 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     var _a;
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian28.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian30.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     const originalFile = ctx.file;
     const originalPath = (_a = originalFile == null ? void 0 : originalFile.path) != null ? _a : null;
     if (!originalFile || !originalPath) {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         "Made Up Words: could not identify the note containing this text"
       );
       return;
     }
     const targetLanguage = this.getActiveLanguage();
     if (!targetLanguage) {
-      new import_obsidian28.Notice("Made Up Words: no active language");
+      new import_obsidian30.Notice("Made Up Words: no active language");
       return;
     }
     let tokens = glossEnglishToConlang(
@@ -14078,7 +14723,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       );
       if (repair.status === "cancelled") return;
       if (repair.status === "failed") {
-        new import_obsidian28.Notice(
+        new import_obsidian30.Notice(
           `Conlang Workbench: ${repair.error}. Translation was not replaced.`,
           9e3
         );
@@ -14092,7 +14737,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
           (item) => item.reason === "missing"
         );
         if (stillMissing) {
-          new import_obsidian28.Notice(
+          new import_obsidian30.Notice(
             "Conlang Workbench: vocabulary repair finished, but a missing word did not resolve after reload. Nothing was replaced.",
             9e3
           );
@@ -14111,7 +14756,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     if (!confirmed) return;
     const currentTargetLanguage = this.getActiveLanguage();
     if (!currentTargetLanguage || currentTargetLanguage.name !== targetLanguage.name) {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         "Made Up Words: the target language changed while the preview was open. Nothing was replaced.",
         8e3
       );
@@ -14119,7 +14764,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     const currentFile = ctx.file;
     if (!currentFile || currentFile !== originalFile || currentFile.path !== originalPath) {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         "Made Up Words: the target note changed while the preview was open. Nothing was replaced.",
         8e3
       );
@@ -14129,14 +14774,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     try {
       currentText = editor.getRange(sel.from, sel.to);
     } catch (e) {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         "Made Up Words: the target text changed while the preview was open. Nothing was replaced.",
         8e3
       );
       return;
     }
     if (currentText !== sel.text) {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         "Made Up Words: the target text changed while the preview was open. Nothing was replaced.",
         8e3
       );
@@ -14162,13 +14807,13 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     const explicitSelection = editor.getSelection();
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian28.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian30.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     if (explicitSelection.length > 0) {
       const intent = classifySelectionLookup(explicitSelection);
       if (intent.kind === "invalid") {
-        new import_obsidian28.Notice(
+        new import_obsidian30.Notice(
           "Made Up Words: selection is not a single word or whitespace-separated phrase"
         );
         return;
@@ -14186,40 +14831,40 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
           lang3
         );
         const translated = renderConlangToEnglishString(tokens);
-        new import_obsidian28.Notice(`${intent.sourceText}  \u2192  ${translated}`, 6e3);
+        new import_obsidian30.Notice(`${intent.sourceText}  \u2192  ${translated}`, 6e3);
         return;
       }
       const entry2 = this.dictionary.lookup(intent.lookupText);
       if (entry2) {
-        new import_obsidian28.Notice(`${entry2.word}  \u2192  ${entry2.definition}`, 6e3);
+        new import_obsidian30.Notice(`${entry2.word}  \u2192  ${entry2.definition}`, 6e3);
         return;
       }
       const lang2 = this.getActiveLanguage();
       if (!lang2) {
-        new import_obsidian28.Notice("Made Up Words: no active language");
+        new import_obsidian30.Notice("Made Up Words: no active language");
         return;
       }
       const reversed2 = applyCypherReverse(intent.lookupText, lang2.sheets);
-      new import_obsidian28.Notice(`${intent.sourceText}  \u2192  ${reversed2} (reverse cypher)`, 6e3);
+      new import_obsidian30.Notice(`${intent.sourceText}  \u2192  ${reversed2} (reverse cypher)`, 6e3);
       return;
     }
     const entry = this.dictionary.lookup(cleanWord(sel.text));
     if (entry) {
-      new import_obsidian28.Notice(`${entry.word}  \u2192  ${entry.definition}`, 6e3);
+      new import_obsidian30.Notice(`${entry.word}  \u2192  ${entry.definition}`, 6e3);
       return;
     }
     const lang = this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian28.Notice("Made Up Words: no active language");
+      new import_obsidian30.Notice("Made Up Words: no active language");
       return;
     }
     const reversed = applyCypherReverse(sel.text, lang.sheets);
-    new import_obsidian28.Notice(`${sel.text}  \u2192  ${reversed} (reverse cypher)`, 6e3);
+    new import_obsidian30.Notice(`${sel.text}  \u2192  ${reversed} (reverse cypher)`, 6e3);
   }
   async createEntryFromSelection(editor) {
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian28.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian30.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     await this.openMultiLangEntries(sel.text);
@@ -14232,7 +14877,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
   async openMultiLangEntries(englishText) {
     const langs = this.settings.languages;
     if (langs.length === 0) {
-      new import_obsidian28.Notice("Made Up Words: no languages configured");
+      new import_obsidian30.Notice("Made Up Words: no languages configured");
       return;
     }
     const primary = this.settings.primaryLanguage;
@@ -14272,17 +14917,17 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     await this.afterEntriesChanged();
     if (firstPath) {
       const f = this.app.vault.getAbstractFileByPath(firstPath);
-      if (f instanceof import_obsidian28.TFile)
+      if (f instanceof import_obsidian30.TFile)
         await this.app.workspace.getLeaf(false).openFile(f);
     }
     const portableIdNote = portableIdsOmitted > 0 ? ` Portable lexeme ${portableIdsOmitted === 1 ? "ID was" : "IDs were"} omitted from ${portableIdsOmitted} ${portableIdsOmitted === 1 ? "entry" : "entries"} because ID generation is not compatible with this environment; ${portableIdsOmitted === 1 ? "it can" : "they can"} be added later with portable-ID backfill.` : "";
     if (errors.length > 0) {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Made Up Words: ${created.length} saved, ${errors.length} failed \u2014 ${errors.join("; ")}${portableIdNote}`,
         9e3
       );
     } else {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Made Up Words: saved ${created.length} ${created.length === 1 ? "entry" : "entries"}.${portableIdNote}`,
         portableIdsOmitted > 0 ? 9e3 : 5e3
       );
@@ -14291,9 +14936,10 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
   /**
    * Create one dictionary entry requested by the multi-language creation flow.
    *
-   * The reusable writer owns the persistent safety boundary: destination
-   * validation, strict folder creation, collision/source-authority checks,
-   * homograph allocation, and the final vault write. This method remains
+   * The reusable writer owns the lexical persistence safety boundary:
+   * destination validation, established-destination checks,
+   * collision/source-authority checks, homograph allocation, and the final
+   * lexical note write. This method remains
    * responsible for the entry-specific Markdown template and for adapting the
    * writer's structured result to the older multi-entry caller contract.
    */
@@ -14368,7 +15014,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     const explicitSelection = editor.getSelection();
     const sel = this.getSelectionOrWord(editor);
     if (!sel) {
-      new import_obsidian28.Notice("Made Up Words: no selection or word under cursor");
+      new import_obsidian30.Notice("Made Up Words: no selection or word under cursor");
       return;
     }
     let query = sel.text.trim();
@@ -14376,7 +15022,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     if (explicitSelection.length > 0) {
       const intent = classifyLookupQuery(explicitSelection);
       if (intent.kind === "invalid") {
-        new import_obsidian28.Notice(
+        new import_obsidian30.Notice(
           "Made Up Words: selection is not a single word or whitespace-separated phrase"
         );
         return;
@@ -14480,7 +15126,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     var _a;
     const lang = targetLang != null ? targetLang : this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian28.Notice("Made Up Words: no active language");
+      new import_obsidian30.Notice("Made Up Words: no active language");
       return;
     }
     const translated = this.translateToConlangWith(englishText, lang);
@@ -14489,7 +15135,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       validateVaultRelativePath(folder);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Conlang Workbench: invalid dictionary folder for ${lang.name} \u2014 ${msg}`,
         9e3
       );
@@ -14502,7 +15148,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       englishText
     );
     if (inspection.status === "blocked") {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Conlang Workbench: ${inspection.error}. No new entry was created.`,
         9e3
       );
@@ -14510,7 +15156,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     if (inspection.status === "existing") {
       await this.app.workspace.getLeaf(false).openFile(inspection.file);
-      new import_obsidian28.Notice(`Conlang: opened existing entry "${translated}"`);
+      new import_obsidian30.Notice(`Conlang: opened existing entry "${translated}"`);
       return;
     }
     const opts = await this.promptForEntryOptions(englishText, translated);
@@ -14546,7 +15192,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       })
     });
     if (result.status === "blocked" || result.status === "failed") {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Conlang Workbench: ${result.error}. No new entry was created.`,
         9e3
       );
@@ -14554,7 +15200,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     if (result.status === "existing") {
       await this.app.workspace.getLeaf(false).openFile(result.file);
-      new import_obsidian28.Notice(`Conlang: opened existing entry "${translated}"`);
+      new import_obsidian30.Notice(`Conlang: opened existing entry "${translated}"`);
       return;
     }
     const file = result.file;
@@ -14567,7 +15213,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     const isActive = this.settings.activeLanguages.includes(lang.name);
     const senseNote = result.wordOverride ? " as a new sense of an existing word" : "";
     const portableIdNote = result.portableIdOmitted ? " Portable lexeme ID omitted because ID generation is not compatible with this environment; it can be added later with portable-ID backfill." : "";
-    new import_obsidian28.Notice(
+    new import_obsidian30.Notice(
       (isActive ? `Made Up Words: created "${translated}" in ${lang.name}${senseNote}` : `Made Up Words: created "${translated}" in ${lang.name}${senseNote} (inactive \u2014 activate it to see hover/highlight)`) + portableIdNote,
       result.portableIdOmitted ? 9e3 : void 0
     );
@@ -14585,14 +15231,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
   async createWordFromPanel() {
     const lang = this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian28.Notice("Made Up Words: no active language");
+      new import_obsidian30.Notice("Made Up Words: no active language");
       return;
     }
     const result = await this.promptForWord();
     if (!result) return;
     const writeResult = await this.writeWordEntry(lang, result);
     if (writeResult.status === "blocked" || writeResult.status === "failed") {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Conlang Workbench: ${writeResult.error}. No new entry was created.`,
         9e3
       );
@@ -14600,13 +15246,13 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     if (writeResult.status === "existing") {
       await this.app.workspace.getLeaf(false).openFile(writeResult.file);
-      new import_obsidian28.Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
+      new import_obsidian30.Notice(`Conlang: opened existing entry "${result.conlangWord}"`);
       return;
     }
     await this.app.workspace.getLeaf(false).openFile(writeResult.file);
     await this.afterEntriesChanged();
     const portableIdNote = writeResult.portableIdOmitted ? " Portable lexeme ID omitted because ID generation is not compatible with this environment; it can be added later with portable-ID backfill." : "";
-    new import_obsidian28.Notice(
+    new import_obsidian30.Notice(
       (writeResult.wordOverride ? `Conlang: added "${result.conlangWord}" as a new sense of an existing word` : `Conlang: added "${result.conlangWord}"`) + portableIdNote,
       writeResult.portableIdOmitted ? 9e3 : void 0
     );
@@ -14698,7 +15344,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     var _a;
     const lang = this.getActiveLanguage();
     if (!lang) {
-      new import_obsidian28.Notice("Made Up Words: no active language");
+      new import_obsidian30.Notice("Made Up Words: no active language");
       return;
     }
     const result = await this.promptForName();
@@ -14708,7 +15354,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       validateVaultRelativePath(folder);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Conlang Workbench: invalid dictionary folder for ${lang.name} \u2014 ${msg}`,
         9e3
       );
@@ -14756,7 +15402,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
       })
     });
     if (writeResult.status === "blocked" || writeResult.status === "failed") {
-      new import_obsidian28.Notice(
+      new import_obsidian30.Notice(
         `Conlang Workbench: ${writeResult.error}. No new entry was created.`,
         9e3
       );
@@ -14764,7 +15410,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     }
     if (writeResult.status === "existing") {
       await this.app.workspace.getLeaf(false).openFile(writeResult.file);
-      new import_obsidian28.Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
+      new import_obsidian30.Notice(`Conlang: opened existing entry "${result.conlangForm}"`);
       return;
     }
     const file = writeResult.file;
@@ -14774,7 +15420,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian28.Plugin {
     this.refreshPanel();
     this.refreshHighlights();
     this.lastHoverWord = null;
-    new import_obsidian28.Notice(
+    new import_obsidian30.Notice(
       `Conlang: created name "${result.conlangForm}"` + (writeResult.portableIdOmitted ? ". Portable lexeme ID omitted because ID generation is not compatible with this environment; it can be added later with portable-ID backfill." : ""),
       writeResult.portableIdOmitted ? 9e3 : void 0
     );

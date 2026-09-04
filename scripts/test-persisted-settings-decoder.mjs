@@ -73,6 +73,64 @@ const originalSnapshot = JSON.stringify(raw);
 const valid = decodePersistedSettings(raw);
 assert.equal(valid.status, "valid");
 assert.equal(JSON.stringify(raw), originalSnapshot, "raw data must not mutate");
+
+/*
+ * Stable configured-language Workbench identity is backward-compatible:
+ * legacy settings may omit it, while an already-persisted string must survive
+ * decoding exactly. Identity creation belongs to migration/creation rather than
+ * to this representation decoder.
+ */
+assert.equal(valid.settings.languages[0].workbenchID, undefined);
+
+const persistedWorkbenchId = decodePersistedSettings({
+  languages: [
+    makeLanguage({
+      workbenchID:
+        "wb:language:Unusual%20%2F%20Creator%20Language:Languages%2FUnusual%20Language",
+    }),
+  ],
+});
+assert.equal(persistedWorkbenchId.status, "valid");
+assert.equal(
+  persistedWorkbenchId.settings.languages[0].workbenchID,
+  "wb:language:Unusual%20%2F%20Creator%20Language:Languages%2FUnusual%20Language",
+);
+
+const blankWorkbenchId = {
+  languages: [makeLanguage({ workbenchID: "   " })],
+};
+const blankWorkbenchIdSnapshot = JSON.stringify(blankWorkbenchId);
+const blockedBlankWorkbenchId = decodePersistedSettings(blankWorkbenchId);
+assert.equal(blockedBlankWorkbenchId.status, "blocked");
+assert.ok(
+  blockedBlankWorkbenchId.issues.some(
+    (issue) => issue.path === "settings.languages[0].workbenchID",
+  ),
+  "blank configured-language Workbench identity must fail closed",
+);
+assert.equal(
+  JSON.stringify(blankWorkbenchId),
+  blankWorkbenchIdSnapshot,
+  "rejecting blank configured-language identity must not mutate persisted input",
+);
+
+const malformedWorkbenchId = {
+  languages: [makeLanguage({ workbenchID: { unexpected: true } })],
+};
+const malformedWorkbenchIdSnapshot = JSON.stringify(malformedWorkbenchId);
+const blockedWorkbenchId = decodePersistedSettings(malformedWorkbenchId);
+assert.equal(blockedWorkbenchId.status, "blocked");
+assert.ok(
+  blockedWorkbenchId.issues.some(
+    (issue) => issue.path === "settings.languages[0].workbenchID",
+  ),
+  "malformed configured-language Workbench identity should identify the exact field",
+);
+assert.equal(
+  JSON.stringify(malformedWorkbenchId),
+  malformedWorkbenchIdSnapshot,
+  "rejecting malformed configured-language identity must not mutate persisted input",
+);
 assert.notStrictEqual(valid.settings, raw);
 assert.notStrictEqual(valid.settings.languages, raw.languages);
 assert.deepEqual(valid.settings.languages, raw.languages);

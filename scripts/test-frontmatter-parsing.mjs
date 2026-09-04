@@ -30,8 +30,12 @@ const {
   parseYamlString,
 } = await importBundled("frontmatter-values.ts");
 
-const { createObsidianWorkbenchIdentity } =
-  await importBundled("workbench-id.ts");
+const {
+  createConfiguredLanguageStructureIdentity,
+  createConfiguredLanguageWorkbenchID,
+  createConfiguredLanguageWorkbenchIdentity,
+  createObsidianWorkbenchIdentity,
+} = await importBundled("workbench-id.ts");
 
 const { parseMorphemeSource } = await importBundled("morpheme-source.ts");
 
@@ -145,6 +149,67 @@ assert.deepEqual(
 // ---------------------------------------------------------------------------
 // Workbench/source/linguistic identity separation
 // ---------------------------------------------------------------------------
+
+/*
+ * A configured language receives stable Workbench identity independently from
+ * its creator-facing portable Language Profile identity.
+ *
+ * The name/path below are the bootstrap seed only. Structural-child identity is
+ * derived from the stored parent ID plus immutable role, not from the child's
+ * current vault path.
+ */
+const configuredLanguageWorkbenchID = createConfiguredLanguageWorkbenchID(
+  "Mer",
+  "Languages/Mer",
+);
+
+assert.equal(
+  configuredLanguageWorkbenchID,
+  "wb:language:Mer:Languages%2FMer",
+);
+
+assert.throws(
+  () => createConfiguredLanguageWorkbenchID("   ", "Languages/Mer"),
+  /name must not be blank/,
+);
+
+assert.throws(
+  () => createConfiguredLanguageWorkbenchID("Mer", "   "),
+  /authority path must not be blank/,
+);
+
+assert.deepEqual(
+  createConfiguredLanguageWorkbenchIdentity(configuredLanguageWorkbenchID),
+  {
+    workbenchID: "wb:language:Mer:Languages%2FMer",
+    sourceID: "settings-language:wb:language:Mer:Languages%2FMer",
+  },
+);
+
+assert.deepEqual(
+  createConfiguredLanguageStructureIdentity(
+    configuredLanguageWorkbenchID,
+    "lexicon",
+  ),
+  {
+    workbenchID: "wb:language:Mer:Languages%2FMer:lexicon",
+    sourceID:
+      "settings-language-structure:wb:language:Mer:Languages%2FMer:lexicon",
+  },
+);
+
+/*
+ * Moving or renaming the vault location does not participate in the structural
+ * identity helper at all. The same stored parent ID and role therefore continue
+ * identifying Mer's Lexicon after an authorized path change.
+ */
+assert.equal(
+  createConfiguredLanguageStructureIdentity(
+    configuredLanguageWorkbenchID,
+    "lexicon",
+  ).workbenchID,
+  "wb:language:Mer:Languages%2FMer:lexicon",
+);
 
 const identity = createObsidianWorkbenchIdentity(
   "Languages/Test Language/Morphemes/plural s.md",

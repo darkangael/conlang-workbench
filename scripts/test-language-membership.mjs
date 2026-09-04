@@ -85,6 +85,17 @@ try {
     hoverEnabled: true,
   };
 
+  const identifiedMer = {
+    ...mer,
+    workbenchID: "wb:language:Mer:Languages%2FMer",
+  };
+
+  const identifiedTestLanguage = {
+    ...testLanguage,
+    workbenchID:
+      "wb:language:Test%20Language:Languages%2FTest%20Language",
+  };
+
   assert.deepEqual(
     identity.validateLanguageRename(
       [mer, testLanguage],
@@ -111,6 +122,66 @@ try {
       "Test Language",
     ),
     { ok: false, reason: "unchanged" },
+  );
+
+  /*
+   * After migration, every configured language must have one nonblank local
+   * Workbench ID and no two configured languages may claim the same ID.
+   */
+  assert.deepEqual(
+    identity.validateConfiguredLanguageWorkbenchIdentities([
+      identifiedMer,
+      identifiedTestLanguage,
+    ]),
+    { ok: true },
+  );
+
+  assert.deepEqual(
+    identity.validateConfiguredLanguageWorkbenchIdentities([
+      identifiedMer,
+      testLanguage,
+    ]),
+    {
+      ok: false,
+      reason: "missing",
+      languageIndex: 1,
+      languageName: "Test Language",
+    },
+  );
+
+  assert.deepEqual(
+    identity.validateConfiguredLanguageWorkbenchIdentities([
+      identifiedMer,
+      {
+        ...identifiedTestLanguage,
+        workbenchID: identifiedMer.workbenchID,
+      },
+    ]),
+    {
+      ok: false,
+      reason: "duplicate",
+      workbenchID: identifiedMer.workbenchID,
+      firstLanguageIndex: 0,
+      firstLanguageName: "Mer",
+      duplicateLanguageIndex: 1,
+      duplicateLanguageName: "Test Language",
+    },
+  );
+
+  assert.equal(
+    identity.findConfiguredLanguageWorkbenchIDConflict(
+      identifiedMer.workbenchID,
+      [identifiedMer, identifiedTestLanguage],
+    ),
+    identifiedMer,
+  );
+
+  assert.equal(
+    identity.findConfiguredLanguageWorkbenchIDConflict(
+      "wb:language:Unused:Languages%2FUnused",
+      [identifiedMer, identifiedTestLanguage],
+    ),
+    null,
   );
 
   console.log("language membership / identity regression tests passed");

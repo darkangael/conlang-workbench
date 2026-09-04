@@ -136,6 +136,8 @@ assert.deepEqual(
 
   assert.deepEqual(result.language, {
     name: "Language 1",
+    workbenchID:
+      "wb:language:Language%201:Languages%2FLanguage%201",
     rootFolder: expected.root,
     dictionaryFolder: expected.lexicon,
     morphemeFolder: expected.morphemes,
@@ -267,6 +269,39 @@ assert.deepEqual(
   const result = await createStandardLanguage(app, "../Outside", [], false);
 
   assert.equal(result.status, "blocked");
+  assert.deepEqual(created, []);
+}
+
+/*
+ * A generated configured-language Workbench ID may never collide with settled
+ * settings authority.
+ *
+ * Give the existing language unrelated paths so this regression proves the
+ * identity guard itself blocks before structural-root or inventory checks.
+ */
+{
+  const { app, created } = makeApp();
+
+  const result = await createStandardLanguage(
+    app,
+    "Language 1",
+    [
+      {
+        name: "Existing Language",
+        workbenchID:
+          "wb:language:Language%201:Languages%2FLanguage%201",
+        rootFolder: "Languages/Existing Language",
+        dictionaryFolder: "Languages/Existing Language/Lexicon",
+        hoverEnabled: true,
+        sheets: [],
+      },
+    ],
+    false,
+  );
+
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /Workbench ID/);
+  assert.match(result.error, /already claimed by "Existing Language"/);
   assert.deepEqual(created, []);
 }
 

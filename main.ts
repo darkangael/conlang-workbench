@@ -77,6 +77,7 @@ import {
 } from "./highlight";
 import type { HighlightKind } from "./highlight-core";
 import { decodePersistedSettings } from "./persisted-settings-decoder";
+import { createConfiguredLanguageWorkbenchID } from "./workbench-id";
 import { preflightLanguageSources } from "./language-source-preflight";
 import { showLanguageSourceDiagnostics } from "./language-source-diagnostics-modal";
 import {
@@ -128,7 +129,14 @@ import {
   applyLanguageRootRepairState,
   type LanguageRootRepairStateResult,
 } from "./language-root-repair-state";
+import { planLanguageRootRecreation } from "./language-root-recreation";
+import {
+  applyLanguageRootRecreationState,
+  type LanguageRootRecreationStateResult,
+} from "./language-root-recreation-state";
+import { establishLanguageRootForRecreation } from "./language-root-recreation-writer";
 import { planLanguageRename } from "./language-rename";
+import { validateConfiguredLanguageWorkbenchIdentities } from "./language-identity";
 import {
   applyLanguageRenameState,
   type LanguageRenameStateResult,
@@ -137,7 +145,10 @@ import {
   applyLanguageRemovalState,
   type LanguageRemovalStateResult,
 } from "./language-removal-state";
-import { ensureVaultFolderStrict } from "./vault-folder-writer";
+import {
+  ensureVaultFolderStrict,
+  inspectVaultFolderPaths,
+} from "./vault-folder-writer";
 import {
   buildSourceDiagnosticGroups,
   type SourceDiagnosticGroup,
@@ -488,6 +499,47 @@ export default class ConlangPlugin extends Plugin {
 
     // Migration receives authority only after structural validation succeeds.
     this.migrateSettings();
+
+    /*
+     * Legacy migration establishes missing configured-language Workbench IDs
+     * before this semantic identity check runs.
+     *
+     * Do not choose between duplicate identities or regenerate one here. These
+     * IDs are settings authority: ambiguity must stop startup before onload()
+     * registers vault listeners, runtime inventories, commands, or UI state.
+     *
+     * No save occurs on this path, so malformed/ambiguous persisted authority
+     * remains untouched for explicit creator repair.
+     */
+    const identityValidation = validateConfiguredLanguageWorkbenchIdentities(
+      this.settings.languages,
+    );
+
+    if (!identityValidation.ok) {
+      const detail =
+        identityValidation.reason === "missing"
+          ? `language "${identityValidation.languageName}" has no configured Workbench ID`
+          : `languages "${identityValidation.firstLanguageName}" and ` +
+            `"${identityValidation.duplicateLanguageName}" share Workbench ID ` +
+            `"${identityValidation.workbenchID}"`;
+
+      console.error(
+        "Conlang Workbench: startup blocked by ambiguous configured-language " +
+          "identity. The settings file was not changed.",
+        identityValidation,
+      );
+      new Notice(
+        "Conlang Workbench could not start because configured-language " +
+          "identity is ambiguous. Creator data was preserved; see the " +
+          "developer console for details.",
+        12000,
+      );
+
+      throw new Error(
+        "Conlang Workbench configured-language identity validation failed: " +
+          detail,
+      );
+    }
   }
 
   /**
@@ -523,6 +575,35 @@ export default class ConlangPlugin extends Plugin {
         if (inferred.status === "inferred") {
           language.rootFolder = inferred.root;
         }
+      }
+
+      /*
+       * Configurations persisted before configured-language Workbench identity
+       * existed legitimately have no workbenchID.
+       *
+       * Bootstrap from authority that already belongs to this configuration:
+       * prefer its established structural root, otherwise fall back to the
+       * required dictionary path used by legacy configurations.
+       *
+       * The resulting ID is installed on LanguageConfig and thereafter treated
+       * as opaque identity. Rename and repair transactions mutate names/paths
+       * in place but do not recompute this value, so the language remains the
+       * same Workbench object across those structural changes.
+       *
+       * migrateSettings() does not introduce a new startup save solely for this
+       * compatibility field. Any later normal settings transaction persists the
+       * established ID along with the complete settings object. Until then, the
+       * same unchanged legacy configuration deterministically reconstructs it
+       * on the next startup.
+       */
+      if (!language.workbenchID) {
+        const authorityPath =
+          language.rootFolder?.trim() || language.dictionaryFolder;
+
+        language.workbenchID = createConfiguredLanguageWorkbenchID(
+          language.name,
+          authorityPath,
+        );
       }
     }
 
@@ -991,6 +1072,110 @@ export default class ConlangPlugin extends Plugin {
         },
 
         save: () => this.saveSettings(),
+        reload: () => this.reloadActiveLanguage(),
+      }),
+    );
+  }
+
+  /**
+   * Recreate one missing configured language root as an explicit filesystem
+   * authority transaction.
+   *
+   * Recreate is intentionally narrower than Add Language. It may establish the
+   * already-configured language root, but it may not create or replace the
+   * shared Languages container. The pure planner checks that broader boundary
+   * before confirmation, while the dedicated writer re-checks it immediately
+   * adjacent to root creation so a filesystem race cannot widen authority.
+   *
+   * Once this transaction positively establishes the configured root, the six
+   * canonical children use ordinary additive folder semantics. Existing child
+   * folders may therefore be reused, while non-folder collisions still fail
+   * closed. Recreate never changes settings and never deletes partial additive
+   * structure during failure handling.
+   *
+   * The common settings-authority queue remains held through confirmation and
+   * the complete operation. That prevents another settings transaction from
+   * changing the configured identity being authorized while the creator is
+   * deciding.
+   */
+  async recreateLanguageRoot(
+    language: LanguageConfig,
+    confirm: (name: string, root: string) => Promise<boolean>,
+  ): Promise<LanguageRootRecreationStateResult> {
+    const pathState = (path: string) => {
+      const existing = this.app.vault.getAbstractFileByPath(path);
+
+      if (!existing) return "missing" as const;
+      return existing instanceof TFolder
+        ? ("folder" as const)
+        : ("other" as const);
+    };
+
+    return this.settingsAuthorityQueue.run(() =>
+      applyLanguageRootRecreationState({
+        state: this.settings,
+        language,
+
+        /*
+         * Planning is deliberately supplied as a callback because the state
+         * transaction invokes it both before confirmation and again after the
+         * creator approves. Both plans therefore observe current authority.
+         */
+        plan: () =>
+          planLanguageRootRecreation({
+            language,
+            languages: this.settings.languages,
+            pathState,
+          }),
+
+        confirm,
+
+        preflightHierarchy: (plan) => {
+          /*
+           * Inspect the entire seven-folder hierarchy before creating the root.
+           * This pass is read-only: a descendant non-folder collision must stop
+           * Recreate before any creator-visible structure is established.
+           */
+          const issues = inspectVaultFolderPaths(
+            this.app,
+            plan.foldersToEstablish,
+          );
+
+          if (issues.length === 0) {
+            return { status: "clear" };
+          }
+
+          const issue = issues[0];
+
+          return {
+            status: "blocked",
+            reason: "hierarchy-not-folder",
+            detail:
+              `folder preflight failed for "${issue.requestedPath}": ` +
+              issue.detail,
+          };
+        },
+
+        /*
+         * Root creation has different authority from ordinary folder creation:
+         * it must not create Languages/ and must not adopt a root folder that
+         * appears concurrently. Keep that policy in the dedicated, regression-
+         * tested writer rather than reproducing it in this coordinator.
+         */
+        establishRoot: (plan) =>
+          establishLanguageRootForRecreation(this.app, plan.root),
+
+        establishChildren: async (plan) => {
+          /*
+           * foldersToEstablish includes the root first. The root has already
+           * been established by the stronger writer above, so only the six
+           * canonical children are eligible for ordinary additive semantics.
+           */
+          for (const folder of plan.foldersToEstablish.slice(1)) {
+            await ensureVaultFolderStrict(this.app, folder);
+          }
+        },
+
         reload: () => this.reloadActiveLanguage(),
       }),
     );
@@ -2082,9 +2267,10 @@ export default class ConlangPlugin extends Plugin {
   /**
    * Create one dictionary entry requested by the multi-language creation flow.
    *
-   * The reusable writer owns the persistent safety boundary: destination
-   * validation, strict folder creation, collision/source-authority checks,
-   * homograph allocation, and the final vault write. This method remains
+   * The reusable writer owns the lexical persistence safety boundary:
+   * destination validation, established-destination checks,
+   * collision/source-authority checks, homograph allocation, and the final
+   * lexical note write. This method remains
    * responsible for the entry-specific Markdown template and for adapting the
    * writer's structured result to the older multi-entry caller contract.
    */
@@ -2633,7 +2819,7 @@ export default class ConlangPlugin extends Plugin {
     const folder = lang.dictionaryFolder;
 
     // Names use the same canonical dictionary destination as ordinary words.
-    // Validate that authority boundary before creating folders or files.
+    // Validate that authority boundary before any lexical note can be created.
     try {
       validateVaultRelativePath(folder);
     } catch (e) {

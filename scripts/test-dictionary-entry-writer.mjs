@@ -177,9 +177,15 @@ function request(app, overrides = {}) {
   };
 }
 
-// Ordinary creation creates the missing destination hierarchy and one file.
+// Ordinary creation writes one file inside an already-established dictionary.
 {
-  const { app, writes } = makeApp();
+  const { app, writes } = makeApp({
+    folders: [
+      "Languages",
+      "Languages/Test",
+      "Languages/Test/Dictionary",
+    ],
+  });
 
   const result = await writeDictionaryEntry(request(app));
 
@@ -188,6 +194,25 @@ function request(app, overrides = {}) {
   assert.equal(result.wordOverride, false);
   assert.equal(writes.length, 1);
   assert.equal(writes[0].path, "Languages/Test/Dictionary/kala.md");
+}
+
+// Missing canonical dictionary structure blocks ordinary lexical creation.
+// Repair, not an ordinary note write, owns restoration of that source folder.
+{
+  const { app, writes, objects } = makeApp({
+    folders: [
+      "Languages",
+      "Languages/Test",
+    ],
+  });
+
+  const result = await writeDictionaryEntry(request(app));
+
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /dictionary folder.*missing/i);
+  assert.match(result.error, /repair/i);
+  assert.equal(writes.length, 0);
+  assert.equal(objects.has("Languages/Test/Dictionary"), false);
 }
 
 // A same-spelling lexical source with the same meaning is reused, not written.
@@ -290,7 +315,7 @@ function request(app, overrides = {}) {
   assert.equal(writes.length, 0);
 }
 
-// Unsafe configured paths fail before creating folders or files.
+// Unsafe configured paths fail before any lexical note can be created.
 {
   const { app, writes, objects } = makeApp();
 
@@ -306,12 +331,17 @@ function request(app, overrides = {}) {
   assert.equal(objects.size, 0);
 }
 
-// A file occupying one of the required folder components is a hard failure.
+// A non-folder occupying the configured dictionary path is preserved and blocks
+// lexical creation. Ordinary note creation never replaces structural objects.
 {
-  const { app, writes } = makeApp({
+  const { app, writes, objects } = makeApp({
+    folders: [
+      "Languages",
+      "Languages/Test",
+    ],
     files: [
       {
-        path: "Languages",
+        path: "Languages/Test/Dictionary",
         frontmatter: {
           definition: "unrelated",
         },
@@ -321,26 +351,10 @@ function request(app, overrides = {}) {
 
   const result = await writeDictionaryEntry(request(app));
 
-  assert.equal(result.status, "failed");
-  assert.match(result.error, /exists but is not a folder/);
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /not a folder/i);
   assert.equal(writes.length, 0);
-}
-
-// A real folder-creation error must stop the write. Only the narrow race where
-// the expected folder actually appeared is allowed to recover.
-{
-  const { app, writes, objects } = makeApp();
-
-  app.vault.createFolder = async (path) => {
-    throw new Error(`permission denied for ${path}`);
-  };
-
-  const result = await writeDictionaryEntry(request(app));
-
-  assert.equal(result.status, "failed");
-  assert.match(result.error, /permission denied/);
-  assert.equal(writes.length, 0);
-  assert.equal(objects.size, 0);
+  assert.ok(objects.has("Languages/Test/Dictionary"));
 }
 
 // If the preferred part-of-speech homograph path is already occupied, the
@@ -401,10 +415,15 @@ function request(app, overrides = {}) {
 //
 // buildContent() is Workbench-owned code rather than creator input, but treating
 // it as a possible failure boundary keeps the persistence layer conservative:
-// a programming/template error should not leave empty dictionary directories
-// behind.
+// a programming/template error should not leave a partial lexical note behind.
 {
-  const { app, writes, objects } = makeApp();
+  const { app, writes, objects } = makeApp({
+    folders: [
+      "Languages",
+      "Languages/Test",
+      "Languages/Test/Dictionary",
+    ],
+  });
 
   const result = await writeDictionaryEntry(
     request(app, {
@@ -417,10 +436,10 @@ function request(app, overrides = {}) {
   assert.equal(result.status, "failed");
   assert.match(result.error, /template generation failed/);
 
-  // Neither the lexical file nor any of its destination folders should exist,
-  // because content is now built before ensureFolderStrict() runs.
+  // The established dictionary hierarchy remains unchanged and no lexical note
+  // is written when Workbench-owned content generation fails.
   assert.equal(writes.length, 0);
-  assert.equal(objects.size, 0);
+  assert.ok(objects.has("Languages/Test/Dictionary"));
 }
 
 
@@ -429,7 +448,13 @@ function request(app, overrides = {}) {
 // stable Workbench convention and that the callback receives the same value
 // that is persisted by this test template.
 {
-  const { app, writes } = makeApp();
+  const { app, writes } = makeApp({
+    folders: [
+      "Languages",
+      "Languages/Test",
+      "Languages/Test/Dictionary",
+    ],
+  });
   let receivedLexemeId;
 
   const result = await writeDictionaryEntry(
@@ -459,7 +484,13 @@ function request(app, overrides = {}) {
 // Disabling portable IDs leaves the content context undefined rather than
 // creating a blank or compatibility identity.
 {
-  const { app } = makeApp();
+  const { app } = makeApp({
+    folders: [
+      "Languages",
+      "Languages/Test",
+      "Languages/Test/Dictionary",
+    ],
+  });
   let receivedLexemeId = "unexpected";
 
   const result = await writeDictionaryEntry(
@@ -487,7 +518,13 @@ function request(app, overrides = {}) {
   try {
     globalThis.crypto = undefined;
 
-    const { app, writes } = makeApp();
+    const { app, writes } = makeApp({
+      folders: [
+        "Languages",
+        "Languages/Test",
+        "Languages/Test/Dictionary",
+      ],
+    });
     let receivedLexemeId = "unexpected";
 
     const result = await writeDictionaryEntry(

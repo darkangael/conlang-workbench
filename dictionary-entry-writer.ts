@@ -1,10 +1,9 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, TFolder } from "obsidian";
 import {
   classifyDictionarySourceAuthority,
   compareDictionaryDefinition,
 } from "./dictionary-source";
 import { joinVaultPath } from "./vault-paths";
-import { ensureVaultFolderStrict } from "./vault-folder-writer";
 import { createPortableLinguisticId } from "./portable-id";
 
 /**
@@ -359,9 +358,10 @@ export function inspectDictionaryEntry(
  * 1. Re-analyze the current destination immediately for this write attempt.
  * 2. Stop on unknown, nonlexical, or otherwise unsafe collisions.
  * 3. Allocate a homograph only for a confirmed different meaning.
- * 4. Build the intended content before performing any vault mutation.
- * 5. Establish the folder immediately before the actual file creation.
- * 6. Use vault.create(), which creates a new source rather than overwriting an
+ * 4. Require the configured dictionary folder to already exist as a folder.
+ * 5. Build the intended content before performing any vault mutation.
+ * 6. Re-check that folder immediately before the actual file creation.
+ * 7. Use vault.create(), which creates a new source rather than overwriting an
  *    existing creator-authored note.
  *
  * Keeping these decisions together prevents individual creation commands from
@@ -408,8 +408,30 @@ export async function writeDictionaryEntry(
   }
 
   /*
+   * Ordinary lexical creation may create a note inside an established
+   * dictionary folder, but it may not establish or resurrect that structural
+   * source boundary. Missing structure requires explicit creator reconciliation
+   * through Repair before lexical creation can continue.
+   */
+  const dictionaryFolder = request.app.vault.getAbstractFileByPath(
+    request.dictionaryFolder,
+  );
+
+  if (!(dictionaryFolder instanceof TFolder)) {
+    return {
+      status: "blocked",
+      error: dictionaryFolder
+        ? `configured dictionary path "${request.dictionaryFolder}" is not a folder. ` +
+          "It was preserved unchanged; repair the language structure before creating lexical entries"
+        : `configured dictionary folder "${request.dictionaryFolder}" is missing. ` +
+          "Repair the language root before creating lexical entries",
+    };
+  }
+
+  /*
    * Portable linguistic identity is attempted only after the fresh destination
-   * analysis above has established that this operation may create a new source.
+   * analysis above has established that this operation may create a new source
+   * and the configured dictionary folder has been confirmed to exist.
    *
    * In particular, an existing same-meaning entry returns before reaching this
    * point, and an unsafe collision also returns before reaching it. Generating
@@ -419,7 +441,7 @@ export async function writeDictionaryEntry(
    * Portable identity remains optional infrastructure. If this runtime lacks
    * randomUUID(), creation continues without lexeme_id and the successful
    * result records that omission for the UI. An unexpected exception from an
-   * available generator is different: it fails closed before folder creation.
+   * available generator is different: it fails closed before vault mutation.
    */
   let content: string;
   let portableIdOmitted = false;
@@ -437,8 +459,8 @@ export async function writeDictionaryEntry(
       }
     }
 
-    // Build before creating folders. A template/programming failure or an
-    // unexpected ID-generation failure must not leave directory changes behind.
+    // Build before the vault mutation. A template/programming failure or an
+    // unexpected ID-generation failure must not leave a partial lexical note.
     content = request.buildContent({ wordOverride, lexemeId });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -449,18 +471,23 @@ export async function writeDictionaryEntry(
     };
   }
 
-  try {
-    // Folder creation is delayed until every read-only authority decision and
-    // content-generation step has succeeded.
-    await ensureVaultFolderStrict(request.app, request.dictionaryFolder);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  /*
+   * Re-check immediately before mutation rather than trusting the earlier
+   * folder observation. A creator may move, rename, or remove the configured
+   * source while UI work is in progress; that change must revoke this write.
+   */
+  const currentDictionaryFolder = request.app.vault.getAbstractFileByPath(
+    request.dictionaryFolder,
+  );
 
+  if (!(currentDictionaryFolder instanceof TFolder)) {
     return {
-      status: "failed",
-      error:
-        `couldn't prepare dictionary folder ` +
-        `"${request.dictionaryFolder}": ${message}`,
+      status: "blocked",
+      error: currentDictionaryFolder
+        ? `configured dictionary path "${request.dictionaryFolder}" is no longer a folder. ` +
+          "It was preserved unchanged; repair the language structure before creating lexical entries"
+        : `configured dictionary folder "${request.dictionaryFolder}" is no longer present. ` +
+          "Repair the language root before creating lexical entries",
     };
   }
 

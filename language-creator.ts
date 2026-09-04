@@ -1,5 +1,7 @@
 import { App, TFolder } from "obsidian";
 import type { LanguageConfig } from "./types";
+import { findConfiguredLanguageWorkbenchIDConflict } from "./language-identity";
+import { createConfiguredLanguageWorkbenchID } from "./workbench-id";
 import {
   ensureVaultFolderStrict,
   inspectVaultFolderPaths,
@@ -184,6 +186,16 @@ export async function createStandardLanguage(
     name: languageName,
 
     /*
+     * Establish configured-language identity before this LanguageConfig can be
+     * registered in settings. The name/root are only the creation seed; later
+     * authorized rename or repair operations preserve this stored ID unchanged.
+     *
+     * This local Workbench identity is distinct from a Language Profile's
+     * portable `language_id`, which belongs to creator-authored language data.
+     */
+    workbenchID: createConfiguredLanguageWorkbenchID(languageName, paths.root),
+
+    /*
      * Record the structural ownership boundary independently from the display
      * name. A later settings-controlled language rename therefore does not
      * silently move authority to a different vault subtree.
@@ -208,6 +220,28 @@ export async function createStandardLanguage(
 
     sheets: [],
   };
+
+  /*
+   * The generated local Workbench ID must not already belong to another
+   * configured language.
+   *
+   * This check is deliberately before every vault existence/preflight/mutation
+   * step. A local identity collision is settings-authority ambiguity and cannot
+   * authorize creation of even an otherwise-valid folder structure.
+   */
+  const identityConflict = findConfiguredLanguageWorkbenchIDConflict(
+    language.workbenchID!,
+    existingLanguages,
+  );
+
+  if (identityConflict) {
+    return {
+      status: "blocked",
+      error:
+        `configured language Workbench ID "${language.workbenchID}" is ` +
+        `already claimed by "${identityConflict.name}"`,
+    };
+  }
 
   /*
    * A configured language owns its complete Languages/<root> subtree.

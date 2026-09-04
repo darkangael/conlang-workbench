@@ -7,7 +7,14 @@
 // Expand/collapse state is preserved across the full-tab re-renders that most
 // edits trigger.
 
-import { App, PluginSettingTab, Setting, Notice, Modal } from "obsidian";
+import {
+  App,
+  PluginSettingTab,
+  Setting,
+  Notice,
+  Modal,
+  TFolder,
+} from "obsidian";
 import type ConlangPlugin from "./main";
 import {
   ConlangSettings,
@@ -21,6 +28,8 @@ import {
   confirmLanguageRename,
   showLanguageRenameBlocked,
 } from "./language-rename-modal";
+import { chooseLanguageRootAction } from "./language-root-action";
+import { confirmLanguageRootRecreation } from "./language-root-recreation-modal";
 import { confirmDeletion } from "./delete-confirm-modal";
 import { choosePortableIdsForNewLanguage } from "./portable-id-choice-modal";
 import type { CanonicalFolderSetting } from "./language-source-state";
@@ -731,6 +740,135 @@ export class ConlangSettingTab extends PluginSettingTab {
           "Made Up Words: language data failed to reload; the previous language-root configuration was restored. Created folders were preserved. Check the developer console.",
         );
         this.rerender();
+        return;
+    }
+  }
+
+  /**
+   * Ask the creator to explicitly recreate one configured language root that
+   * is currently missing.
+   *
+   * This settings-layer method owns presentation only. The plugin transaction
+   * holds the shared settings-authority queue, calculates the planner twice,
+   * revalidates the exact LanguageConfig after confirmation, performs the full
+   * hierarchy preflight, and delegates the final root race to the specialized
+   * writer.
+   *
+   * Recreate does not search for, move, adopt, or delete creator-authored data.
+   * It creates a new canonical root only at the already-configured location.
+   */
+  private async recreateLanguageRoot(lang: LanguageConfig): Promise<void> {
+    const wasActive = this.plugin.settings.activeLanguages.includes(lang.name);
+
+    const result = await this.plugin.recreateLanguageRoot(
+      lang,
+      (approvedName, approvedRoot) =>
+        confirmLanguageRootRecreation(this.app, approvedName, approvedRoot),
+    );
+
+    switch (result.status) {
+      case "cancelled":
+        return;
+
+      case "target-missing":
+        new Notice(
+          "Made Up Words: the language is no longer configured, so its root was not recreated.",
+        );
+        this.rerender();
+        return;
+
+      case "target-changed":
+        new Notice(
+          "Made Up Words: the language changed while root recreation confirmation was open. No root was recreated.",
+        );
+        this.rerender();
+        return;
+
+      case "blocked":
+        /*
+         * Planner, hierarchy-preflight, and final filesystem race failures all
+         * preserve their precise explanation. Rerender as well because a common
+         * race outcome is that the root appeared while confirmation was open;
+         * in that case Repair should become the visible action immediately.
+         */
+        new Notice(`Made Up Words: ${result.detail}`);
+        this.rerender();
+        return;
+
+      case "root-establishment-failed":
+        /*
+         * The specialized writer could not positively establish this
+         * transaction's ownership boundary. No child-folder authority was
+         * granted, so do not imply that Repair can safely continue from here.
+         */
+        console.error(
+          "Made Up Words: language-root recreation failed before root establishment:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the language root could not be safely recreated. No child folders were established by this operation. Check the developer console.",
+        );
+        this.rerender();
+        return;
+
+      case "folder-establishment-failed":
+        /*
+         * Root ownership was positively established before additive child
+         * creation began. Some canonical children may therefore exist already.
+         * Preserve them and direct the creator to ordinary Repair, whose
+         * authority starts from an existing configured root.
+         */
+        console.error(
+          "Made Up Words: recreated language root but could not establish all canonical child folders:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the language root was recreated, but not all standard folders could be established. Existing folders were preserved; use Repair language root to finish restoring the structure.",
+        );
+        this.rerender();
+        return;
+
+      case "reload-blocked":
+        /*
+         * Physical recreation succeeded, but H3 source preflight refused to
+         * replace the active runtime. Settings never changed and the previous
+         * runtime remains authoritative.
+         */
+        new Notice(
+          "Made Up Words: the language root and standard folders were recreated, but the active language data could not be safely reloaded. The previous runtime remains in use.",
+        );
+        this.rerender();
+        return;
+
+      case "reload-failed":
+        console.error(
+          "Made Up Words: recreated language root but active runtime reload failed:",
+          result.error,
+        );
+        new Notice(
+          "Made Up Words: the language root and standard folders were recreated, but language data failed to reload. The previous runtime remains in use. Check the developer console.",
+        );
+        this.rerender();
+        return;
+
+      case "applied":
+        /*
+         * Active recreation also established replacement runtime inventories.
+         * Inactive languages intentionally stop after physical structure is
+         * recreated and will load normally if activated later.
+         */
+        if (wasActive) {
+          this.plugin.refreshPanel();
+          this.plugin.refreshHighlights();
+        }
+
+        this.rerender();
+
+        new Notice(
+          wasActive
+            ? `Made Up Words: recreated "${result.name}" and reloaded ${result.dictionaryCount ?? 0} dictionary entries across active languages.`
+            : `Made Up Words: recreated the language root for "${result.name}". It remains inactive.`,
+        );
         return;
     }
   }
@@ -1735,16 +1873,57 @@ export class ConlangSettingTab extends PluginSettingTab {
           );
         }),
       )
-      .addButton((b) =>
-        b
-          .setButtonText("Repair language root")
-          .setTooltip(
-            "Restore this language's standard folders and canonical source paths inside its existing owned root.",
-          )
-          .onClick(async () => {
-            await this.repairLanguageRoot(lang);
-          }),
-      )
+      .addButton((b) => {
+        /*
+         * Translate the current Obsidian vault snapshot into the small abstract
+         * path-state vocabulary owned by the presentation helper.
+         *
+         * This is still presentation only. Repair and Recreate independently
+         * recalculate their authoritative planners when the creator invokes
+         * them, so a filesystem change after this card renders cannot grant
+         * mutation authority.
+         */
+        const action = chooseLanguageRootAction(lang.rootFolder, (root) => {
+          const existing = this.app.vault.getAbstractFileByPath(root);
+
+          if (!existing) return "missing";
+          return existing instanceof TFolder ? "folder" : "other";
+        });
+
+        switch (action.status) {
+          case "unavailable":
+            b.setButtonText("Language root unavailable")
+              .setTooltip(action.detail)
+              .setDisabled(true);
+            return;
+
+          case "repair":
+            b.setButtonText("Repair language root")
+              .setTooltip(
+                "Restore this language's standard folders and canonical source paths inside its existing owned root.",
+              )
+              .onClick(async () => {
+                await this.repairLanguageRoot(lang);
+              });
+            return;
+
+          case "recreate":
+            b.setButtonText("Recreate language root")
+              .setTooltip(
+                "Create a new standard root at this language's already-configured location. This does not search for or adopt a moved root.",
+              )
+              .onClick(async () => {
+                await this.recreateLanguageRoot(lang);
+              });
+            return;
+
+          case "blocked":
+            b.setButtonText("Language root blocked")
+              .setTooltip(action.detail)
+              .setDisabled(true);
+            return;
+        }
+      })
       .addButton((b) => {
         b.setButtonText("Remove language").onClick(async () => {
           await this.removeLanguage(lang);
