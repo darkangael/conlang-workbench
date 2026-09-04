@@ -34,10 +34,7 @@ import {
   prepareLanguageRuntime,
   type LanguageRuntimeCandidate,
 } from "./language-runtime";
-import {
-  loadLanguageProfile,
-  validateLanguageProfilePath,
-} from "./language-profile";
+import { validateLanguageProfilePath } from "./language-profile";
 import { validateVaultRelativePath } from "./vault-paths";
 import { isWatchedLanguageSourcePath } from "./language-source-watch";
 import { findInflection, InflectionMatch } from "./inflection";

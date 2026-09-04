@@ -823,7 +823,7 @@ export class ConlangSettingTab extends PluginSettingTab {
           result.error,
         );
         new Notice(
-          "Made Up Words: the language root was recreated, but not all standard folders could be established. Existing folders were preserved; use Repair language root to finish restoring the structure.",
+          "Made Up Words: the language root was recreated, but not all standard folders could be established. Existing folders were preserved; repair the language root to finish restoring the structure.",
         );
         this.rerender();
         return;

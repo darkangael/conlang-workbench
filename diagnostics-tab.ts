@@ -127,7 +127,7 @@ export class DiagnosticsTab {
         text: "Open note",
       });
 
-      openButton.addEventListener("click", async () => {
+      openButton.addEventListener("click", () => {
         const file = this.plugin.app.vault.getAbstractFileByPath(group.path);
         if (!(file instanceof TFile)) {
           new Notice(
@@ -137,7 +137,10 @@ export class DiagnosticsTab {
           return;
         }
 
-        await this.plugin.app.workspace.getLeaf(false).openFile(file);
+        // DOM event listeners return void. Explicitly discard the workspace
+        // promise rather than making the listener itself async, while keeping
+        // the same fire-and-forget note-opening behavior.
+        void this.plugin.app.workspace.getLeaf(false).openFile(file);
       });
     }
   }

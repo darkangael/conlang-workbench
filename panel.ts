@@ -42,7 +42,6 @@ import { resolveLexicalPart } from "./lexical-part-relationships";
 import {
   glossEnglishToConlang,
   glossConlangToEnglish,
-  renderTransliterationString,
   GlossToken,
 } from "./gloss";
 
@@ -1488,6 +1487,11 @@ export class TranslationPanelView extends ItemView {
           .querySelectorAll(".conlang-browser-segment")
           .forEach((el) => el.removeClass("active"));
         btn.addClass("active");
+
+        // Copy currently has a faithful plain-text representation only for
+        // Transliterate mode. Keep the button synchronized with the
+        // representation the creator is actually viewing.
+        this.updateTranslatorCopyState();
         this.runTranslatorTranslation();
       });
     }
@@ -1510,6 +1514,11 @@ export class TranslationPanelView extends ItemView {
       () => void this.copyTranslation(),
     );
 
+    // Gloss is the default mode. Establish the Copy boundary immediately so
+    // the UI does not offer an operation that cannot faithfully represent the
+    // rich Gloss information as plain text.
+    this.updateTranslatorCopyState();
+
     // Output area: either a gloss render (rich token list) or a flat string
     this.translatorOutputEl = this.translatorEl.createDiv({
       cls: "conlang-translator-output",
@@ -1517,6 +1526,22 @@ export class TranslationPanelView extends ItemView {
 
     this.updateTranslatorLabels();
     this.runTranslatorTranslation();
+  }
+
+  /**
+   * Keep clipboard availability aligned with the current translator mode.
+   *
+   * Gloss exposes richer information such as ambiguity, candidate choices,
+   * sense details, and warning labels. Until Workbench defines a plain-text
+   * representation that preserves those semantics, Copy must not silently
+   * substitute the flatter Transliterate representation.
+   */
+  private updateTranslatorCopyState() {
+    const canCopy = this.translatorMode === "transliterate";
+    this.translatorCopyBtn.disabled = !canCopy;
+    this.translatorCopyBtn.title = canCopy
+      ? "Copy the transliteration output to your clipboard."
+      : "Gloss mode is rich content and does not yet have a faithful plain-text copy format.";
   }
 
   /**
@@ -1979,31 +2004,17 @@ export class TranslationPanelView extends ItemView {
    * gloss mode is rich and not copyable as plain text).
    */
   private async copyTranslation() {
-    if (this.translatorMode !== "transliterate") {
-      // Build the flat string from current tokens
-      const input = this.translatorInput;
-      if (!input.trim()) return;
-      const lang = this.plugin.getActiveLanguage();
-      const tokens =
-        this.translatorDirection === "english-to-conlang"
-          ? glossEnglishToConlang(input, this.plugin.dictionary, lang)
-          : glossConlangToEnglish(input, this.plugin.dictionary, lang);
-      const text = renderTransliterationString(tokens);
-      try {
-        await navigator.clipboard.writeText(text);
-        const original = this.translatorCopyBtn.textContent ?? "Copy";
-        this.translatorCopyBtn.setText("Copied!");
-        this.translatorCopyBtn.disabled = true;
-        window.setTimeout(() => {
-          this.translatorCopyBtn.setText(original);
-          this.translatorCopyBtn.disabled = false;
-        }, 1200);
-      } catch {
-        // clipboard unavailable
-      }
-      return;
-    }
-    const text = this.translatorOutputEl?.textContent ?? "";
+    // Gloss currently has no faithful plain-text representation. Enforce the
+    // same boundary here as on the disabled button so an unexpected direct
+    // call cannot silently flatten richer Gloss information into Transliterate.
+    if (this.translatorMode !== "transliterate") return;
+
+    // Copy only the rendered transliteration itself. The surrounding output
+    // element also contains explanatory UI text that is useful on screen but
+    // is not part of the translation the creator asked to copy.
+    const text =
+      this.translatorOutputEl?.querySelector(".conlang-translit")
+        ?.textContent ?? "";
     if (!text || this.translatorOutputEl?.hasClass("is-empty")) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -2012,7 +2023,9 @@ export class TranslationPanelView extends ItemView {
       this.translatorCopyBtn.disabled = true;
       window.setTimeout(() => {
         this.translatorCopyBtn.setText(original);
-        this.translatorCopyBtn.disabled = false;
+        // Re-evaluate the active mode rather than blindly enabling Copy. The
+        // creator may have switched back to Gloss while "Copied!" was shown.
+        this.updateTranslatorCopyState();
       }, 1200);
     } catch {
       // ignore
@@ -2412,9 +2425,9 @@ export class TranslationPanelView extends ItemView {
 
     const backButton = actions.createEl("button", {
       cls: "conlang-panel-btn",
-      text: "← Back to dictionary",
+      text: "← back to dictionary",
     });
-    backButton.title = "Return to the current Dictionary search and filters.";
+    backButton.title = "Return to the current dictionary search and filters.";
     backButton.addEventListener("click", () => {
       this.selectedDictionaryEntryPath = null;
       this.renderBrowser();
@@ -2424,7 +2437,7 @@ export class TranslationPanelView extends ItemView {
       cls: "conlang-panel-btn conlang-panel-btn-primary",
       text: "Open note",
     });
-    openButton.title = "Open this entry's existing Markdown source note.";
+    openButton.title = "Open this entry's existing markdown source note.";
     openButton.addEventListener("click", () => {
       this.openDictionaryEntrySource(entry);
     });

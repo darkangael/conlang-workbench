@@ -1851,31 +1851,100 @@ authority.
 
 ### Exported Fields
 
-Document which Workbench fields each external format can represent.
+No full-language, file-based, or external-format exporter is implemented in the
+current Workbench.
+
+The implemented outward-data operation in scope is Translator clipboard Copy.
+Copy is available only in Transliterate mode and exports the rendered flat
+transliteration text shown inside the `.conlang-translit` output element.
+
+Gloss mode is intentionally not copied as plain text because its representation
+contains materially richer information than the flat transliteration form.
 
 ### Unsupported Data
 
-Identify information that cannot be represented externally.
+The current clipboard operation does not provide a faithful plain-text
+representation of Gloss mode.
+
+Gloss may expose ambiguity, multiple dictionary candidates, matched senses,
+inflection information, cypher-fallback warnings, no-match warnings, and other
+explanatory metadata. Flattening that representation through the Transliterate
+renderer would discard or obscure those distinctions.
+
+No external linguistic interchange format is currently implemented, so there
+is no present claim that Workbench lexical, morphological, phonological, or
+example data can be represented losslessly outside its canonical Markdown
+sources.
 
 ### Lossiness Disclosure
 
-Warn or report when export necessarily omits or transforms information.
+Transliterate mode is explicitly presented as a flat approximation rather than
+a fluent or grammatically complete translation. Its UI explains that dictionary
+words are substituted directly and unmatched words may use cypher placeholders
+that preserve sound rather than conlang grammar.
+
+Clipboard Copy now follows that same representation boundary. It is available
+only while Transliterate mode is active. Gloss mode disables Copy and explains
+that no faithful plain-text copy format exists yet.
+
+The copy implementation also reads only the rendered `.conlang-translit`
+content rather than the surrounding output container, so explanatory UI footer
+text is not included in the creator's copied translation.
 
 ### Source Safety
 
-Export must not alter canonical Workbench data merely to fit another format.
+Translator clipboard Copy is observational with respect to canonical Workbench
+data. It reads existing runtime/rendered translation state and writes text only
+to the system clipboard.
+
+The inspected operation does not create, modify, rename, delete, normalize, or
+rewrite creator-authored Markdown or persisted Workbench configuration merely
+to produce clipboard output.
 
 ### Round-Trip Expectations
 
-Do not imply lossless round trips unless they are actually supported and tested.
+No import/export round trip is currently implemented.
+
+Workbench therefore makes no claim that clipboard output can reconstruct
+canonical lexical sources or that any external format can round-trip all
+Workbench information without loss.
+
+Any future Gloss copy representation, full-language exporter, or external-format
+adapter must reopen this section and document represented fields, unsupported
+data, transformations, lossiness disclosure, source-safety boundaries, and
+tested round-trip expectations before being described as lossless.
 
 ### Findings
 
-None recorded yet.
+**DS-013-L1 — Gloss-mode Copy silently substituted lossy Transliterate output
+(Low). Remediated and verified.**
+
+Before remediation, invoking Copy while the Translator displayed Gloss mode
+did not copy the richer Gloss representation or refuse the unsupported
+operation. It regenerated a flat string through the Transliterate renderer,
+silently discarding ambiguity, candidate, sense, warning, and explanatory
+information represented by Gloss.
+
+Copy is now disabled in Gloss mode with an explicit explanation, and
+`copyTranslation()` independently fails closed unless Transliterate mode is
+active. The flat transliteration renderer remains intact for its legitimate
+translation role and is no longer used by `panel.ts` as a Gloss-copy shortcut.
+
+**DS-013-L2 — Transliterate Copy included explanatory UI footer text (Low).
+Remediated and verified.**
+
+Before remediation, Transliterate Copy read `textContent` from the complete
+translator output container. That container holds both the rendered
+transliteration and explanatory UI text, so clipboard output could include text
+that was not part of the requested translation.
+
+Copy now reads only the rendered `.conlang-translit` child. Production-bundle
+inspection verified the selector and mode-aware Copy boundary after build.
 
 ### Status
 
-**Not Reviewed**
+**Pass — two Low clipboard-fidelity findings were remediated and verified; no
+full external-format export pathway is currently implemented.**
 
 ---
 
@@ -2143,6 +2212,8 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-013-L1   | Data Safety §13 / export fidelity and lossiness | Remediated and verified | Low | Translator clipboard output and creator interpretation; no canonical source mutation | Gloss-mode Copy could silently substitute the flatter Transliterate representation, discarding ambiguity, candidate, sense, warning, and explanatory information present in the displayed Gloss. | Data Safety §13; `panel.ts`; `gloss.ts`; `test:gloss-rendering`; production build; generated-bundle invariant inspection; restored 14-warning lint baseline | Copy is unavailable in Gloss mode until a faithful plain-text representation exists, and `copyTranslation()` independently fails closed outside Transliterate mode so richer Gloss information cannot be silently flattened for clipboard output. |
+| DS-013-L2   | Data Safety §13 / export fidelity and lossiness | Remediated and verified | Low | Translator clipboard output only; no canonical source mutation | Transliterate Copy read the complete translator output container, allowing explanatory UI footer text to be copied together with the rendered transliteration. | Data Safety §13; `panel.ts`; `test:gloss-rendering`; production build; generated `.conlang-translit` selector verification; restored 14-warning lint baseline | Clipboard output now reads only the rendered `.conlang-translit` child, keeping explanatory interface text out of the creator's copied translation. |
 | DS-011-H1   | Data Safety §11 / moves, renames, and path changes | Remediated and verified | Low | Configured dictionary structure and newly created lexical notes; existing creator-authored sources are preserved | Ordinary lexical creation could recreate a missing stale canonical dictionary folder and write new notes there after the creator had moved the original source elsewhere. | Data Safety §11; `dictionary-entry-writer.ts`; `scripts/test-dictionary-entry-writer.mjs`; language-root Repair/Recreate regressions; language creator and membership regressions; persisted-settings and frontmatter parsing regressions; production build; `git diff --check`; implementation commit `86cbf88` | Lexical persistence remains centralized in the dictionary writer, but ordinary note creation now requires an already-established canonical dictionary folder. Missing or replaced structure blocks creation and directs the creator to explicit Repair/Recreate authority instead of silently reconstructing the configured path. |
 | DS-010-H1   | Data Safety §10 / broken references and missing targets | Remediated and verified | Low | Dictionary details display and Open note navigation; no creator-Markdown mutation | Lexical compound parts formerly used an unscoped singular lookup, allowing cross-language display or an arbitrarily first same-language target while missing relationships lacked persistent diagnostics. | Data Safety §10; `lexical-part-relationships.ts`; `source-diagnostics.ts`; `panel.ts`; `test:lexical-part-relationships`; `test:source-diagnostics`; `test:dictionary-language-scope`; Selection and lexical-senses regressions; production build; permanent DS-010 fixtures; runtime zero/one/many interaction verification; matching pre/post source hashes; commits `07c7d91`, `1d45a1a`, and `8cc53ac` | Resolution is now strict to the owning lexical language and preserves unresolved, unique, and ambiguous cardinality. Only one proven target can navigate; unresolved and ambiguous relationships remain visible, inert, and persistently diagnosed without rewriting creator sources. |
 | DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Remediated and verified | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved and now receive domain-aware warnings; phonological relationships distinguish missing, unique, and ambiguous targets without selecting or rewriting a source. | Data Safety §9; `linguistic-identity-diagnostics.ts`; `source-diagnostics.ts`; `scripts/test-source-diagnostics.mjs`; all package regression suites; production build; permanent DS-009 duplicate-unit fixture; runtime Diagnostics/Open note verification; matching pre/post source hashes; commits `7dcadcf` and `2a6553f` | Observational diagnostics now report every affected profile, top-level object source, owning lexical note, and ambiguous realization. Identity domains remain separate, every creator source is preserved, and future mutation must still prove one exact target before acquiring authority. |

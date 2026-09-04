@@ -1494,7 +1494,7 @@ function createPortableLinguisticId(prefix) {
   if (!normalizedPrefix) {
     throw new Error("portable linguistic ID prefix must not be blank");
   }
-  const cryptoApi = globalThis.crypto;
+  const cryptoApi = typeof crypto !== "undefined" ? crypto : void 0;
   if (!cryptoApi || typeof cryptoApi.randomUUID !== "function") {
     return {
       status: "unsupported"
@@ -5416,7 +5416,7 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
           result.error
         );
         new import_obsidian15.Notice(
-          "Made Up Words: the language root was recreated, but not all standard folders could be established. Existing folders were preserved; use Repair language root to finish restoring the structure."
+          "Made Up Words: the language root was recreated, but not all standard folders could be established. Existing folders were preserved; repair the language root to finish restoring the structure."
         );
         this.rerender();
         return;
@@ -8065,7 +8065,7 @@ var DiagnosticsTab = class {
         cls: "conlang-panel-btn",
         text: "Open note"
       });
-      openButton.addEventListener("click", async () => {
+      openButton.addEventListener("click", () => {
         const file = this.plugin.app.vault.getAbstractFileByPath(group.path);
         if (!(file instanceof import_obsidian19.TFile)) {
           new import_obsidian19.Notice(
@@ -8074,7 +8074,7 @@ var DiagnosticsTab = class {
           );
           return;
         }
-        await this.plugin.app.workspace.getLeaf(false).openFile(file);
+        void this.plugin.app.workspace.getLeaf(false).openFile(file);
       });
     }
   }
@@ -9247,6 +9247,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
         this.translatorMode = m.value;
         modeGroup.querySelectorAll(".conlang-browser-segment").forEach((el) => el.removeClass("active"));
         btn.addClass("active");
+        this.updateTranslatorCopyState();
         this.runTranslatorTranslation();
       });
     }
@@ -9265,11 +9266,25 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       "click",
       () => void this.copyTranslation()
     );
+    this.updateTranslatorCopyState();
     this.translatorOutputEl = this.translatorEl.createDiv({
       cls: "conlang-translator-output"
     });
     this.updateTranslatorLabels();
     this.runTranslatorTranslation();
+  }
+  /**
+   * Keep clipboard availability aligned with the current translator mode.
+   *
+   * Gloss exposes richer information such as ambiguity, candidate choices,
+   * sense details, and warning labels. Until Workbench defines a plain-text
+   * representation that preserves those semantics, Copy must not silently
+   * substitute the flatter Transliterate representation.
+   */
+  updateTranslatorCopyState() {
+    const canCopy = this.translatorMode === "transliterate";
+    this.translatorCopyBtn.disabled = !canCopy;
+    this.translatorCopyBtn.title = canCopy ? "Copy the transliteration output to your clipboard." : "Gloss mode is rich content and does not yet have a faithful plain-text copy format.";
   }
   /**
    * Update the source/target language labels based on the current direction.
@@ -9647,26 +9662,8 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
    */
   async copyTranslation() {
     var _a, _b, _c, _d, _e;
-    if (this.translatorMode !== "transliterate") {
-      const input = this.translatorInput;
-      if (!input.trim()) return;
-      const lang = this.plugin.getActiveLanguage();
-      const tokens = this.translatorDirection === "english-to-conlang" ? glossEnglishToConlang(input, this.plugin.dictionary, lang) : glossConlangToEnglish(input, this.plugin.dictionary, lang);
-      const text2 = renderTransliterationString(tokens);
-      try {
-        await navigator.clipboard.writeText(text2);
-        const original = (_a = this.translatorCopyBtn.textContent) != null ? _a : "Copy";
-        this.translatorCopyBtn.setText("Copied!");
-        this.translatorCopyBtn.disabled = true;
-        window.setTimeout(() => {
-          this.translatorCopyBtn.setText(original);
-          this.translatorCopyBtn.disabled = false;
-        }, 1200);
-      } catch (e) {
-      }
-      return;
-    }
-    const text = (_c = (_b = this.translatorOutputEl) == null ? void 0 : _b.textContent) != null ? _c : "";
+    if (this.translatorMode !== "transliterate") return;
+    const text = (_c = (_b = (_a = this.translatorOutputEl) == null ? void 0 : _a.querySelector(".conlang-translit")) == null ? void 0 : _b.textContent) != null ? _c : "";
     if (!text || ((_d = this.translatorOutputEl) == null ? void 0 : _d.hasClass("is-empty"))) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -9675,7 +9672,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       this.translatorCopyBtn.disabled = true;
       window.setTimeout(() => {
         this.translatorCopyBtn.setText(original);
-        this.translatorCopyBtn.disabled = false;
+        this.updateTranslatorCopyState();
       }, 1200);
     } catch (e) {
     }
@@ -9986,9 +9983,9 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
     });
     const backButton = actions.createEl("button", {
       cls: "conlang-panel-btn",
-      text: "\u2190 Back to dictionary"
+      text: "\u2190 back to dictionary"
     });
-    backButton.title = "Return to the current Dictionary search and filters.";
+    backButton.title = "Return to the current dictionary search and filters.";
     backButton.addEventListener("click", () => {
       this.selectedDictionaryEntryPath = null;
       this.renderBrowser();
@@ -9997,7 +9994,7 @@ var _TranslationPanelView = class _TranslationPanelView extends import_obsidian2
       cls: "conlang-panel-btn conlang-panel-btn-primary",
       text: "Open note"
     });
-    openButton.title = "Open this entry's existing Markdown source note.";
+    openButton.title = "Open this entry's existing markdown source note.";
     openButton.addEventListener("click", () => {
       this.openDictionaryEntrySource(entry);
     });

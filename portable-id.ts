@@ -41,7 +41,11 @@ export function createPortableLinguisticId(
     throw new Error("portable linguistic ID prefix must not be blank");
   }
 
-  const cryptoApi = globalThis.crypto;
+  // Portable-ID generation is intentionally runtime-neutral. Check the
+  // standards-based global capability directly rather than binding this helper
+  // to a particular Obsidian window. This also preserves the Node-backed
+  // regression tests, which install or remove the global crypto capability.
+  const cryptoApi = typeof crypto !== "undefined" ? crypto : undefined;
 
   if (!cryptoApi || typeof cryptoApi.randomUUID !== "function") {
     return {
