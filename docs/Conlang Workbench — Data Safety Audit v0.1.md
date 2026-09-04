@@ -1757,36 +1757,93 @@ production builds; `git diff --check`; and implementation commit `86cbf88`.
 
 ### Current Imports
 
-Inventory any implemented import pathways.
+No user-facing language-import, file-import, external-format import, or
+existing-root adoption pathway is implemented in the current Workbench.
+
+The implemented language actions are Add Language, Reload Language Data, Repair
+Language Root, Recreate Language Root, Rename, and Remove. Add Language creates
+a new structural root and deliberately refuses to adopt an already-existing
+unconfigured root. Repair, Recreate, and Rename likewise do not gain authority
+to adopt such a root.
+
+Production comments explicitly reserve adoption of an existing unconfigured
+language root for a separate future Import Language authority path. The current
+plain-data source adapters are designed so that future import adapters may
+reuse them, but that architectural seam is not itself an import operation.
+
+Configured creator-authored Markdown is instead read in place as canonical
+source data. Dictionary, morpheme, phonology, and linguistic-example loaders
+build runtime and diagnostic state from existing notes beneath configured
+source folders rather than copying those notes into a new import destination.
 
 ### Destination
 
-Determine where imported data is written or stored.
+Not applicable to the current implementation because there is no import
+operation and therefore no import destination.
+
+Ordinary canonical-source loading reads notes where they already exist.
+Language creation and structural reconciliation have separately audited
+destination authority and do not serve as implicit import or adoption paths.
 
 ### Collision Handling
 
-Review behavior when imported IDs, filenames, or lemmas already exist.
+Not applicable to a current import pathway.
+
+Existing unconfigured language roots are treated as ownership boundaries rather
+than opportunities for implicit adoption. Add Language blocks when the proposed
+root already exists, and the other structural operations do not convert that
+collision into Import Language authority.
+
+Identity and duplicate-source behavior for canonical Workbench data is covered
+by the duplicate-ID and source-authority audits. A future importer must not
+assume that matching filenames, lemmas, source IDs, Workbench IDs, or portable
+linguistic IDs authorize overwrite, merge, replacement, or arbitrary target
+selection.
 
 ### Preview
 
-Broad imports should ideally show intended additions and conflicts first.
+No import preview exists because no import operation exists.
+
+A future broad import or adoption workflow must review whether its mutation
+scope requires a creator-visible preview of intended additions, destination
+choices, conflicts, unsupported data, and any other material consequences
+before mutation.
 
 ### Preservation
 
-Do not overwrite existing canonical data merely because imported data contains
-the same key.
+Current canonical-source ingestion is observational. The inspected dictionary,
+morpheme, phonology, and linguistic-example loader/source-adapter modules
+contain no vault create, modify, process, rename, delete, trash, folder-create,
+or frontmatter-processing mutation API.
+
+Recognized malformed or context-rejected sources are retained for source-facing
+state and diagnostics rather than rewritten merely to make them load cleanly.
+Runtime language resolution changes in-memory interpretation only and does not
+authorize rewriting creator Markdown or backfilling metadata.
+
+Existing creator-authored unconfigured language roots are likewise preserved
+rather than silently claimed by Add Language or structural repair operations.
 
 ### Validation
 
-Malformed or partially unsupported imports should fail safely.
+Current canonical Markdown parsing and source-authority validation belong to
+the existing input, source-authority, identity, and path-safety boundaries
+rather than to an import parser.
+
+No external import format is currently accepted, so malformed or partially
+unsupported import behavior cannot yet be exercised. Any future Import Language
+or external-format importer must reopen this section and establish explicit
+validation, destination authority, collision behavior, preservation rules, and
+failure handling before release.
 
 ### Findings
 
-None recorded yet.
+None. No implemented import pathway currently exercises import mutation
+authority.
 
 ### Status
 
-**Not Reviewed**
+**Not Applicable — no import pathway is implemented in the current Workbench.**
 
 ---
 
