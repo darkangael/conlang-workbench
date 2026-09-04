@@ -1635,31 +1635,121 @@ sources. Relevant commits are `07c7d91`, `1d45a1a`, and `8cc53ac`.
 
 ### Source Paths
 
-Identify models that retain source-note paths.
+Workbench retains vault-relative source paths as observational source identity
+and configured source authority. Linguistic source records derive their local
+Workbench source identity from the complete current vault-relative path, while
+configured language roots and canonical child folders define which filesystem
+locations a language is currently authorized to load.
+
+Portable linguistic IDs and Workbench IDs are separate identity domains and do
+not make a stale configured path authoritative. Path-based source identity is
+therefore allowed to change when a note moves, while stable configured-language
+identity remains associated with the language configuration.
 
 ### File Renames
 
-Test whether indexes refresh correctly after a note is renamed.
+Ordinary linguistic note renames do not require Workbench to rewrite stored
+relationship targets because current implemented linguistic relationships do
+not persist target note paths. Reload reconstructs indexes and source records
+from the current vault state.
+
+Language-root rename is a separate mutating transaction. It proves ownership of
+the existing configured root, moves that established root as one vault object,
+rewrites only configured paths that descend from it, persists the new
+configuration, and reloads active runtime state. Failure handling follows the
+physical state that can still be proven rather than assuming a requested rename
+completed.
 
 ### Folder Moves
 
-Test movement between language folders and configured source folders.
+Moving a configured canonical source folder outside Workbench can make the
+configured path stale. Workbench must not infer that an arbitrarily discovered
+folder is the same creator source merely because its contents or name appear
+similar.
+
+A missing canonical child folder under an existing language root is handled by
+the explicit **Repair language root** workflow. A missing configured language
+root is handled separately by **Recreate language root**, which requires
+confirmation and may create only the exact configured ownership boundary when
+the shared `Languages/` container still exists as a folder.
+
+Recreate does not search for, move, adopt, or delete an alternate folder. If a
+folder appears at the configured root before final mutation authority is
+established, Recreate stops and directs the creator toward Repair instead.
 
 ### Language Reassignment
 
-Ensure explicit language metadata remains authoritative where intended.
+Explicit creator-authored `language:` metadata remains authoritative where the
+source type supports it. Canonical folder membership and configured language
+identity are validated separately so that a moved source is not silently
+reassigned merely because it now appears under another language's configured
+tree.
+
+Language configuration identity is carried by its Workbench ID rather than by
+the display name alone. Rename and root-repair operations preserve that stable
+configuration identity while changing only the paths or names their explicit
+operation owns.
 
 ### Stale References
 
-Determine whether stored paths can become stale or point to unintended notes.
+Configured paths are treated as authority claims, not instructions to recreate
+whatever structure happens to be missing.
+
+Lexical persistence performs destination and collision checks through the
+shared dictionary writer, but an ordinary lexical write may create only the
+new note itself inside an already-established canonical dictionary folder. It
+does not acquire structural-repair authority merely because the configured
+folder is absent.
+
+The writer checks that the configured dictionary destination is still a folder
+before content generation and rechecks it immediately before the final
+`vault.create()`. Missing or replaced structure blocks creation and returns
+creator-facing guidance to repair the language structure instead.
+
+This preserves the architectural role of `writeDictionaryEntry()` as the
+single lexical persistence boundary while keeping canonical structure
+establishment under the explicit Repair/Recreate workflows.
 
 ### Findings
 
-None recorded yet.
+#### DS-011-H1 — Ordinary lexical creation could resurrect a stale canonical dictionary folder
+
+- **Severity:** Low
+- **Impact radius:** Configured dictionary structure and newly created lexical
+  notes; existing creator-authored sources are preserved
+- **Status:** Remediated and verified
+
+The dictionary-entry writer previously used the shared strict folder helper
+before creating a lexical note. If a creator moved the configured canonical
+dictionary folder outside Workbench, the stale configured path could therefore
+be recreated automatically by an otherwise ordinary lexical creation request.
+The new note would then be written into that resurrected path even though the
+creator's existing vocabulary remained at the moved location.
+
+That behavior did not overwrite or delete the moved creator sources, but it
+could establish a second stale canonical structure and later cause Workbench to
+interpret the recreated path as the configured source.
+
+Lexical creation now requires the configured dictionary folder to already
+exist as a folder. A missing path or non-folder collision is preserved and
+blocks the write with Repair guidance. The destination is checked again
+immediately before the final lexical note creation so that a concurrent
+move/removal cannot silently transfer structural authority to the writer.
+
+All production lexical creation flows already surface the writer's structured
+blocked/failed error to the creator, so no separate UI mutation path was
+required. Names inherit the same protection because they use the same
+dictionary-entry persistence boundary.
+
+Verification included the dictionary-entry-writer security regression;
+language-root Repair presentation/state regressions; Recreate planner,
+presentation, state, and writer regressions; language creator and membership
+regressions; persisted-settings and frontmatter parsing regressions; repeated
+production builds; `git diff --check`; and implementation commit `86cbf88`.
 
 ### Status
 
-**Not Reviewed**
+**Pass — DS-011-H1 remediated and verified.**
 
 ---
 
@@ -1996,6 +2086,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-011-H1   | Data Safety §11 / moves, renames, and path changes | Remediated and verified | Low | Configured dictionary structure and newly created lexical notes; existing creator-authored sources are preserved | Ordinary lexical creation could recreate a missing stale canonical dictionary folder and write new notes there after the creator had moved the original source elsewhere. | Data Safety §11; `dictionary-entry-writer.ts`; `scripts/test-dictionary-entry-writer.mjs`; language-root Repair/Recreate regressions; language creator and membership regressions; persisted-settings and frontmatter parsing regressions; production build; `git diff --check`; implementation commit `86cbf88` | Lexical persistence remains centralized in the dictionary writer, but ordinary note creation now requires an already-established canonical dictionary folder. Missing or replaced structure blocks creation and directs the creator to explicit Repair/Recreate authority instead of silently reconstructing the configured path. |
 | DS-010-H1   | Data Safety §10 / broken references and missing targets | Remediated and verified | Low | Dictionary details display and Open note navigation; no creator-Markdown mutation | Lexical compound parts formerly used an unscoped singular lookup, allowing cross-language display or an arbitrarily first same-language target while missing relationships lacked persistent diagnostics. | Data Safety §10; `lexical-part-relationships.ts`; `source-diagnostics.ts`; `panel.ts`; `test:lexical-part-relationships`; `test:source-diagnostics`; `test:dictionary-language-scope`; Selection and lexical-senses regressions; production build; permanent DS-010 fixtures; runtime zero/one/many interaction verification; matching pre/post source hashes; commits `07c7d91`, `1d45a1a`, and `8cc53ac` | Resolution is now strict to the owning lexical language and preserves unresolved, unique, and ambiguous cardinality. Only one proven target can navigate; unresolved and ambiguous relationships remain visible, inert, and persistently diagnosed without rewriting creator sources. |
 | DS-009-H1   | Data Safety §9 / duplicate IDs and identity collisions              | Remediated and verified | Low       | Active linguistic runtime and Diagnostics; no current direct creator-Markdown mutation                                                   | Distinct sources with duplicate stable linguistic identities remain preserved and now receive domain-aware warnings; phonological relationships distinguish missing, unique, and ambiguous targets without selecting or rewriting a source. | Data Safety §9; `linguistic-identity-diagnostics.ts`; `source-diagnostics.ts`; `scripts/test-source-diagnostics.mjs`; all package regression suites; production build; permanent DS-009 duplicate-unit fixture; runtime Diagnostics/Open note verification; matching pre/post source hashes; commits `7dcadcf` and `2a6553f` | Observational diagnostics now report every affected profile, top-level object source, owning lexical note, and ambiguous realization. Identity domains remain separate, every creator source is preserved, and future mutation must still prove one exact target before acquiring authority. |
 | DS-008-H1   | Data Safety §8 / partial failure and runtime atomicity          | Remediated and verified | Medium    | Runtime linguistic state for the active language set; no direct creator-Markdown corruption or deletion                                 | Runtime linguistic reload progressively cleared and rebuilt live profiles and inventories, so an unexpected loader failure could leave mixed or incomplete runtime state until a later successful reload or restart. | Data Safety §8; `scripts/test-language-runtime.mjs`; focused active-language, case, membership, source, profile, removal, root-repair, and rename transaction regressions; production build; commits `f447726` and `78d02bf`             | Runtime reload now prepares complete detached candidate profiles and linguistic inventories before synchronous commit. Reload-aware settings transactions restore prior configuration after blocked or failed candidate preparation, while filesystem rollback follows proven physical state and never deletes additive folders merely to simulate atomicity. |
