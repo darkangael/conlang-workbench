@@ -20,10 +20,23 @@ export interface PersistedSettingsIssue {
   actual: string;
 }
 
+/**
+ * Migration-sensitive facts about the representation that was actually
+ * persisted, captured before current defaults are merged into runtime state.
+ *
+ * Migration must use representation evidence rather than comparing merged
+ * values with today's defaults. A legacy file that omitted `activeLanguages`
+ * is meaningfully different from a modern file that explicitly persisted it.
+ */
+export interface PersistedSettingsPresence {
+  activeLanguages: boolean;
+}
+
 export type PersistedSettingsDecodeResult =
   | {
       status: "valid";
       settings: ConlangSettings;
+      persistedPresence: PersistedSettingsPresence;
     }
   | {
       status: "blocked";
@@ -224,6 +237,29 @@ function validateLanguage(
   }
 
   validateOptionalString(value, "rootFolder", path, issues);
+
+  /*
+   * Structural-root migration uses ABSENCE as its backward-compatibility
+   * signal. Configurations created before rootFolder existed legitimately omit
+   * the field, but no historical Workbench representation used a blank string
+   * to mean the same thing.
+   *
+   * A present blank value therefore represents malformed persisted authority,
+   * not legacy state. Reject it before migration so JavaScript truthiness
+   * cannot silently reinterpret malformed authority as permission to infer and
+   * replace the configured root.
+   */
+  if (
+    typeof value.rootFolder === "string" &&
+    value.rootFolder.trim().length === 0
+  ) {
+    issues.push({
+      path: `${path}.rootFolder`,
+      expected: "nonblank string when present",
+      actual: "blank string",
+    });
+  }
+
   validateOptionalString(value, "morphemeFolder", path, issues);
   validateOptionalString(value, "exampleFolder", path, issues);
   validateOptionalString(value, "phonologyFolder", path, issues);
@@ -316,6 +352,20 @@ export function decodePersistedSettings(
   const record: RuntimeRecord = raw ?? {};
   const issues: PersistedSettingsIssue[] = [];
 
+  /*
+   * Capture migration evidence before defaults are merged below.
+   *
+   * `hasOwnProperty` deliberately distinguishes an omitted legacy field from
+   * an inherited property or from a modern field whose value happens to equal
+   * a default. The decoder still validates the value separately before this
+   * evidence can reach migration.
+   */
+  const persistedPresence: PersistedSettingsPresence = {
+    activeLanguages: Boolean(
+      Object.prototype.hasOwnProperty.call(record, "activeLanguages"),
+    ),
+  };
+
   if (record.languages !== undefined) {
     if (!Array.isArray(record.languages)) {
       addTypeIssue(issues, "settings.languages", "array", record.languages);
@@ -401,5 +451,5 @@ export function decodePersistedSettings(
   // This narrow existing authority never rewrites creator linguistic content.
   normalizeClosedChoiceSettings(settings);
 
-  return { status: "valid", settings };
+  return { status: "valid", settings, persistedPresence };
 }

@@ -24,6 +24,7 @@
     "test:word-scan": "node scripts/test-word-scan.mjs",
     "test:settings-validation": "node scripts/test-settings-validation.mjs",
     "test:persisted-settings-decoder": "node scripts/test-persisted-settings-decoder.mjs",
+    "test:settings-migration": "node scripts/test-settings-migration.mjs",
     "test:persisted-setting-state": "node scripts/test-persisted-setting-state.mjs",
     "test:portable-id-choice-modal": "node scripts/test-portable-id-choice-modal.mjs",
     "test:dictionary-entry-writer": "node scripts/test-dictionary-entry-writer.mjs",

@@ -11266,6 +11266,13 @@ function validateLanguage(value, path, issues) {
     validateRequiredBoolean(value, "includePortableIds", path, issues);
   }
   validateOptionalString(value, "rootFolder", path, issues);
+  if (typeof value.rootFolder === "string" && value.rootFolder.trim().length === 0) {
+    issues.push({
+      path: `${path}.rootFolder`,
+      expected: "nonblank string when present",
+      actual: "blank string"
+    });
+  }
   validateOptionalString(value, "morphemeFolder", path, issues);
   validateOptionalString(value, "exampleFolder", path, issues);
   validateOptionalString(value, "phonologyFolder", path, issues);
@@ -11321,6 +11328,11 @@ function decodePersistedSettings(raw) {
   }
   const record = raw != null ? raw : {};
   const issues = [];
+  const persistedPresence = {
+    activeLanguages: Boolean(
+      Object.prototype.hasOwnProperty.call(record, "activeLanguages")
+    )
+  };
   if (record.languages !== void 0) {
     if (!Array.isArray(record.languages)) {
       addTypeIssue(issues, "settings.languages", "array", record.languages);
@@ -11385,7 +11397,28 @@ function decodePersistedSettings(raw) {
   }
   const settings = settingsRecord;
   normalizeClosedChoiceSettings(settings);
-  return { status: "valid", settings };
+  return { status: "valid", settings, persistedPresence };
+}
+
+// settings-migration.ts
+function migrateLanguageSelectionSettings(settings, evidence) {
+  var _a, _b, _c, _d;
+  const known = new Set(settings.languages.map((language) => language.name));
+  if (!evidence.persistedActiveLanguages && settings.activeLanguage) {
+    settings.activeLanguages = [settings.activeLanguage];
+  }
+  settings.activeLanguages = ((_a = settings.activeLanguages) != null ? _a : []).filter(
+    (name) => known.has(name)
+  );
+  if (settings.activeLanguages.length === 0 && settings.languages.length > 0) {
+    settings.activeLanguages = [settings.languages[0].name];
+  }
+  if (!settings.primaryLanguage || !known.has(settings.primaryLanguage)) {
+    settings.primaryLanguage = (_d = (_c = settings.activeLanguages[0]) != null ? _c : (_b = settings.languages[0]) == null ? void 0 : _b.name) != null ? _d : "";
+  }
+  if (settings.activeLanguages.length > 0 && !settings.activeLanguages.includes(settings.primaryLanguage)) {
+    settings.primaryLanguage = settings.activeLanguages[0];
+  }
 }
 
 // language-source-preflight.ts
@@ -13723,7 +13756,7 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
       );
     }
     this.settings = decoded.settings;
-    this.migrateSettings();
+    this.migrateSettings(decoded.persistedPresence.activeLanguages);
     const identityValidation = validateConfiguredLanguageWorkbenchIdentities(
       this.settings.languages
     );
@@ -13743,12 +13776,14 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
     }
   }
   /**
-   * Migrate older single-active-language settings to the multi-active format.
-   * Runs every load; safe to re-run because it only acts when activeLanguages
-   * is empty or doesn't contain a valid name.
+   * Establish compatibility fields that older settings representations lack.
+   *
+   * `persistedActiveLanguages` records whether the modern multi-active field
+   * actually existed on disk before current defaults were merged. Migration
+   * must not infer that historical fact from the merged value itself.
    */
-  migrateSettings() {
-    var _a, _b, _c, _d;
+  migrateSettings(persistedActiveLanguages) {
+    var _a;
     for (const language of this.settings.languages) {
       if (!language.rootFolder) {
         const inferred = inferLegacyLanguageRoot(language);
@@ -13764,23 +13799,9 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
         );
       }
     }
-    const known = new Set(this.settings.languages.map((l) => l.name));
-    if ((!this.settings.activeLanguages || this.settings.activeLanguages.length === 0) && this.settings.activeLanguage) {
-      this.settings.activeLanguages = [this.settings.activeLanguage];
-    }
-    if (!this.settings.activeLanguages) this.settings.activeLanguages = [];
-    this.settings.activeLanguages = this.settings.activeLanguages.filter(
-      (n) => known.has(n)
-    );
-    if (this.settings.activeLanguages.length === 0 && this.settings.languages.length > 0) {
-      this.settings.activeLanguages = [this.settings.languages[0].name];
-    }
-    if (!this.settings.primaryLanguage || !known.has(this.settings.primaryLanguage)) {
-      this.settings.primaryLanguage = (_d = (_c = this.settings.activeLanguages[0]) != null ? _c : (_b = this.settings.languages[0]) == null ? void 0 : _b.name) != null ? _d : "";
-    }
-    if (this.settings.activeLanguages.length > 0 && !this.settings.activeLanguages.includes(this.settings.primaryLanguage)) {
-      this.settings.primaryLanguage = this.settings.activeLanguages[0];
-    }
+    migrateLanguageSelectionSettings(this.settings, {
+      persistedActiveLanguages
+    });
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -14234,31 +14255,57 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
     );
   }
   /**
-   * Show a one-time welcome notice if this is the user's first time loading
-   * the plugin. The notice points them at the ribbon icon and the panel —
-   * Autumn flagged that the side panel was hard to discover.
+   * Show the first-run welcome notice without granting cosmetic lifecycle
+   * state authority to rewrite the complete plugin settings object.
    *
-   * The flag persists in settings so the message only shows once per install.
+   * Current Obsidian versions provide vault-local storage specifically for
+   * small isolated values like this marker. The plugin's declared compatibility
+   * floor predates that API, however, so runtime feature detection is required.
+   *
+   * Older data.json files may contain hasSeenWelcome. That value remains
+   * read-only compatibility evidence: true still means the creator has already
+   * seen the notice, but this method never mutates the legacy settings field.
    */
   async maybeShowWelcome() {
-    const result = await this.settingsAuthorityQueue.run(
-      () => applyPersistedSettingState({
-        read: () => this.settings.hasSeenWelcome,
-        write: (value) => {
-          this.settings.hasSeenWelcome = value;
-        },
-        requested: true,
-        save: () => this.saveData(this.settings)
-      })
-    );
-    if (result.status === "unchanged") {
+    const legacySeen = this.settings.hasSeenWelcome === true;
+    const hasVaultLocalStorage = typeof this.app.loadLocalStorage === "function" && typeof this.app.saveLocalStorage === "function";
+    if (hasVaultLocalStorage) {
+      let isolatedSeen = false;
+      try {
+        isolatedSeen = this.app.loadLocalStorage(_ConlangPlugin.WELCOME_SEEN_STORAGE_KEY) === true;
+      } catch (error) {
+        console.error(
+          "Made Up Words: failed to read the isolated welcome-notice marker:",
+          error
+        );
+      }
+      if (isolatedSeen) {
+        return;
+      }
+      if (legacySeen) {
+        try {
+          this.app.saveLocalStorage(
+            _ConlangPlugin.WELCOME_SEEN_STORAGE_KEY,
+            true
+          );
+        } catch (error) {
+          console.error(
+            "Made Up Words: failed to migrate the welcome-notice marker to isolated storage:",
+            error
+          );
+        }
+        return;
+      }
+      try {
+        this.app.saveLocalStorage(_ConlangPlugin.WELCOME_SEEN_STORAGE_KEY, true);
+      } catch (error) {
+        console.error(
+          "Made Up Words: failed to persist the isolated welcome-notice marker:",
+          error
+        );
+      }
+    } else if (legacySeen) {
       return;
-    }
-    if (result.status === "save-failed") {
-      console.error(
-        "Made Up Words: failed to persist the welcome-notice flag:",
-        result.error
-      );
     }
     const message = "Made Up Words is loaded. Open the side panel via the book-open icon in the left ribbon, or via the command palette \u2192 'Made Up Words: Open panel'.";
     new import_obsidian30.Notice(message, 12e3);
@@ -15859,5 +15906,16 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
 // under the cursor calls caretRangeFromPoint (a layout query). We cap this
 // to one resolve per HOVER_THROTTLE_MS, with a trailing call so the cursor's
 // final resting position is always resolved.
+/*
+ * Welcome-notice lifecycle state is intentionally separate from plugin
+ * settings authority.
+ *
+ * Obsidian 1.8.7 introduced App.loadLocalStorage()/saveLocalStorage(), which
+ * provide vault-local persistence without rewriting the plugin's complete
+ * data.json settings object. The plugin still supports Obsidian 1.7.2, so
+ * maybeShowWelcome() feature-detects those methods at runtime rather than
+ * raising the declared compatibility floor merely for cosmetic UI state.
+ */
+_ConlangPlugin.WELCOME_SEEN_STORAGE_KEY = "conlang-workbench:welcome-seen";
 _ConlangPlugin.HOVER_THROTTLE_MS = 50;
 var ConlangPlugin = _ConlangPlugin;

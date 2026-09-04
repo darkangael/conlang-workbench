@@ -1952,35 +1952,171 @@ full external-format export pathway is currently implemented.**
 
 ### Migration Inventory
 
-Document schema migrations and upgrade-time transformations.
+The current startup migration path is limited to persisted plugin settings. Startup
+loads `data.json`, decodes the persisted representation, applies compatibility
+migration, and then validates configured-language identity before runtime
+registration proceeds.
+
+The current settings migrations are:
+
+- infer a missing legacy language `rootFolder` from established canonical source
+  paths when the evidence resolves to one unambiguous root;
+- establish a missing `workbenchID` from the configured language name and
+  authority path using a deterministic compatibility identifier; and
+- migrate the legacy single `activeLanguage` representation into the current
+  `activeLanguages` / `primaryLanguage` representation.
+
+No creator-authored Markdown/frontmatter migration was identified. Current source
+compatibility readers interpret existing notes observationally rather than
+rewriting them as an upgrade side effect.
 
 ### Backward Compatibility
 
-Determine how older notes and settings are interpreted.
+Compatibility state is distinguished from malformed current state rather than
+treating every missing or unusual value as migration permission.
+
+A genuinely absent legacy `rootFolder` may be inferred conservatively. A
+persisted `rootFolder` that is present but blank is malformed and is blocked
+before migration. Likewise, a missing `workbenchID` is compatibility state, while
+an explicitly persisted blank identifier is invalid.
+
+Legacy `activeLanguage` may seed the modern selection only when the persisted
+data did not contain the modern `activeLanguages` field. If the modern field was
+persisted, its presence establishes the representation authority even when its
+value is empty. A stale legacy field therefore cannot override an explicitly
+persisted modern representation.
 
 ### Idempotency
 
-Running a migration twice should not repeatedly alter already-migrated data.
+Migration behavior is deterministic and representation-aware.
+
+Legacy root inference requires the available canonical source paths to resolve
+to the same root. Workbench compatibility IDs are deterministically derived from
+the same migration seed. Language-selection migration records modern
+`activeLanguages`; once that modern representation is persisted and decoded
+again, a stale legacy `activeLanguage` cannot regain authority.
+
+The dedicated settings-migration regression performs migration, simulates
+persistence of the modern representation, decodes it again, and verifies that a
+second migration leaves the selected active and primary language unchanged.
 
 ### Failure Recovery
 
-Consider what happens if a migration stops midway.
+Persisted settings are decoded before migration. Malformed persisted settings
+block startup before migration is installed as runtime authority.
+
+Migration itself operates on the decoded in-memory settings representation.
+There is no `saveData()` or `saveSettings()` call inside `loadSettings()` or
+`migrateSettings()`. Configured-language identity validation follows migration;
+if decoding, migration, or identity validation throws, plugin startup does not
+advance to later layout-ready startup work.
+
+The welcome-notice lifecycle flag previously performed an unrelated whole-settings
+`saveData(this.settings)` write after startup. That created an accidental
+persistence point for in-memory compatibility migration. Welcome state is now
+stored separately through Obsidian's vault-local storage API when that API is
+available. The historical `hasSeenWelcome` settings field is read-only
+compatibility evidence and no longer grants the welcome path authority to save
+or mutate the complete settings object.
+
+For Obsidian versions predating the vault-local storage API, an existing legacy
+welcome flag is honored. If no legacy flag exists, the cosmetic notice may repeat
+rather than restoring whole-settings persistence authority merely to suppress
+the notice.
 
 ### Version Detection
 
-Avoid guessing migration state from ambiguous evidence.
+Migration decisions use structural representation evidence rather than sentinel
+default values or guessed content.
+
+The persisted-settings decoder records whether `activeLanguages` was actually an
+own field of the persisted object before defaults are overlaid. Migration uses
+that field-presence evidence to distinguish legacy single-language state from
+modern state.
+
+Missing legacy structural fields are distinguished from present malformed
+fields. Root inference accepts only canonical source evidence that resolves
+unambiguously to one root; conflicting or unresolved evidence fails closed.
 
 ### Unknown Metadata
 
-Preserve fields not owned by the migration.
+The persisted-settings decoder clones persisted JSON-compatible data before
+default overlay and normalization. Unknown top-level and nested metadata remains
+attached to its owning persisted object rather than being discarded merely
+because the current Workbench does not interpret it.
+
+Migration mutates only the settings fields it owns. Regression coverage verifies
+that unknown nested language metadata and unknown top-level metadata survive
+decode, migration, and a JSON persistence round trip unchanged.
+
+Unknown metadata therefore receives preservation, not authority: its existence
+does not authorize current runtime interpretation or mutation.
 
 ### Findings
 
-None recorded yet.
+#### DS-014-L1 — Default overlay masked legacy active-language migration state
+
+**Severity:** Low
+
+The decoder previously overlaid current defaults before migration without
+preserving whether `activeLanguages` actually existed in persisted data. An old
+configuration containing only legacy `activeLanguage` could therefore receive
+the default modern `activeLanguages` value first. Migration could mistake that
+default for persisted modern authority, discard the legacy selection, and fall
+back to the first configured language.
+
+This affected plugin configuration/runtime selection only; no creator-authored
+Markdown was deleted or rewritten.
+
+**Remediation:** The decoder now records persisted `activeLanguages` field
+presence before default overlay. Language-selection migration uses that evidence:
+persisted modern representation wins when present, and legacy `activeLanguage`
+may seed modern state only when the modern field was absent. Regression coverage
+includes legacy migration, modern-over-legacy precedence, explicit modern empty
+state, and repeat-migration idempotency.
+
+#### DS-014-L2 — Blank persisted language root was accepted as legacy migration state
+
+**Severity:** Low
+
+`rootFolder` compatibility migration is defined for older configurations where
+the field is absent. The persisted-settings boundary previously also accepted an
+explicit empty or whitespace-only string. That allowed malformed structural
+authority to enter the same migration path as legitimate legacy absence.
+
+This affected settings/structural authority interpretation; it did not authorize
+rewriting creator-authored Markdown.
+
+**Remediation:** A present `rootFolder` must now be nonblank. Missing
+`rootFolder` remains valid legacy compatibility state, while present-but-blank
+values are blocked by the persisted-settings decoder before migration.
+Regression coverage verifies both empty and whitespace-only values are rejected
+without mutating the raw persisted input.
+
+#### DS-014-L3 — Welcome UI lifecycle state shared whole-settings persistence authority
+
+**Severity:** Low
+
+The one-time welcome flag was stored inside `ConlangSettings`. Its startup path
+called `saveData(this.settings)`, so cosmetic UI lifecycle state could persist
+the entire in-memory settings object. A successfully decoded and migrated
+settings representation could therefore become durable through an unrelated
+welcome-state write rather than through its own settings authority path.
+
+This affected plugin settings persistence only; it did not modify
+creator-authored Markdown.
+
+**Remediation:** Welcome state no longer mutates `ConlangSettings` or calls
+`saveData()` / `saveSettings()`. On Obsidian versions providing the official
+vault-local storage API, the marker uses the isolated
+`conlang-workbench:welcome-seen` key. The legacy `hasSeenWelcome` field is retained
+only as read-only compatibility evidence. Older supported Obsidian versions fail
+toward a potentially repeated cosmetic notice rather than granting that notice
+whole-settings persistence authority.
 
 ### Status
 
-**Not Reviewed**
+**Pass — three Low migration-safety findings were remediated and verified.**
 
 ---
 

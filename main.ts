@@ -74,6 +74,7 @@ import {
 } from "./highlight";
 import type { HighlightKind } from "./highlight-core";
 import { decodePersistedSettings } from "./persisted-settings-decoder";
+import { migrateLanguageSelectionSettings } from "./settings-migration";
 import { createConfiguredLanguageWorkbenchID } from "./workbench-id";
 import { preflightLanguageSources } from "./language-source-preflight";
 import { showLanguageSourceDiagnostics } from "./language-source-diagnostics-modal";
@@ -217,6 +218,19 @@ export default class ConlangPlugin extends Plugin {
   // under the cursor calls caretRangeFromPoint (a layout query). We cap this
   // to one resolve per HOVER_THROTTLE_MS, with a trailing call so the cursor's
   // final resting position is always resolved.
+  /*
+   * Welcome-notice lifecycle state is intentionally separate from plugin
+   * settings authority.
+   *
+   * Obsidian 1.8.7 introduced App.loadLocalStorage()/saveLocalStorage(), which
+   * provide vault-local persistence without rewriting the plugin's complete
+   * data.json settings object. The plugin still supports Obsidian 1.7.2, so
+   * maybeShowWelcome() feature-detects those methods at runtime rather than
+   * raising the declared compatibility floor merely for cosmetic UI state.
+   */
+  private static readonly WELCOME_SEEN_STORAGE_KEY =
+    "conlang-workbench:welcome-seen";
+
   private static readonly HOVER_THROTTLE_MS = 50;
   private hoverLastRun = 0;
   private hoverPendingTimer: number | null = null;
@@ -494,8 +508,14 @@ export default class ConlangPlugin extends Plugin {
 
     this.settings = decoded.settings;
 
-    // Migration receives authority only after structural validation succeeds.
-    this.migrateSettings();
+    /*
+     * Migration receives authority only after structural validation succeeds.
+     *
+     * Pass field-presence evidence from the persisted representation separately
+     * from the default-merged settings object. Otherwise a current default can
+     * masquerade as creator-persisted modern state and hide a legacy value.
+     */
+    this.migrateSettings(decoded.persistedPresence.activeLanguages);
 
     /*
      * Legacy migration establishes missing configured-language Workbench IDs
@@ -540,11 +560,13 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
-   * Migrate older single-active-language settings to the multi-active format.
-   * Runs every load; safe to re-run because it only acts when activeLanguages
-   * is empty or doesn't contain a valid name.
+   * Establish compatibility fields that older settings representations lack.
+   *
+   * `persistedActiveLanguages` records whether the modern multi-active field
+   * actually existed on disk before current defaults were merged. Migration
+   * must not infer that historical fact from the merged value itself.
    */
-  private migrateSettings() {
+  private migrateSettings(persistedActiveLanguages: boolean) {
     /*
      * Configurations created before structural language-root authority was
      * introduced may not yet have rootFolder.
@@ -604,45 +626,9 @@ export default class ConlangPlugin extends Plugin {
       }
     }
 
-    const known = new Set(this.settings.languages.map((l) => l.name));
-
-    // If we have legacy activeLanguage but no activeLanguages, migrate.
-    if (
-      (!this.settings.activeLanguages ||
-        this.settings.activeLanguages.length === 0) &&
-      this.settings.activeLanguage
-    ) {
-      this.settings.activeLanguages = [this.settings.activeLanguage];
-    }
-    // Ensure activeLanguages exists and only contains known names
-    if (!this.settings.activeLanguages) this.settings.activeLanguages = [];
-    this.settings.activeLanguages = this.settings.activeLanguages.filter((n) =>
-      known.has(n),
-    );
-    // If still empty, pick the first known language (if any)
-    if (
-      this.settings.activeLanguages.length === 0 &&
-      this.settings.languages.length > 0
-    ) {
-      this.settings.activeLanguages = [this.settings.languages[0].name];
-    }
-
-    // Ensure primaryLanguage is one of the active languages
-    if (
-      !this.settings.primaryLanguage ||
-      !known.has(this.settings.primaryLanguage)
-    ) {
-      this.settings.primaryLanguage =
-        this.settings.activeLanguages[0] ??
-        this.settings.languages[0]?.name ??
-        "";
-    }
-    if (
-      this.settings.activeLanguages.length > 0 &&
-      !this.settings.activeLanguages.includes(this.settings.primaryLanguage)
-    ) {
-      this.settings.primaryLanguage = this.settings.activeLanguages[0];
-    }
+    migrateLanguageSelectionSettings(this.settings, {
+      persistedActiveLanguages,
+    });
   }
 
   async saveSettings() {
@@ -1318,56 +1304,108 @@ export default class ConlangPlugin extends Plugin {
   }
 
   /**
-   * Show a one-time welcome notice if this is the user's first time loading
-   * the plugin. The notice points them at the ribbon icon and the panel —
-   * Autumn flagged that the side panel was hard to discover.
+   * Show the first-run welcome notice without granting cosmetic lifecycle
+   * state authority to rewrite the complete plugin settings object.
    *
-   * The flag persists in settings so the message only shows once per install.
+   * Current Obsidian versions provide vault-local storage specifically for
+   * small isolated values like this marker. The plugin's declared compatibility
+   * floor predates that API, however, so runtime feature detection is required.
+   *
+   * Older data.json files may contain hasSeenWelcome. That value remains
+   * read-only compatibility evidence: true still means the creator has already
+   * seen the notice, but this method never mutates the legacy settings field.
    */
   private async maybeShowWelcome(): Promise<void> {
-    /*
-     * hasSeenWelcome is ordinary persisted settings authority. Although this
-     * startup write is not triggered by a settings control, saveData() still
-     * persists the complete settings object. It therefore must share H13's
-     * common serialization boundary so it cannot capture another transaction's
-     * provisional settings while that transaction is awaiting persistence,
-     * reload, confirmation, or rollback.
-     *
-     * Use the same pure H12 persistence primitive as ordinary settings, but
-     * retain this startup path's direct saveData() call. Unlike saveSettings(),
-     * showing the welcome notice does not need to refresh panels, highlights,
-     * or hover state merely because the one-time flag was persisted.
-     */
-    const result = await this.settingsAuthorityQueue.run(() =>
-      applyPersistedSettingState({
-        read: () => this.settings.hasSeenWelcome,
-        write: (value) => {
-          this.settings.hasSeenWelcome = value;
-        },
-        requested: true,
-        save: () => this.saveData(this.settings),
-      }),
-    );
+    const legacySeen = this.settings.hasSeenWelcome === true;
 
-    if (result.status === "unchanged") {
+    /*
+     * App.loadLocalStorage()/saveLocalStorage() were added together in Obsidian
+     * 1.8.7. Property access itself is safe when running on an older app: a
+     * missing method evaluates to undefined. Require BOTH methods before using
+     * the isolated persistence path so a partially available API cannot create
+     * state that the next startup is unable to read.
+     */
+    const hasVaultLocalStorage =
+      typeof this.app.loadLocalStorage === "function" &&
+      typeof this.app.saveLocalStorage === "function";
+
+    if (hasVaultLocalStorage) {
+      let isolatedSeen = false;
+
+      try {
+        /*
+         * Only the exact boolean true establishes the Workbench-owned marker.
+         * Any other representation is treated as absent rather than coerced.
+         * This state controls only whether a welcome Notice appears; it grants
+         * no linguistic, filesystem, or settings authority.
+         */
+        isolatedSeen =
+          this.app.loadLocalStorage(ConlangPlugin.WELCOME_SEEN_STORAGE_KEY) ===
+          true;
+      } catch (error) {
+        /*
+         * Storage failure must not fall back to saveData(this.settings).
+         * Losing best-effort welcome suppression is safer than allowing
+         * unrelated in-memory settings or migrations to become durable.
+         */
+        console.error(
+          "Made Up Words: failed to read the isolated welcome-notice marker:",
+          error,
+        );
+      }
+
+      if (isolatedSeen) {
+        return;
+      }
+
+      if (legacySeen) {
+        /*
+         * Bridge an older data.json flag into the narrow current store without
+         * rewriting data.json. The legacy field remains untouched and can still
+         * suppress the notice on older Obsidian versions.
+         */
+        try {
+          this.app.saveLocalStorage(
+            ConlangPlugin.WELCOME_SEEN_STORAGE_KEY,
+            true,
+          );
+        } catch (error) {
+          console.error(
+            "Made Up Words: failed to migrate the welcome-notice marker to isolated storage:",
+            error,
+          );
+        }
+
+        return;
+      }
+
+      /*
+       * Record the narrow marker before showing the notice. If persistence
+       * fails, still show the welcome for this startup; it may appear again on
+       * a later startup rather than falsely claiming durable success.
+       */
+      try {
+        this.app.saveLocalStorage(ConlangPlugin.WELCOME_SEEN_STORAGE_KEY, true);
+      } catch (error) {
+        console.error(
+          "Made Up Words: failed to persist the isolated welcome-notice marker:",
+          error,
+        );
+      }
+    } else if (legacySeen) {
+      /*
+       * Obsidian 1.7.2–1.8.6 has no official vault-local storage API. Honor the
+       * historical settings value when it already exists, but never create or
+       * update that value merely to suppress cosmetic UI.
+       */
       return;
     }
 
-    if (result.status === "save-failed") {
-      /*
-       * Persistence did not establish the flag, so the H12 primitive restored
-       * its previous in-memory value. Still show the welcome message for this
-       * startup; a later startup may show it again if persistence continues to
-       * fail rather than silently claiming that the notice was durably seen.
-       */
-      console.error(
-        "Made Up Words: failed to persist the welcome-notice flag:",
-        result.error,
-      );
-    }
-
-    // Use a longer-than-default duration since we have meaningful content.
-    // 12 seconds is enough to read without being intrusive.
+    /*
+     * On older Obsidian versions with no historical marker, this notice may
+     * repeat on later startups. That is an intentional compatibility tradeoff:
+     * cosmetic lifecycle state must not regain authority to save all settings.
+     */
     const message =
       "Made Up Words is loaded. Open the side panel via the book-open icon in the left ribbon, " +
       "or via the command palette → 'Made Up Words: Open panel'.";

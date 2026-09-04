@@ -160,6 +160,33 @@ const older = decodePersistedSettings({
 assert.equal(older.status, "valid");
 assert.equal(older.settings.hoverModifier, "shift");
 
+/*
+ * rootFolder absence is a legitimate legacy representation, but a PRESENT
+ * blank value is not. Structural-root migration must never obtain authority
+ * merely because a malformed persisted string happens to be falsy or becomes
+ * empty after trim().
+ */
+for (const rootFolder of ["", "   "]) {
+  const blankRoot = {
+    languages: [makeLanguage({ rootFolder })],
+  };
+  const blankRootSnapshot = JSON.stringify(blankRoot);
+  const blockedBlankRoot = decodePersistedSettings(blankRoot);
+
+  assert.equal(blockedBlankRoot.status, "blocked");
+  assert.ok(
+    blockedBlankRoot.issues.some(
+      (issue) => issue.path === "settings.languages[0].rootFolder",
+    ),
+    "blank persisted language root must fail closed",
+  );
+  assert.equal(
+    JSON.stringify(blankRoot),
+    blankRootSnapshot,
+    "rejecting blank root authority must not mutate persisted input",
+  );
+}
+
 // Portable linguistic IDs are an optional per-language generation policy.
 // Older language configurations may omit the field entirely. Workbench must
 // not invent a persisted value merely while decoding those settings; the
