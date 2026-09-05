@@ -375,24 +375,47 @@ function maskMarkdownFencedCodeBlocks(markdown) {
 }
 
 // lexical-senses.ts
-function parseLexicalSenses(markdown) {
-  var _a, _b;
+function interpretLexicalSenses(markdown) {
+  var _a, _b, _c;
   const activeMarkdown = maskMarkdownFencedCodeBlocks(markdown);
   const sensesSection = extractSensesSection(activeMarkdown);
-  if (!sensesSection) return [];
+  if (!sensesSection) {
+    return { senses: [], diagnostics: [] };
+  }
   const senses = [];
+  const diagnostics = [];
   const senseHeadingRe = /^###\s+Sense\b.*$/gim;
   const matches = [...sensesSection.matchAll(senseHeadingRe)];
-  if (matches.length === 0) return [];
+  if (matches.length === 0) {
+    if (containsNonBlankSemanticField(sensesSection)) {
+      diagnostics.push({
+        code: "dictionary.senses.unowned-semantic-field",
+        severity: "warning",
+        field: "Senses",
+        message: "The Senses section contains structured semantic fields without a recognized Sense heading. The lexical entry remains valid and the source file was not modified, but Workbench could not assign those fields to a structured sense."
+      });
+    }
+    return { senses, diagnostics };
+  }
+  const prefix = sensesSection.slice(0, (_a = matches[0].index) != null ? _a : 0);
+  if (containsNonBlankSemanticField(prefix)) {
+    diagnostics.push({
+      code: "dictionary.senses.unowned-semantic-field",
+      severity: "warning",
+      field: "Senses",
+      message: "The Senses section contains structured semantic fields before the first recognized Sense heading. The source file was not modified, and Workbench did not guess which sense owns those fields."
+    });
+  }
   for (let i = 0; i < matches.length; i++) {
     const match = matches[i];
-    const start = ((_a = match.index) != null ? _a : 0) + match[0].length;
-    const end = i + 1 < matches.length ? (_b = matches[i + 1].index) != null ? _b : sensesSection.length : sensesSection.length;
+    const start = ((_b = match.index) != null ? _b : 0) + match[0].length;
+    const end = i + 1 < matches.length ? (_c = matches[i + 1].index) != null ? _c : sensesSection.length : sensesSection.length;
     const block = sensesSection.slice(start, end);
-    const sense = parseSenseBlock(block);
-    if (sense) senses.push(sense);
+    const result = parseSenseBlock(block);
+    if (result.sense) senses.push(result.sense);
+    diagnostics.push(...result.diagnostics);
   }
-  return senses;
+  return { senses, diagnostics };
 }
 function extractSensesSection(markdown) {
   var _a;
@@ -406,24 +429,43 @@ function extractSensesSection(markdown) {
   return remaining.slice(0, end);
 }
 function parseSenseBlock(block) {
+  const diagnostics = [];
   const id = readField(block, "ID");
   const gloss = readField(block, "Gloss");
   const definition = readField(block, "Definition");
   const lookupRaw = readField(block, "Lookup");
   const lookupTerms = lookupRaw == null ? void 0 : lookupRaw.split(",").map((term) => term.trim()).filter((term) => term.length > 0);
+  if (lookupRaw && (!lookupTerms || lookupTerms.length === 0)) {
+    diagnostics.push({
+      code: "dictionary.senses.unusable-lookup",
+      severity: "warning",
+      field: "Senses / Lookup",
+      message: "A structured sense Lookup field contained no usable lookup terms. The source file was not modified."
+    });
+  }
   const hasMeaning = Boolean(gloss == null ? void 0 : gloss.trim()) || Boolean(definition == null ? void 0 : definition.trim()) || Boolean(lookupTerms && lookupTerms.length > 0);
-  if (!hasMeaning) return null;
+  if (!hasMeaning) {
+    return { sense: null, diagnostics };
+  }
   return {
-    id: (id == null ? void 0 : id.trim()) || void 0,
-    gloss: (gloss == null ? void 0 : gloss.trim()) || void 0,
-    definition: (definition == null ? void 0 : definition.trim()) || void 0,
-    lookupTerms: lookupTerms && lookupTerms.length > 0 ? lookupTerms : void 0
+    sense: {
+      id: (id == null ? void 0 : id.trim()) || void 0,
+      gloss: (gloss == null ? void 0 : gloss.trim()) || void 0,
+      definition: (definition == null ? void 0 : definition.trim()) || void 0,
+      lookupTerms: lookupTerms && lookupTerms.length > 0 ? lookupTerms : void 0
+    },
+    diagnostics
   };
+}
+function containsNonBlankSemanticField(block) {
+  return ["Gloss", "Definition", "Lookup"].some(
+    (label) => readField(block, label) !== void 0
+  );
 }
 function readField(block, label) {
   var _a;
   const escaped = escapeRegExp(label);
-  const re = new RegExp(`^\\*\\*${escaped}:\\*\\*\\s*(.*)$`, "im");
+  const re = new RegExp(`^\\*\\*${escaped}:\\*\\*[ \\t]*(.*)$`, "im");
   const match = re.exec(block);
   const value = (_a = match == null ? void 0 : match[1]) == null ? void 0 : _a.trim();
   return value || void 0;
@@ -1168,7 +1210,11 @@ var _Dictionary = class _Dictionary {
         this.addSourceRecord(record);
         this.addEntry(entry);
         count++;
-        bodyMetadataEntries.push({ entry, file });
+        bodyMetadataEntries.push({
+          entry,
+          file,
+          sourceWorkbenchID: record.identity.workbenchID
+        });
       }
     }
     this.finalizePhrases();
@@ -1202,14 +1248,18 @@ var _Dictionary = class _Dictionary {
    */
   async loadBodyMetadata(items) {
     await Promise.all(
-      items.map(async ({ entry, file }) => {
+      items.map(async ({ entry, file, sourceWorkbenchID }) => {
         try {
           const content = await this.app.vault.cachedRead(file);
           if (this.isProperNoun(entry)) {
             entry.bodyPreview = extractBodyPreview(content);
           }
-          const senses = parseLexicalSenses(content);
-          entry.senses = senses.length > 0 ? senses : void 0;
+          const interpretation = interpretLexicalSenses(content);
+          entry.senses = interpretation.senses.length > 0 ? interpretation.senses : void 0;
+          this.appendSourceDiagnostics(
+            sourceWorkbenchID,
+            interpretation.diagnostics
+          );
         } catch (error) {
           console.warn(
             "[Conlang] Failed to load body metadata:",
@@ -1259,6 +1309,37 @@ var _Dictionary = class _Dictionary {
   addSourceRecord(record) {
     this.sourceRecords.push(record);
     this.sourceByWorkbenchID.set(record.identity.workbenchID, record);
+  }
+  /**
+   * Append later, observational diagnostics to one already-retained source.
+   *
+   * Body-derived interpretation happens after the lexical source has passed
+   * frontmatter parsing and language-authority checks. Replace that retained
+   * record immutably rather than mutating parser-owned diagnostics in place.
+   *
+   * Both internal source views must change together. If the expected retained
+   * record is absent, fail closed instead of manufacturing a new source record
+   * or allowing the array and Workbench-ID map to disagree.
+   */
+  appendSourceDiagnostics(workbenchID, diagnostics) {
+    if (diagnostics.length === 0) return;
+    const existing = this.sourceByWorkbenchID.get(workbenchID);
+    const index = this.sourceRecords.findIndex(
+      (record) => record.identity.workbenchID === workbenchID
+    );
+    if (!existing || index < 0) {
+      console.warn(
+        "[Conlang] Could not attach lexical source diagnostics:",
+        workbenchID
+      );
+      return;
+    }
+    const updated = {
+      ...existing,
+      diagnostics: [...existing.diagnostics, ...diagnostics]
+    };
+    this.sourceRecords[index] = updated;
+    this.sourceByWorkbenchID.set(workbenchID, updated);
   }
   /**
    * Add one English lookup key for an entry.

@@ -24,10 +24,13 @@ import type { LanguageMembershipMode } from "./language-membership";
 import { resolveSourceLanguageAuthority } from "./source-language-authority";
 import { DictionaryEntry, LexicalSense } from "./types";
 import { extractBodyPreview as _extractBodyPreview } from "./body-preview";
-import { parseLexicalSenses } from "./lexical-senses";
+import { interpretLexicalSenses } from "./lexical-senses";
 import { parseDictionarySource } from "./dictionary-source";
 import type { DictionarySourceInput } from "./dictionary-source";
-import type { WorkbenchSourceRecord } from "./workbench-source";
+import type {
+  WorkbenchDiagnostic,
+  WorkbenchSourceRecord,
+} from "./workbench-source";
 import { buildPhraseIndex, EMPTY_PHRASE_INDEX, PhraseIndex } from "./phrases";
 import { normalizeLexicalKey } from "./lexical-normalization";
 
@@ -353,7 +356,11 @@ export class Dictionary {
   ): Promise<number> {
     this.clear();
     let count = 0;
-    const bodyMetadataEntries: { entry: DictionaryEntry; file: TFile }[] = [];
+    const bodyMetadataEntries: {
+      entry: DictionaryEntry;
+      file: TFile;
+      sourceWorkbenchID: string;
+    }[] = [];
     for (const source of sources) {
       const folder = this.app.vault.getAbstractFileByPath(source.folder);
       if (!folder || !(folder instanceof TFolder)) continue;
@@ -409,7 +416,11 @@ export class Dictionary {
         // Every lexical entry may contain structured senses in its Markdown
         // body. Keep the file paired with the parsed entry so body-derived
         // metadata can be loaded once after the index itself is built.
-        bodyMetadataEntries.push({ entry, file });
+        bodyMetadataEntries.push({
+          entry,
+          file,
+          sourceWorkbenchID: record.identity.workbenchID,
+        });
       }
     }
     this.finalizePhrases();
@@ -448,10 +459,14 @@ export class Dictionary {
    * and any similar enrichment we may add later.
    */
   private async loadBodyMetadata(
-    items: { entry: DictionaryEntry; file: TFile }[],
+    items: {
+      entry: DictionaryEntry;
+      file: TFile;
+      sourceWorkbenchID: string;
+    }[],
   ) {
     await Promise.all(
-      items.map(async ({ entry, file }) => {
+      items.map(async ({ entry, file, sourceWorkbenchID }) => {
         try {
           const content = await this.app.vault.cachedRead(file);
 
@@ -462,10 +477,25 @@ export class Dictionary {
             entry.bodyPreview = _extractBodyPreview(content);
           }
 
-          // Optional structured semantic senses from the note's `## Senses`
-          // section. Simple entries remain valid when no senses are present.
-          const senses = parseLexicalSenses(content);
-          entry.senses = senses.length > 0 ? senses : undefined;
+          /*
+           * Structured senses are optional semantic enrichment, so successful
+           * interpretation remains independent from source-facing diagnostics.
+           * Keep every usable sense while retaining warnings about structured
+           * material Workbench could not safely interpret.
+           *
+           * These diagnostics are observational only. They do not invalidate
+           * the lexical entry, rewrite its Markdown, or authorize a repair.
+           */
+          const interpretation = interpretLexicalSenses(content);
+          entry.senses =
+            interpretation.senses.length > 0
+              ? interpretation.senses
+              : undefined;
+
+          this.appendSourceDiagnostics(
+            sourceWorkbenchID,
+            interpretation.diagnostics,
+          );
         } catch (error) {
           // Body-derived metadata is optional, so a failure should not prevent
           // the dictionary itself from loading. Log the error so problems with
@@ -528,6 +558,45 @@ export class Dictionary {
   ): void {
     this.sourceRecords.push(record);
     this.sourceByWorkbenchID.set(record.identity.workbenchID, record);
+  }
+
+  /**
+   * Append later, observational diagnostics to one already-retained source.
+   *
+   * Body-derived interpretation happens after the lexical source has passed
+   * frontmatter parsing and language-authority checks. Replace that retained
+   * record immutably rather than mutating parser-owned diagnostics in place.
+   *
+   * Both internal source views must change together. If the expected retained
+   * record is absent, fail closed instead of manufacturing a new source record
+   * or allowing the array and Workbench-ID map to disagree.
+   */
+  private appendSourceDiagnostics(
+    workbenchID: string,
+    diagnostics: readonly WorkbenchDiagnostic[],
+  ): void {
+    if (diagnostics.length === 0) return;
+
+    const existing = this.sourceByWorkbenchID.get(workbenchID);
+    const index = this.sourceRecords.findIndex(
+      (record) => record.identity.workbenchID === workbenchID,
+    );
+
+    if (!existing || index < 0) {
+      console.warn(
+        "[Conlang] Could not attach lexical source diagnostics:",
+        workbenchID,
+      );
+      return;
+    }
+
+    const updated: WorkbenchSourceRecord<DictionaryEntry> = {
+      ...existing,
+      diagnostics: [...existing.diagnostics, ...diagnostics],
+    };
+
+    this.sourceRecords[index] = updated;
+    this.sourceByWorkbenchID.set(workbenchID, updated);
   }
 
   /**

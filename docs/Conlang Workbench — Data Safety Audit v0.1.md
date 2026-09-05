@@ -2557,41 +2557,188 @@ implementation design and review.**
 
 ### Current Diagnostics
 
-Inventory warnings, skipped-entry logging, and visible error reporting.
+Workbench separates source diagnosis from the clean linguistic indexes that
+power ordinary features.
 
-Review diagnostics as durable state separately from transient presentation.
-A short-lived Obsidian notice should not be the only representation of a
-source-data problem.
+Recognized malformed dictionary, morpheme, linguistic-example, and phonology
+sources are retained as `WorkbenchSourceRecord` values even when they cannot
+safely become complete feature objects. Contextually rejected but otherwise
+parseable sources are likewise retained with source-language authority
+diagnostics rather than disappearing from accounting.
 
-Contextual resurfacing should be tied to meaningful interaction with the
-affected source file rather than background parsing or unrelated navigation.
-This allows an unresolved warning to become visible again when it is relevant
-without repeatedly interrupting the user while Workbench refreshes indexes.
+`source-diagnostics.ts` derives creator-facing diagnostic groups from those
+retained records plus cross-record identity and relationship checks. The
+aggregation boundary is observational: it does not rewrite creator Markdown,
+replace source records with repaired values, or decide that rejected data may
+enter a clean feature index.
+
+The Diagnostics workspace renders a fresh derived snapshot rather than owning a
+second mutable diagnostic authority. Diagnostics remain grouped by Workbench
+source identity and path, so malformed linguistic data that lacks a usable
+creator-facing linguistic ID can still remain visible and navigable.
+
+Transient Obsidian Notices are therefore supplementary presentation rather than
+the sole representation of source-data problems. Current-source diagnostics are
+briefly resurfaced when meaningful navigation reaches an affected source, while
+the Diagnostics workspace remains available for the complete current snapshot.
+Background parsing and unrelated navigation do not repeatedly interrupt the
+creator.
+
+Diagnostics are derived from current retained source state rather than stored in
+a separate persisted diagnostic database. In this context their durability
+comes from reproducibility: an unresolved source problem remains observable
+after reloading and reparsing the same unchanged creator source.
 
 ### Silent Skips
 
-Identify places where invalid data disappears from indexes without enough user
-feedback.
+The principal recognized-source adapters preserve their established
+fail-closed pattern:
+
+- recognized malformed sources remain retained with `value: null` and
+  diagnostics while staying out of clean runtime indexes;
+- usable sources rejected by language authority remain retained with the
+  rejection diagnostic rather than silently entering another language;
+- unresolved and ambiguous relationships remain represented diagnostically
+  rather than selecting an arbitrary target;
+- and unresolved phonology relationships may remain loaded as creator data so
+  relationship diagnostics can describe the unresolved target later.
+
+One gap was found in optional structured lexical senses. Structured semantic
+material in a lexical note body was parsed after the ordinary lexical source
+record had already entered the dictionary. The legacy
+`parseLexicalSenses()` API returned only successfully interpreted senses and had
+no diagnostic channel, so recognizable structured-sense material that
+Workbench could not safely interpret could be omitted from semantic indexing
+without becoming part of the retained source diagnostic state.
+
+That gap is recorded as DS-018-L1 and was remediated during this audit.
+
+The remediation deliberately does not turn the structured-sense parser into a
+general Markdown linter. An empty `## Senses` section, an unfinished Sense
+heading, an ID-only sense, blank supported fields, ordinary prose, and unknown
+field names remain non-diagnostic because those states can legitimately
+represent incomplete or unconventional creator work.
+
+Diagnostics are added only where Workbench has positive evidence of supported
+structured semantic input that it cannot safely use. Current examples are a
+nonblank supported semantic field with no recognized owning Sense heading and a
+nonblank Lookup field that contains no usable lookup terms.
+
+Regression work also exposed a same-line parsing defect in the existing field
+reader. Its whitespace expression could cross a newline, allowing an empty
+field such as `**Gloss:**` to consume the following structured field as its
+value. The parser now permits only horizontal whitespace between a supported
+field marker and its same-line value, enforcing the format it already
+documented rather than expanding interpretation authority.
 
 ### Repair Behavior
 
-Avoid automatic semantic correction when the user's intent is uncertain.
+Diagnosis and repair remain separate authority boundaries.
+
+`language-source-watch.ts`, source parsers, retained source records,
+`source-diagnostics.ts`, the Diagnostics tab, and contextual source Notices are
+observational. Displaying or navigating to a diagnostic does not itself
+authorize a source rewrite, settings mutation, folder creation, identity
+backfill, semantic normalization, or other repair.
+
+Language-root Repair and Recreate are explicit creator actions. Their planning
+and validation stages diagnose current configured/filesystem state first, while
+successful mutation authority is established separately for the exact
+configured root and required canonical structure.
+
+Translation vocabulary repair is similarly explicit. The unresolved-results
+workflow may identify missing vocabulary, but the repair modal grants only the
+narrow lexical-creation authority the creator selects. Translation replacement
+is separately re-planned afterward rather than inheriting repair authority from
+the earlier diagnostic state.
+
+No reviewed path was found where merely observing a malformed, ambiguous,
+missing, duplicate, or structurally inconsistent source silently becomes
+authority to rewrite that creator source.
 
 ### Linguistic Uncertainty
 
-Preserve proposed, unresolved, unconventional, and competing analyses.
+Workbench currently preserves several forms of linguistic uncertainty rather
+than collapsing them into one guessed interpretation.
+
+Phonology explicitly supports `established`, `proposed`, and `unresolved`
+status. Missing and ambiguous cross-record relationships remain distinct from a
+uniquely proven target. Duplicate stable linguistic IDs remain creator-authored
+sources with diagnostics rather than being automatically renumbered or merged.
+
+Structured lexical senses likewise remain optional enrichment. Empty or
+unfinished sense structures are not automatically classified as errors, and
+the DS-018 remediation does not invent ownership for semantic fields whose
+sense cannot be proven.
+
+Translation planning preserves unresolved and ambiguous states as blockers
+rather than selecting an arbitrary candidate. Where multiple analyses remain
+possible, the current safety posture is to preserve that uncertainty until
+creator intent establishes a stronger authority boundary.
 
 ### Repair Suggestions
 
-When possible, suggest a repair without applying it automatically.
+Workbench may describe an available explicit next action without performing it
+automatically.
+
+Current examples include missing or replaced configured dictionary structure
+blocking lexical creation and directing the creator toward the explicit
+Repair/Recreate workflow, and diagnostics that navigate to the affected source
+note so the creator can inspect the original material.
+
+A suggestion, warning, diagnostic, or available repair command is not itself
+mutation authority. Future repair helpers should preserve the same separation:
+diagnose the current state, identify a bounded possible repair, then acquire
+explicit and exact authority before mutating creator data.
 
 ### Findings
 
-None recorded yet.
+#### DS-018-L1 — Structured lexical-sense omissions were not retained in source diagnostics
+
+**Severity:** Low
+
+Structured lexical senses are supported creator-authored semantic data loaded
+from the Markdown body after the ordinary lexical source record is accepted.
+The previous parser returned only successfully interpreted senses, so
+recognizable supported structured material that could not safely become a sense
+could be omitted from semantic interpretation without entering the retained
+source-diagnostic path.
+
+The source Markdown itself remained preserved, and the containing lexical entry
+remained valid. The impact was therefore observability and derived semantic
+index fidelity rather than destructive data loss or unauthorized source
+mutation.
+
+During remediation, focused regression coverage also exposed that the
+same-line field reader used newline-capable whitespace. An empty supported
+field could therefore consume the following structured field as its apparent
+value. This was corrected as part of the same structured-sense interpretation
+boundary rather than recorded as a separate finding.
+
+**Remediation:** Remediated and verified. Structured-sense interpretation now
+returns successfully interpreted senses and observational diagnostics together.
+The dictionary retains those diagnostics on the already-recognized lexical
+source record without invalidating the entry, rewriting Markdown, inventing
+semantic content, or acquiring repair authority. Both internal source-record
+views are replaced coherently under the existing Workbench source identity.
+
+Diagnostics are intentionally narrow: supported nonblank semantic material that
+cannot be safely assigned or used is reported, while empty, unfinished,
+ID-only, ordinary-prose, and otherwise uncertain creator states remain
+representable without forced normalization.
+
+Verification includes `test:lexical-senses`,
+`test:dictionary-language-scope`, `test:source-diagnostics`,
+`test:frontmatter`, production build verification, generated-bundle inspection,
+Prettier verification of all hand-edited files, `git diff --check`, and the
+established lint baseline of 0 errors and 14 warnings.
 
 ### Status
 
-**Not Reviewed**
+**Remediated and verified — one Low diagnostic-observability finding was found
+and corrected. Recognized source problems remain observable without becoming
+automatic repair authority, creator-authored linguistic uncertainty is
+preserved, and diagnostic presentation remains separate from mutation.**
 
 ---
 
@@ -2677,6 +2824,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-018-L1   | Data Safety §18 / diagnostics vs automatic repair | Remediated and verified | Low | Structured lexical-sense interpretation and creator-facing diagnostic visibility; no canonical source mutation | Supported structured lexical-sense material could be omitted from semantic interpretation without entering retained source diagnostics, and the same-line field reader could allow an empty field to consume the following structured field. | Data Safety §18; `lexical-senses.ts`; `dictionary.ts`; `test:lexical-senses`; `test:dictionary-language-scope`; `test:source-diagnostics`; `test:frontmatter`; production build; generated bundle inspection; Prettier verification; restored 14-warning lint baseline | Structured-sense interpretation now returns usable senses together with narrow observational warnings, retained on the already-recognized lexical source without invalidating the entry or rewriting creator Markdown. Same-line field parsing now rejects newline-crossing whitespace, while unfinished or uncertain creator structures remain non-diagnostic unless supported nonblank semantic input is positively present but unusable. |
 | DS-017-L1   | Data Safety §17 / crash and interruption recovery | Deferred | Low | Multi-step operation continuity across process termination; creator-authored files remain preserved | Current multi-step operations can lose in-memory continuation intent after abrupt process termination, leaving bounded and diagnosable partial state that cannot necessarily resume the creator's original transaction exactly. | Data Safety §17; current language-root rename, Add Language, Repair/Recreate, multi-language dictionary creation, persisted-settings validation, and established runtime atomicity behavior | Defer durable recovery-journal or pending-operation architecture to a dedicated implementation review. Any future recovery record must be operation-specific, validated as untrusted persisted data, and must not grant broader mutation authority than the creator originally authorized. |
 | DS-013-L1   | Data Safety §13 / export fidelity and lossiness | Remediated and verified | Low | Translator clipboard output and creator interpretation; no canonical source mutation | Gloss-mode Copy could silently substitute the flatter Transliterate representation, discarding ambiguity, candidate, sense, warning, and explanatory information present in the displayed Gloss. | Data Safety §13; `panel.ts`; `gloss.ts`; `test:gloss-rendering`; production build; generated-bundle invariant inspection; restored 14-warning lint baseline | Copy is unavailable in Gloss mode until a faithful plain-text representation exists, and `copyTranslation()` independently fails closed outside Transliterate mode so richer Gloss information cannot be silently flattened for clipboard output. |
 | DS-013-L2   | Data Safety §13 / export fidelity and lossiness | Remediated and verified | Low | Translator clipboard output only; no canonical source mutation | Transliterate Copy read the complete translator output container, allowing explanatory UI footer text to be copied together with the rendered transliteration. | Data Safety §13; `panel.ts`; `test:gloss-rendering`; production build; generated `.conlang-translit` selector verification; restored 14-warning lint baseline | Clipboard output now reads only the rendered `.conlang-translit` child, keeping explanatory interface text out of the creator's copied translation. |

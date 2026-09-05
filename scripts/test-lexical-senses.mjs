@@ -21,7 +21,7 @@ try {
   });
 
   const require = createRequire(import.meta.url);
-  const { parseLexicalSenses } = require(bundlePath);
+  const { interpretLexicalSenses, parseLexicalSenses } = require(bundlePath);
 
   assert.deepEqual(
     parseLexicalSenses(`# varu
@@ -259,6 +259,119 @@ Here is syntax documentation:
       },
     ],
     "a Markdown thematic break must not behave like a fenced-code boundary",
+  );
+
+  // -----------------------------------------------------------------------
+  // Source-facing diagnostic boundary
+  //
+  // Structured senses are optional enrichment. Diagnostics therefore must
+  // distinguish creator-authored structured material that Workbench cannot
+  // safely interpret from an entry that is merely simple, unfinished, or
+  // intentionally sparse.
+  // -----------------------------------------------------------------------
+
+  const validInterpretation = interpretLexicalSenses(`# Example
+
+## Senses
+
+### Sense 1
+
+**ID:** current
+**Gloss:** current
+**Definition:** movement in a continuing direction
+**Lookup:** current, flow
+`);
+
+  assert.equal(
+    validInterpretation.diagnostics.length,
+    0,
+    "valid structured senses must not acquire source diagnostics",
+  );
+  assert.equal(
+    validInterpretation.senses.length,
+    1,
+    "diagnostic-aware interpretation must preserve valid senses",
+  );
+
+  const unfinishedInterpretation = interpretLexicalSenses(`# Example
+
+## Senses
+
+### Sense 1
+
+**ID:** draft-sense
+**Gloss:**
+**Lookup:**
+`);
+
+  assert.deepEqual(
+    unfinishedInterpretation,
+    {
+      senses: [],
+      diagnostics: [],
+    },
+    "an unfinished or ID-only sense must remain valid creator uncertainty, not an error",
+  );
+
+  const unownedInterpretation = interpretLexicalSenses(`# Example
+
+## Senses
+
+Introductory prose may appear here.
+
+**Gloss:** current without an owning sense
+`);
+
+  assert.equal(
+    unownedInterpretation.senses.length,
+    0,
+    "semantic fields without a Sense heading must not be assigned by guesswork",
+  );
+  assert.ok(
+    unownedInterpretation.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "dictionary.senses.unowned-semantic-field" &&
+        diagnostic.severity === "warning" &&
+        diagnostic.field === "Senses",
+    ),
+    "supported semantic fields with no owning Sense heading must remain observable",
+  );
+
+  const mixedInterpretation = interpretLexicalSenses(`# Example
+
+## Senses
+
+### Sense 1
+
+**Gloss:** valid sense
+**Lookup:** usable
+
+### Sense 2
+
+**ID:** unfinished-second-sense
+**Lookup:** , ,
+`);
+
+  assert.deepEqual(
+    mixedInterpretation.senses,
+    [
+      {
+        id: undefined,
+        gloss: "valid sense",
+        definition: undefined,
+        lookupTerms: ["usable"],
+      },
+    ],
+    "a malformed neighboring sense must not discard successfully interpreted senses",
+  );
+  assert.ok(
+    mixedInterpretation.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "dictionary.senses.unusable-lookup" &&
+        diagnostic.severity === "warning" &&
+        diagnostic.field === "Senses / Lookup",
+    ),
+    "a nonblank Lookup field with no usable terms must receive a warning",
   );
 
   console.log("lexical-senses regression tests passed");

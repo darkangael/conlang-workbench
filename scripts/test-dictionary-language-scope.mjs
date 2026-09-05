@@ -199,6 +199,11 @@ definition: ordinary mer definition
 **ID:** current
 **Gloss:** flowing water
 **Lookup:** stream
+
+### Sense 2
+
+**ID:** unfinished-neighbor
+**Lookup:** , ,
 `,
     ],
     [
@@ -293,6 +298,55 @@ definition: ordinary test definition
         diagnostic.field === "language_id",
     ),
     "the retained source should explain the stable language-ID rejection",
+  );
+
+  /*
+   * Body-derived structured-sense problems are diagnostic state on the
+   * already-recognized lexical source, not grounds for rejecting the entry.
+   *
+   * The Mer sense-word deliberately contains one usable sense followed by an
+   * unfinished neighboring sense whose Lookup field contains no usable terms.
+   * Workbench must retain the warning while preserving both the lexical entry
+   * and every structured sense it could interpret safely.
+   */
+  const senseDiagnosticSource = dictionary
+    .allSourceRecords()
+    .find((record) => record.path === "Languages/Mer/Lexicon/sense-word.md");
+
+  assert.ok(
+    senseDiagnosticSource,
+    "a lexical source with body diagnostics must remain retained",
+  );
+  assert.notEqual(
+    senseDiagnosticSource.value,
+    null,
+    "an optional structured-sense warning must not invalidate the lexical source",
+  );
+  assert.ok(
+    senseDiagnosticSource.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "dictionary.senses.unusable-lookup" &&
+        diagnostic.severity === "warning" &&
+        diagnostic.field === "Senses / Lookup",
+    ),
+    "the retained source must expose unusable structured-sense material",
+  );
+
+  const senseDiagnosticEntry = dictionary.lookup("sense-word", "Mer");
+
+  assert.ok(
+    senseDiagnosticEntry,
+    "a body diagnostic must not remove the lexical entry from clean indexes",
+  );
+  assert.equal(
+    senseDiagnosticEntry.senses?.length,
+    1,
+    "a malformed neighboring sense must not discard a successfully interpreted sense",
+  );
+  assert.deepEqual(
+    senseDiagnosticEntry.senses?.[0]?.lookupTerms,
+    ["stream"],
+    "the successfully interpreted neighboring sense must retain its lookup terms",
   );
 
   // -------------------------------------------------------------------------
