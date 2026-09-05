@@ -2366,32 +2366,190 @@ None.
 
 ### Plugin Crash
 
-Determine whether a crash during ordinary reading can affect persistent data.
+Ordinary Workbench linguistic loading is observational. Dictionary, morpheme,
+linguistic-example, phonology, profile, and related source loaders read and
+index configured creator sources but do not rewrite those sources as part of
+loading.
+
+A plugin exception or process termination during those read/index phases can
+therefore leave runtime state unavailable or incomplete for that process, but
+the loader itself does not acquire persistent mutation authority over the
+creator's Markdown.
+
+Runtime linguistic replacement is also prepared in detached candidate state
+before commit, as established in §8. A loader failure therefore does not
+progressively replace the settled live linguistic runtime with a partially
+rebuilt candidate.
+
+Persistent settings and filesystem mutations are separate authority boundaries
+and are assessed below rather than being treated as effects of ordinary
+reading.
 
 ### Mid-Write Crash
 
-Test or reason through interruption during file mutation.
+The current persistent mutation surface consists primarily of bounded folder
+creation, settings persistence, one owned language-root rename, isolated
+lifecycle storage, and create-only dictionary-note writes. No production path
+was found that progressively rewrites, appends to, or deletes an arbitrary set
+of existing creator-authored notes.
+
+Application-level rollback can handle awaited failures while the plugin process
+remains alive, but it cannot run after abrupt process termination. A hard stop
+can therefore occur after one durable stage of a multi-step operation and
+before its later persistence or reload stages.
+
+The most important current example is language-root rename. The physical
+Obsidian folder rename occurs before the corresponding settings transition is
+persisted. Process termination in that interval can leave the creator's files
+safely present at the new root while persisted Workbench configuration still
+names the old root.
+
+Startup validation does not silently adopt the new location or guess that the
+moved folder should replace configured authority. The resulting mismatch is
+therefore fail-closed and diagnosable rather than silently reconciled, but the
+in-memory intent needed to finish the original rename transaction is lost.
+
+Add Language has a related interruption boundary. Folder establishment occurs
+before the new language configuration is durably saved. A hard stop can leave
+some or all of the newly established canonical folders present without the
+intended configured-language record or Workbench identity. A later ordinary
+Add attempt treats the existing unconfigured root as reserved rather than
+silently adopting it.
+
+The multi-language dictionary command creates selected entries sequentially
+through the ordinary hardened writer. Interruption can therefore leave a valid
+completed prefix of independently authorized entry creations while the
+remaining in-memory selection and continuation intent are lost. Completed
+notes are not rolled back or deleted merely to simulate all-or-nothing batch
+semantics.
 
 ### Obsidian Shutdown
 
-Consider shutdown or restart during operations.
+An orderly Obsidian shutdown normally allows awaited operations already in
+progress to resolve according to their existing success or failure handling,
+but Workbench does not currently persist a separate operation journal or
+pending-operation record that survives process exit.
+
+A restart therefore reconstructs authority from durable filesystem state,
+persisted plugin state, and ordinary source validation rather than from a
+remembered in-progress transaction.
+
+Operations that are naturally additive and state-derived remain comparatively
+easy to resume. Language-root Repair can re-plan the still-missing canonical
+children from the actual configured root, and Recreate can re-evaluate the
+configured missing root and current filesystem state rather than relying on a
+stale in-memory plan.
+
+By contrast, operations whose intent is not fully represented by settled
+durable state cannot necessarily resume as the same transaction after restart.
+The rename intent, an interrupted Add Language identity/configuration intent,
+and the remaining target set of a multi-language entry workflow are current
+examples.
 
 ### System Interruption
 
-Consider power loss, process termination, or filesystem failure.
+Abrupt process termination, operating-system failure, or power loss has the
+same application-level limitation: Workbench rollback code cannot execute after
+the process has stopped.
+
+The audit does not establish filesystem-level or host-level atomicity
+guarantees for Obsidian's underlying `saveData()`, folder rename, or vault file
+creation operations. Workbench should therefore not claim stronger crash
+atomicity than the host APIs actually provide.
+
+At startup, persisted settings still pass through the established decoding,
+migration, identity, path, and source-authority validation boundaries. A
+malformed or inconsistent persisted representation is blocked rather than
+silently promoted to runtime authority.
+
+Similarly, filesystem state that no longer matches configured structural
+authority is preserved for diagnosis. Missing metadata, a plausible moved
+folder, or the existence of an unconfigured root does not by itself grant
+authority to adopt, rename, delete, or rewrite that state.
+
+Filesystem failure itself may of course occur below Workbench's control.
+Current Workbench behavior is designed to avoid compounding uncertainty with
+automatic destructive repair when exact mutation authority cannot be proven.
 
 ### Recovery State
 
-Partially completed work should remain diagnosable rather than silently
-corrupted.
+Current operations generally fail toward a preserved and diagnosable partial
+state rather than attempting speculative cleanup.
+
+In particular:
+
+- completed creator-note creations remain ordinary valid notes;
+- additive canonical folders are not deleted merely because a later stage did
+  not complete;
+- a physically renamed language root is not automatically moved again or
+  adopted under guessed settings authority;
+- an unconfigured root left by interrupted Add Language is preserved rather
+  than silently claimed;
+- malformed or inconsistent persisted settings are blocked rather than treated
+  as permission to repair;
+- and Repair/Recreate derive their next action from the currently proven
+  filesystem and configuration state.
+
+This behavior protects creator data, but it is not equivalent to durable
+transaction resumption.
+
+Workbench currently has no persistent recovery journal, operation identifier,
+pending-transition record, or staged recovery namespace that preserves the
+creator's original multi-step intent across process termination.
+
+That omission is acceptable for the current narrow mutation surface only in the
+sense that partial states remain bounded, preserved, and fail-closed. It still
+creates a recoverability limitation where the creator may need to explicitly
+re-establish intent after restart.
+
+Any future recovery mechanism must itself be treated as a new persistence and
+authority surface. Recovery records should be operation-specific, validated as
+untrusted persisted data, bounded to proven Workbench-owned targets, and must
+not turn stale intent into broad authority to move, adopt, overwrite, or delete
+creator data.
 
 ### Findings
 
-None recorded yet.
+#### DS-017-L1 — Interrupted multi-step operations do not persist recovery intent across process termination
+
+**Severity:** Low
+
+Several current multi-step operations depend on in-memory transaction state that
+does not survive abrupt process termination. The durable partial state remains
+bounded and is generally preserved and diagnosable, but Workbench may no longer
+have enough information after restart to resume the creator's original
+operation exactly.
+
+Current examples are language-root rename after the physical move but before
+settings persistence, Add Language after canonical folder establishment but
+before the new configured-language record is durable, and sequential
+multi-language dictionary creation after some selected targets have completed
+but before the remaining targets are processed.
+
+The observed impact is loss of continuation intent or temporary disagreement
+between durable filesystem and configuration state. No current path was found
+that uses interruption as authority to delete creator data, overwrite an
+existing source, silently adopt an unconfigured root, guess a moved language
+identity, or arbitrarily complete an ambiguous operation.
+
+**Remediation:** Deferred. A durable recovery journal or pending-operation model
+would introduce a new persisted-data format plus new identity, cleanup,
+validation, and mutation-authority boundaries. Adding that mechanism during this
+audit would create a larger data-safety surface than the current Low-severity
+limitation warrants.
+
+Future recovery work should be designed and reviewed as a dedicated capability.
+Recovery records should preserve only the minimum operation-specific intent
+needed to diagnose or safely continue an interrupted transaction, be validated
+as untrusted persisted input, and never grant broader mutation authority than
+the creator originally authorized.
 
 ### Status
 
-**Not Reviewed**
+**Deferred — one Low crash-recovery finding is recorded. Current partial states
+remain bounded, creator data is preserved, and uncertain recovery fails closed;
+durable transaction-resumption intent is intentionally deferred for separate
+implementation design and review.**
 
 ---
 
@@ -2519,6 +2677,7 @@ audit section.
 
 | ID          | Section                                                        | Status                  | Severity  | Impact Radius                                                                                                                            | Summary                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                            | Action                                                                                                                                                                                                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------- | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DS-017-L1   | Data Safety §17 / crash and interruption recovery | Deferred | Low | Multi-step operation continuity across process termination; creator-authored files remain preserved | Current multi-step operations can lose in-memory continuation intent after abrupt process termination, leaving bounded and diagnosable partial state that cannot necessarily resume the creator's original transaction exactly. | Data Safety §17; current language-root rename, Add Language, Repair/Recreate, multi-language dictionary creation, persisted-settings validation, and established runtime atomicity behavior | Defer durable recovery-journal or pending-operation architecture to a dedicated implementation review. Any future recovery record must be operation-specific, validated as untrusted persisted data, and must not grant broader mutation authority than the creator originally authorized. |
 | DS-013-L1   | Data Safety §13 / export fidelity and lossiness | Remediated and verified | Low | Translator clipboard output and creator interpretation; no canonical source mutation | Gloss-mode Copy could silently substitute the flatter Transliterate representation, discarding ambiguity, candidate, sense, warning, and explanatory information present in the displayed Gloss. | Data Safety §13; `panel.ts`; `gloss.ts`; `test:gloss-rendering`; production build; generated-bundle invariant inspection; restored 14-warning lint baseline | Copy is unavailable in Gloss mode until a faithful plain-text representation exists, and `copyTranslation()` independently fails closed outside Transliterate mode so richer Gloss information cannot be silently flattened for clipboard output. |
 | DS-013-L2   | Data Safety §13 / export fidelity and lossiness | Remediated and verified | Low | Translator clipboard output only; no canonical source mutation | Transliterate Copy read the complete translator output container, allowing explanatory UI footer text to be copied together with the rendered transliteration. | Data Safety §13; `panel.ts`; `test:gloss-rendering`; production build; generated `.conlang-translit` selector verification; restored 14-warning lint baseline | Clipboard output now reads only the rendered `.conlang-translit` child, keeping explanatory interface text out of the creator's copied translation. |
 | DS-011-H1   | Data Safety §11 / moves, renames, and path changes | Remediated and verified | Low | Configured dictionary structure and newly created lexical notes; existing creator-authored sources are preserved | Ordinary lexical creation could recreate a missing stale canonical dictionary folder and write new notes there after the creator had moved the original source elsewhere. | Data Safety §11; `dictionary-entry-writer.ts`; `scripts/test-dictionary-entry-writer.mjs`; language-root Repair/Recreate regressions; language creator and membership regressions; persisted-settings and frontmatter parsing regressions; production build; `git diff --check`; implementation commit `86cbf88` | Lexical persistence remains centralized in the dictionary writer, but ordinary note creation now requires an already-established canonical dictionary folder. Missing or replaced structure blocks creation and directs the creator to explicit Repair/Recreate authority instead of silently reconstructing the configured path. |
@@ -2551,6 +2710,7 @@ audit section.
 
 | Section                             | Item                                                                          | Status                | Rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Revisit Trigger                                                                                                                                                                                  |
 | ----------------------------------- | ----------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Crash / interruption recovery       | Durable operation-specific recovery intent across process termination          | Deferred review       | Current bounded multi-step operations preserve creator data and generally fail closed after interruption, but some continuation intent exists only in memory. A durable recovery journal or pending-operation model would add a new persisted-data, identity, validation, cleanup, and mutation-authority surface, so it should not be introduced as an incidental audit patch. Any future design must preserve only the minimum proven operation-specific intent and must not let stale recovery state authorize broad adoption, movement, overwrite, deletion, or speculative repair of creator data. | Recovery/resume behavior is implemented; Add Language, language-root rename, multi-target creation, import, migration, bulk mutation, or another multi-step persistent workflow gains durable resumability requirements. |
 | Translation / gloss architecture    | Explicit source-language, target-language, and translation-direction identity | Deferred review       | The current gloss model can carry lookup results without explicitly recording which language they came from or are being rendered into. A wholesale redesign is outside the current H7 remediation, but future multilingual translation must not rely on implicit English ↔ conlang direction assumptions.                                                                                                                                                                                                                                           | Translation expands to non-English documentation languages, conlang-to-conlang translation, or direction-aware/richer gloss rendering.                                                           |
 | Lexical normalization / orthography | Orthographic punctuation policy and language-level punctuation configuration  | Deferred review       | H8 fixes confirmed Unicode combining-mark corruption without changing the established apostrophe/hyphen policy. Future punctuation semantics must preserve creator intent and should avoid silently treating unusual punctuation placement or language-specific orthographic characters as globally ordinary.                                                                                                                                                                                                                                        | Word-token grammar, language profiles, orthographic settings, punctuation handling, or configurable lexical-character support changes.                                                           |
 | Lexical normalization / orthography | Language-aware lexical casing                                                 | Deferred review       | H8 retains the current boolean case policy while applying NFC only to derived lookup/index keys. Language-specific casing may require a richer policy, but changing that behavior is outside the confirmed combining-mark remediation.                                                                                                                                                                                                                                                                                                               | Language-specific casing is requested; case behavior becomes configurable; language profiles gain casing rules; or lookup expands to languages for which the current case model is insufficient. |
