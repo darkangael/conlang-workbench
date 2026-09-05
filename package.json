@@ -36,6 +36,7 @@
     "test:hover-direction-compatibility": "node scripts/test-hover-direction-compatibility.mjs",
     "test:translation-commit-plan": "node scripts/test-translation-commit-plan.mjs",
     "test:translation-vocabulary-repair": "node scripts/test-translation-vocabulary-repair.mjs",
+    "test:runtime-destructive-safety": "node scripts/test-runtime-destructive-safety.mjs",
     "format": "prettier --write",
     "format:check": "prettier --check"
   },

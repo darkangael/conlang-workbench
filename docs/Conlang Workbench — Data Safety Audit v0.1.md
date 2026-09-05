@@ -3011,43 +3011,196 @@ creation/repair actions are not burdened with redundant confirmation.**
 
 ## 20. Runtime Destructive Tests
 
-Use a disposable test vault only.
+Runtime destructive testing was performed only against disposable fixtures.
+
+The new physical-filesystem regression creates a fresh operating-system
+temporary directory with `mkdtemp()`, treats a child directory as the disposable
+vault, exercises production writer/planner/state modules through a
+filesystem-backed Obsidian test double, and removes the complete temporary
+directory in `finally`.
+
+The repository's persistent `test-vault` is not used as the destructive-test
+target. Creator-authored fixtures and private language material therefore remain
+outside this test's mutation authority.
+
+Existing focused regressions remain important supporting evidence. Most of those
+tests intentionally model vault state in memory so they can exercise precise
+failure, race, rollback, stale-target, and transaction-ordering conditions.
+They complement rather than substitute for the new physical on-disk
+preservation checks.
 
 ### Single-Note Mutation
 
-Test expected and unexpected values around one-note operations.
+The disposable-filesystem regression exercises `writeDictionaryEntry()` against
+a real temporary dictionary directory.
+
+A fresh lexical entry is created through the production writer's create-only
+boundary, and the resulting file contents are read back from disk and compared
+with the exact intended content.
+
+The test then repeats an equivalent lexical creation after representing the
+newly created note as indexed source authority. The writer returns the existing
+entry before content generation, the existing file's SHA-256 hash remains
+unchanged, and no additional homograph file is created.
+
+This verifies both the expected single-note mutation and the bounded no-write
+behavior of an already-established equivalent destination.
 
 ### Existing Destination
 
-Test filename and ID collisions.
+The physical regression establishes an existing exact-path creator note before
+attempting lexical creation at the same destination.
+
+Because the existing source cannot be safely established as a different lexical
+meaning, creation is blocked rather than overwriting, truncating, or silently
+reinterpreting the existing file. A pre/post SHA-256 comparison verifies that
+the creator-visible bytes remain identical.
+
+The filesystem-backed vault double also implements `vault.create()` with the
+operating system's create-exclusive `wx` behavior. If the production writer
+were to reach physical creation for an already-existing destination, the
+filesystem operation itself would fail instead of replacing that file.
+
+Stable-ID and identity-collision behavior is covered separately by the §9
+identity regressions and established source-authority tests. Current production
+code does not perform an ID-collision rewrite that would justify manufacturing
+a new destructive on-disk ID mutation solely for this section.
 
 ### Malformed Notes
 
-Confirm malformed notes are preserved on disk.
+The existing-destination fixture deliberately contains malformed/unusable
+frontmatter together with a creator sentinel in the note body.
+
+The metadata-cache test double supplies no safely interpreted frontmatter
+authority for that source. `writeDictionaryEntry()` therefore fails closed at
+the existing destination.
+
+The file is hashed before and after the attempted mutation. Matching SHA-256
+values verify that malformed creator-authored bytes are preserved exactly on
+disk while the attempted new lexical creation is refused.
+
+This complements the parser and source-diagnostic regressions that verify
+malformed or rejected recognized sources remain available for observation
+rather than becoming mutation authority.
 
 ### Interrupted Operations
 
-Simulate failure where practical.
+A disposable Add Language operation injects a physical `createFolder()` failure
+at the `Inflections` step after the language root, `Lexicon`, and `Morphemes`
+have already been established.
+
+The operation returns failure. The previously created additive directories
+remain present, while `Inflections`, `Cyphers`, `Examples`, and `Phonology` are
+absent because execution does not continue past the injected failure.
+
+An unrelated creator-sentinel file beneath the shared `Languages` container is
+hashed before and after the interrupted operation and remains byte-identical.
+
+This verifies the documented interruption boundary: additive structure already
+made creator-visible is preserved rather than deleted speculatively, later
+mutation stops after failure, and unrelated creator data is not rewritten in an
+attempt to manufacture transaction-wide filesystem atomicity.
+
+The established in-memory Add Language, Repair/Recreate, Rename, settings-state,
+and translation-repair regressions provide additional failure and rollback
+coverage for conditions that are more precisely controlled through injected
+callbacks than through a physical filesystem.
+
+Abrupt process termination remains the separate deferred DS-017-L1 concern.
+This section does not treat an injected rejected operation as proof of durable
+resume intent across process death.
 
 ### Large Scope
 
-Test folder/language operations using disposable fixtures.
+The physical regression exercises language-level directory establishment only
+inside its fresh disposable vault.
+
+Add Language is tested across its standard multi-folder hierarchy with an
+injected mid-operation failure. Repair is tested against an already-owned
+language root containing both canonical structure and unrelated noncanonical
+creator material. Recreate is tested at the exact configured-root boundary.
+
+No test is run against the repository's persistent `test-vault`, and no private
+or creator language tree is used as disposable mutation material.
+
+The broader §16 review remains applicable: current production code has no
+vault-wide destructive rewrite, recursive write, mass normalization, bulk
+creator-file deletion, or comparable operation whose destructive runtime scope
+would require a vault-scale mutation fixture.
 
 ### Repetition
 
-Run the same mutation repeatedly and confirm idempotent behavior where expected.
+Repetition is evaluated according to each operation's intended authority
+semantics rather than assuming every command should report repeated success.
+
+Equivalent dictionary creation is idempotent: after the first source is
+established and recognized, repeating the same semantic creation returns the
+existing entry without rebuilding content, rewriting the file, or creating a
+homograph.
+
+Repair is also idempotent where expected. The first Repair establishes the
+missing canonical children of an already-owned root while preserving an
+unrelated creator note. A second Repair observes the complete structure and
+performs no additional folder creation; the creator note remains byte-identical.
+
+Recreate intentionally has different semantics. Its first exact-root
+establishment succeeds when the configured root is missing. Repeating the
+stronger Recreate operation after that root exists is blocked rather than
+silently treating an existing folder as newly authorized ownership. Continued
+maintenance of the established root belongs to Repair.
 
 ### Recovery
 
-Verify that documented recovery paths actually work.
+The disposable Repair fixture begins with an already-owned configured root,
+one existing canonical child, missing canonical children, and unrelated
+creator-authored material under a noncanonical `Notes` subtree.
+
+The production repair planner identifies only the missing direct canonical
+children. The state transaction establishes those folders through
+`ensureVaultFolderStrict()`, leaves the existing canonical folder in place,
+preserves the noncanonical creator note byte-for-byte, and succeeds without
+requiring runtime reload for the inactive fixture.
+
+Repeating Repair creates nothing further.
+
+The stronger Recreate writer is separately exercised against both collision and
+success cases. A non-folder at the exact configured root blocks recreation and
+remains byte-identical. A genuinely missing configured root can be established,
+while a second recreation attempt against that now-existing root is blocked
+rather than adopting it again.
+
+These physical checks agree with the established planner/state regressions for
+Repair, Recreate, Rename, Add Language, dictionary persistence, linguistic-rule
+state, and translation vocabulary repair. The focused §20 regression set was
+run together after the physical test was registered, and every reviewed
+mutation/recovery regression passed.
+
+The physical regression is permanently exposed as:
+
+`npm run test:runtime-destructive-safety`
+
+It uses only a fresh temporary filesystem fixture and cleans that fixture in
+`finally`.
 
 ### Findings
 
-None recorded yet.
+None.
+
+The runtime destructive tests did not expose a new creator-data preservation,
+overwrite, collision, interruption, repetition, or documented-recovery defect
+at the current baseline.
+
+DS-017-L1 remains the already-recorded Low deferred finding for durable recovery
+intent across abrupt process termination. Its existence does not represent a
+new §20 finding and is not silently reclassified by these tests.
 
 ### Status
 
-**Not Reviewed**
+**Pass — disposable physical-filesystem testing verifies create-only lexical
+mutation, exact-byte preservation of malformed and colliding creator notes,
+bounded partial Add Language behavior, idempotent Repair, and fail-closed
+Recreate semantics. Established focused regressions for the related transaction
+and recovery boundaries also remain green. No new finding was identified.**
 
 ---
 
