@@ -105,7 +105,9 @@ import {
   type LanguageMembershipStateResult,
 } from "./language-membership-state";
 import {
+  applyConfirmedLinguisticRuleState,
   LinguisticRuleStateQueue,
+  type ConfirmedLinguisticRuleStateResult,
   type LinguisticRuleCandidate,
   type LinguisticRuleStateResult,
 } from "./linguistic-rule-state";
@@ -824,6 +826,54 @@ export default class ConlangPlugin extends Plugin {
         save: () => this.saveSettings(),
       }),
     );
+  }
+
+  /**
+   * Establish one destructive/replacement linguistic-rule mutation whose exact
+   * meaning must remain stable while the creator is deciding.
+   *
+   * The common settings-authority queue is acquired BEFORE the confirmation
+   * callback reads the target or constructs creator-facing text. This differs
+   * deliberately from ordinary H10 edits: a confirmation cannot safely be
+   * prepared from a rendered object and then wait outside the authority queue,
+   * because successful H10 reconciliation preserves object identity while
+   * updating that object's semantic values.
+   *
+   * Holding the outer queue through confirmation gives this sequence:
+   *
+   *   settled settings authority
+   *     -> current-target confirmation
+   *     -> linguisticRuleStateQueue
+   *     -> persistence/reconciliation
+   *
+   * Do not implement this by calling setLinguisticRuleState() from inside the
+   * common queue. That method acquires the same non-reentrant queue and would
+   * deadlock behind the transaction already holding it.
+   */
+  async confirmLinguisticRuleState(
+    language: LanguageConfig,
+    confirm: () => Promise<boolean>,
+    edit: (candidate: LinguisticRuleCandidate) => void,
+  ): Promise<ConfirmedLinguisticRuleStateResult> {
+    return this.settingsAuthorityQueue.run(() => {
+      /*
+       * A rendered language card may itself be stale by the time this queued
+       * transaction begins. Require the exact LanguageConfig object to remain
+       * configured before even asking the creator to authorize a nested rule
+       * mutation.
+       */
+      if (!this.settings.languages.includes(language)) {
+        return Promise.resolve({ status: "target-missing" as const });
+      }
+
+      return applyConfirmedLinguisticRuleState({
+        state: language,
+        queue: this.linguisticRuleStateQueue,
+        confirm,
+        edit,
+        save: () => this.saveSettings(),
+      });
+    });
   }
 
   /**

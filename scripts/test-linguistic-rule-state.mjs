@@ -27,6 +27,7 @@ try {
   await readFile(modulePath, "utf8");
 
   const {
+    applyConfirmedLinguisticRuleState,
     applyLinguisticRuleState,
     cloneLinguisticRuleState,
     LinguisticRuleStateQueue,
@@ -794,6 +795,180 @@ try {
     assert.deepEqual(later, { status: "applied" });
     assert.equal(saveCalls, 1);
     assert.equal(state.sheets[0].name, "Later valid edit");
+  }
+
+  {
+    /*
+     * Explicit cancellation must grant no linguistic-rule mutation or
+     * persistence authority.
+     */
+    const state = makeState();
+    const queue = new LinguisticRuleStateQueue();
+
+    let editCalls = 0;
+    let saveCalls = 0;
+
+    const result = await applyConfirmedLinguisticRuleState({
+      state,
+      queue,
+      confirm: async () => false,
+      edit: () => {
+        editCalls++;
+      },
+      save: async () => {
+        saveCalls++;
+      },
+    });
+
+    assert.deepEqual(result, { status: "cancelled" });
+    assert.equal(editCalls, 0);
+    assert.equal(saveCalls, 0);
+    assert.equal(state.sheets[0].rules[0].output, "š");
+  }
+
+  {
+    /*
+     * A stale target discovered while constructing confirmation must fail
+     * closed before either detached candidate mutation or persistence.
+     */
+    const state = makeState();
+    const queue = new LinguisticRuleStateQueue();
+
+    let editCalls = 0;
+    let saveCalls = 0;
+
+    const result = await applyConfirmedLinguisticRuleState({
+      state,
+      queue,
+      confirm: async () => {
+        throw new LinguisticRuleTargetMissingError();
+      },
+      edit: () => {
+        editCalls++;
+      },
+      save: async () => {
+        saveCalls++;
+      },
+    });
+
+    assert.deepEqual(result, { status: "target-missing" });
+    assert.equal(editCalls, 0);
+    assert.equal(saveCalls, 0);
+  }
+
+  {
+    /*
+     * §19 regression: creator confirmation must run inside the common settings-
+     * authority boundary.
+     *
+     * First let an earlier H10 transaction change a rule while preserving the
+     * original rule object's identity. The confirmed operation was already
+     * submitted, but its confirmation callback must wait until that earlier
+     * transaction settles and must therefore observe the NEW semantic value.
+     *
+     * While confirmation remains open, a later unrelated settings transaction
+     * must remain excluded. This proves that the meaning shown to the creator
+     * cannot change underneath the pending approval.
+     */
+    const language = makeState();
+    const settings = {
+      hoverModifier: "Shift",
+      language,
+    };
+
+    const authorityQueue = new SettingsAuthorityQueue();
+    const linguisticQueue = new LinguisticRuleStateQueue();
+    const originalRule = language.sheets[0].rules[0];
+
+    let releaseEarlierSave;
+    const earlierSaveGate = new Promise((resolve) => {
+      releaseEarlierSave = resolve;
+    });
+
+    const earlier = authorityQueue.run(() =>
+      linguisticQueue.apply({
+        state: language,
+        edit: (candidate) => {
+          candidate.sheets[0].rules[0].output = "settled-before-confirm";
+        },
+        save: () => earlierSaveGate,
+      }),
+    );
+
+    let resolveConfirmation;
+    const confirmationGate = new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    });
+
+    let confirmationCalls = 0;
+    let confirmedValue;
+
+    const confirmedMutation = authorityQueue.run(() =>
+      applyConfirmedLinguisticRuleState({
+        state: language,
+        queue: linguisticQueue,
+        confirm: async () => {
+          confirmationCalls++;
+          confirmedValue = originalRule.output;
+          return confirmationGate;
+        },
+        edit: (candidate) => {
+          candidate.sheets[0].rules.splice(0, 1);
+        },
+        save: async () => {},
+      }),
+    );
+
+    /*
+     * The earlier transaction still owns the common queue, so the confirmation
+     * must not even be constructed from its provisional state.
+     */
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(confirmationCalls, 0);
+
+    releaseEarlierSave();
+    assert.deepEqual(await earlier, { status: "applied" });
+
+    /*
+     * Reconciliation intentionally preserved object identity while installing
+     * the new settled value. The confirmation must now describe that value.
+     */
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(language.sheets[0].rules[0], originalRule);
+    assert.equal(confirmationCalls, 1);
+    assert.equal(confirmedValue, "settled-before-confirm");
+
+    let ordinaryWriteCalls = 0;
+    const ordinary = authorityQueue.run(() =>
+      applyPersistedSettingState({
+        read: () => settings.hoverModifier,
+        write: (value) => {
+          ordinaryWriteCalls++;
+          settings.hoverModifier = value;
+        },
+        requested: "Control",
+        save: async () => {},
+      }),
+    );
+
+    await Promise.resolve();
+    assert.equal(
+      ordinaryWriteCalls,
+      0,
+      "later settings authority must remain blocked while confirmation is open",
+    );
+
+    resolveConfirmation(true);
+
+    assert.deepEqual(await confirmedMutation, { status: "applied" });
+    assert.equal(language.sheets[0].rules.length, 0);
+
+    assert.deepEqual(await ordinary, { status: "applied" });
+    assert.equal(ordinaryWriteCalls, 1);
+    assert.equal(settings.hoverModifier, "Control");
   }
 
   {

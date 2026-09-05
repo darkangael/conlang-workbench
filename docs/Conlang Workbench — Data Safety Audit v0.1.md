@@ -2746,32 +2746,266 @@ preserved, and diagnostic presentation remains separate from mutation.**
 
 ### Destructive Actions
 
-Identify operations that should require confirmation.
+Workbench does not treat every creator-initiated write as destructive merely
+because it changes plugin state or creates a new note.
+
+Ordinary explicit creation actions such as saving a new dictionary entry,
+creating a new name, adding a cypher rule, or adding an inflection rule already
+express sufficiently specific creator intent for their bounded additive effect.
+Adding a second generic confirmation to those actions would make destructive
+prompts more routine without materially improving authorization quality.
+
+Operations that remove, replace, rename, or establish a more consequential
+authority boundary receive stronger treatment.
+
+Current examples include:
+
+- removing a configured language;
+- deleting a cypher sheet and all rules it contains;
+- deleting an individual cypher rule;
+- deleting an individual inflection rule;
+- replacing an existing inflection-rule collection with a preset;
+- renaming a configured language and its already-owned root;
+- recreating a missing configured language root;
+- and committing an exact translation replacement into the editor.
+
+The shared deletion confirmation boundary fails closed. Only the explicit
+destructive button returns approval. Cancel, Escape, outside-click, and other
+implicit modal closure return a no-write decision.
+
+Language removal is configuration-only and its confirmation explicitly states
+that configured vault folders and files will not be deleted.
+
+Language-root Recreate has a stronger confirmation than ordinary Repair because
+Recreate establishes a new filesystem ownership boundary at a currently missing
+configured root. Its confirmation identifies the exact language and configured
+root, explains the standard structure that will be created, states that
+Workbench will not search for, move, or adopt a possibly relocated root, and
+warns the creator to cancel if the original root may merely have been moved.
+
+Language rename likewise names both the current and requested language names and
+explains that the existing owned root and configured descendant paths will
+change while creator-authored Markdown and YAML are not rewritten by Workbench.
 
 ### Broad Scope
 
-Require clearer confirmation as impact radius grows.
+Confirmation quality increases with impact radius rather than being applied
+uniformly to every mutation.
+
+A cypher-sheet deletion identifies the sheet and the number of contained rules
+that will be removed. Individual cypher and inflection deletion prompts identify
+the specific current rule where creator-visible rule text is available.
+
+Inflection preset replacement explains that the selected preset will replace the
+existing rule collection, reports how many existing rules will be replaced, and
+states that the replacement cannot be undone from inside settings.
+
+Language removal identifies the exact configured language and explicitly limits
+the operation to Workbench configuration.
+
+Language rename and root recreation expose their broader structural
+consequences before execution rather than reducing those actions to a generic
+confirmation question.
+
+No current reviewed operation performs a vault-wide destructive rewrite, bulk
+creator-file deletion, or similarly broad mutation requiring a larger preview
+surface. If such operations are introduced later, their confirmation and
+preview requirements must be reassessed according to their larger impact
+radius.
 
 ### Preview
 
-Determine which mutations should show proposed changes before execution.
+Workbench uses an exact preview where the mutation itself is a concrete textual
+replacement whose meaning cannot be communicated adequately by an action label
+alone.
+
+The English-to-conlang translation commit workflow displays the Original text,
+the proposed Translation, and the exact text that Will insert. The replacement
+is rendered in whitespace-preserving presentation, and the same planned
+replacement is later passed to the editor mutation after current target state is
+revalidated.
+
+Missing-vocabulary repair does not inherit authorization to perform that final
+translation replacement. After any explicitly approved vocabulary creation,
+Workbench rebuilds the translation plan and requires the separate exact
+replacement preview before modifying the editor.
+
+Not every bounded mutation needs a full before/after preview. For example,
+deleting one identified rule or applying a named preset with an explicit
+replacement warning communicates its complete practical effect without
+requiring a second synthetic diff view.
+
+Language-root Repair also does not require a second confirmation or artificial
+filesystem preview. The creator explicitly invokes `Repair language root`, and
+the action is described as restoring the standard folders and canonical source
+paths inside that language's already-existing owned root. The authoritative
+planner then independently re-evaluates current filesystem and configuration
+state before additive mutation.
+
+This differs from Recreate, which establishes a missing ownership boundary and
+therefore receives explicit confirmation before creation.
 
 ### Default Choice
 
-Safe/no-write behavior should be the default when intent is ambiguous.
+Current confirmation boundaries default to no write when creator intent is not
+affirmatively established.
+
+The shared deletion modal resolves false on Cancel or implicit close and guards
+against multiple resolution.
+
+Language rename and root-recreation confirmation likewise fail closed on
+Escape, outside-click, or other implicit closure.
+
+Portable-ID choice treats cancellation separately from a legitimate explicit
+choice not to generate portable IDs.
+
+Translation replacement requires the creator to choose the explicit Replace
+action after reviewing the current plan. Closing or cancelling the workflow does
+not grant editor mutation authority.
+
+Stale rendered controls also do not authorize whichever object later occupies a
+previous array index. Cypher sheets, cypher rules, inflection rules, language
+configuration, rename targets, root-recreation targets, and removal targets are
+revalidated against current authority before mutation.
+
+During this audit one additional stale-confirmation weakness was found for
+linguistic-rule deletion and replacement. That finding is recorded as
+DS-019-L1 and was remediated during this section.
 
 ### Confirmation Quality
 
-Confirmation text should explain what will change, not merely ask "Are you
-sure?"
+Confirmation text describes the proposed consequence rather than merely asking
+a generic "Are you sure?"
+
+Creator-controlled names and rule text in the shared deletion modal are rendered
+through text APIs rather than interpreted as HTML.
+
+The reviewed confirmation surfaces distinguish important ownership and
+preservation boundaries:
+
+- language removal says creator vault folders and files remain;
+- root recreation says it creates only the configured missing root and standard
+  children and does not search for or adopt a moved root;
+- rename explains the owned-root move, configured-path update, Markdown/YAML
+  non-rewrite boundary, and possible Obsidian link updates;
+- preset replacement names the preset, describes it, counts the rules being
+  replaced, and states the lack of an in-settings undo;
+- sheet deletion reports that contained rules are deleted with the sheet;
+- and translation commit shows the exact proposed editor replacement.
+
+A confirmation must also remain bound to the semantic state the creator actually
+reviewed. Object identity alone is not always sufficient for that purpose.
+
+H10 intentionally preserves the identities of surviving cypher sheets, cypher
+rules, and inflection rules after successful persistence so rendered Settings
+controls remain valid. Reconciliation copies successfully persisted primitive
+values back into those existing authoritative objects.
+
+Before DS-019-L1 was remediated, destructive linguistic-rule confirmations were
+opened before entering the common settings-authority queue. A previously queued
+linguistic-rule transaction could therefore finish while the confirmation was
+open, update the semantic values of the same object through successful
+reconciliation, and preserve its object identity. The later deletion or preset
+replacement could then pass an identity-based target check even though the
+creator had approved different displayed contents.
+
+The remediation does not weaken H10's deliberate identity-preservation model.
+Instead, consequential linguistic-rule operations now acquire the common
+settings-authority queue before reading the target or constructing confirmation
+text and keep that authority boundary held through the creator's decision and
+the confirmed H10 mutation.
+
+The resulting lock order remains:
+
+`settingsAuthorityQueue -> linguisticRuleStateQueue`
+
+Earlier authority transactions therefore settle before confirmation text is
+constructed, while later settings transactions remain excluded until the
+creator confirms or cancels and the current operation settles.
+
+The operation still revalidates its exact sheet or rule immediately before
+editing the detached candidate as defense in depth. A stale language card is
+also rejected before confirmation unless its exact `LanguageConfig` object is
+still configured.
 
 ### Findings
 
-None recorded yet.
+#### DS-019-L1 — Linguistic-rule confirmations could authorize changed semantic content while target object identity remained stable
+
+**Severity:** Low
+
+Cypher-sheet deletion, cypher-rule deletion, inflection-rule deletion, and
+inflection preset replacement previously obtained creator confirmation before
+entering the plugin-wide settings-authority queue.
+
+Those operations retained exact-object checks after confirmation, but H10
+deliberately preserves the object identity of surviving linguistic-rule objects
+after a successful queued edit. Successful reconciliation copies newly persisted
+primitive values back into the same existing sheet and rule objects so rendered
+Settings controls remain usable.
+
+An earlier queued linguistic-rule operation could therefore settle while a
+destructive confirmation was open, change the name, rule contents, label, or
+other semantic values that defined what the creator had reviewed, and still
+leave the same object identity in authority.
+
+For preset replacement, the previous shallow snapshot of the inflection array
+had the same limitation: it proved membership, order, and object identity but
+could not prove that the surviving rule objects still contained the semantic
+values present when the replacement warning was shown.
+
+The impact was bounded to Workbench linguistic-rule settings and required a
+narrow stale-confirmation timing condition. No creator Markdown or vault file
+deletion was involved, and the behavior did not broaden filesystem authority.
+The finding is therefore Low severity, but it violated the requirement that
+approval remain attached to the exact consequential state the creator reviewed.
+
+**Remediation:** Remediated and verified. Consequential linguistic-rule
+operations now use a dedicated confirmation-aware H10 path. The plugin acquires
+the common settings-authority queue before confirmation reads current authority
+or constructs creator-facing text, then keeps that queue held through
+confirmation and the resulting linguistic-rule transaction.
+
+The inner operation continues to use `LinguisticRuleStateQueue` for detached
+candidate construction, persistence rollback, and successful identity
+reconciliation. The confirmed path does not recursively call the ordinary
+`setLinguisticRuleState()` wrapper, avoiding re-entry of the non-reentrant
+settings queue and preserving the established lock order.
+
+Cancellation is represented as an explicit no-write result. A stale target
+discovered while preparing confirmation returns `target-missing` without
+editing or saving. Exact sheet/rule targets are re-found again immediately
+before candidate mutation.
+
+Verification includes focused regression coverage proving that:
+
+- cancellation performs no edit and no persistence;
+- a stale target discovered before confirmation fails closed;
+- confirmation waits for an earlier settings/H10 transaction to settle and
+  observes the newly settled semantic value even when object identity is
+  preserved;
+- a later unrelated settings transaction cannot enter while the confirmation is
+  open;
+- the confirmed linguistic deletion then persists normally after explicit
+  approval;
+- existing H10 identity/reconciliation behavior remains intact;
+- shared deletion confirmation still fails closed;
+- language removal, language-root recreation, and language rename regressions
+  remain green;
+- persisted-setting and common settings-authority regressions remain green;
+- the production build contains the confirmation-aware path;
+- Prettier verification passes for all hand-edited files;
+- `git diff --check` is clean;
+- and the established lint baseline remains 0 errors and 14 pre-existing
+  warnings.
 
 ### Status
 
-**Not Reviewed**
+**Remediated and verified — one Low stale-confirmation finding was found and
+corrected. Consequential confirmations now describe settled current authority
+and remain protected from intervening settings mutations while the creator is
+deciding; cancellation and stale targets fail closed, and bounded ordinary
+creation/repair actions are not burdened with redundant confirmation.**
 
 ---
 

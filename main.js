@@ -4951,6 +4951,25 @@ var LinguisticRuleStateQueue = class {
     return result;
   }
 };
+async function applyConfirmedLinguisticRuleState(request) {
+  let confirmed;
+  try {
+    confirmed = await request.confirm();
+  } catch (error) {
+    if (error instanceof LinguisticRuleTargetMissingError) {
+      return { status: "target-missing" };
+    }
+    throw error;
+  }
+  if (!confirmed) {
+    return { status: "cancelled" };
+  }
+  return request.queue.apply({
+    state: request.state,
+    edit: request.edit,
+    save: request.save
+  });
+}
 
 // settings.ts
 var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
@@ -6353,37 +6372,28 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
       });
     }).addButton(
       (b) => b.setButtonText("Apply").setCta().onClick(async () => {
-        var _a2;
         if (!pendingPresetId) {
           new import_obsidian15.Notice("Made Up Words: pick a preset first");
           return;
         }
         const preset = findPreset(pendingPresetId);
         if (!preset) return;
-        const approvedRules = lang.inflections ? [...lang.inflections] : void 0;
-        const existingCount = (_a2 = approvedRules == null ? void 0 : approvedRules.length) != null ? _a2 : 0;
-        const confirmed = await this.confirmPreset(preset, existingCount);
-        if (!confirmed) return;
-        const result = await this.plugin.setLinguisticRuleState(
+        const result = await this.plugin.confirmLinguisticRuleState(
           lang,
+          () => {
+            var _a2, _b2;
+            const existingCount = (_b2 = (_a2 = lang.inflections) == null ? void 0 : _a2.length) != null ? _b2 : 0;
+            return this.confirmPreset(preset, existingCount);
+          },
           (candidate) => {
-            const currentRules = lang.inflections;
-            if (approvedRules === void 0) {
-              if (currentRules !== void 0) {
-                throw new LinguisticRuleTargetMissingError();
-              }
-            } else {
-              if (currentRules === void 0 || currentRules.length !== approvedRules.length || currentRules.some(
-                (currentRule, index) => currentRule !== approvedRules[index]
-              )) {
-                throw new LinguisticRuleTargetMissingError();
-              }
-            }
             candidate.inflections = preset.rules.map((rule) => ({
               ...rule
             }));
           }
         );
+        if (result.status === "cancelled") {
+          return;
+        }
         if (result.status === "save-failed") {
           console.error(
             "Made Up Words: failed to apply inflection preset:",
@@ -6397,7 +6407,7 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
         }
         if (result.status === "target-missing") {
           new import_obsidian15.Notice(
-            "Made Up Words: the inflection rules changed while preset replacement was pending; the preset was not applied."
+            "Made Up Words: the language or inflection-rule target is no longer current; the preset was not applied."
           );
           this.rerender();
           return;
@@ -6645,15 +6655,20 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
       })
     ).addButton(
       (b) => b.setIcon("trash").setTooltip("Delete sheet").onClick(async () => {
-        const sheetName = sheet.name.trim() || "Untitled sheet";
-        const confirmed = await confirmDeletion(this.app, {
-          title: "Delete cypher sheet?",
-          message: `Delete the cypher sheet "${sheetName}" and its ${sheet.rules.length} rule${sheet.rules.length === 1 ? "" : "s"} from this language's settings?`,
-          confirmText: "Delete sheet"
-        });
-        if (!confirmed) return;
-        const result = await this.plugin.setLinguisticRuleState(
+        const result = await this.plugin.confirmLinguisticRuleState(
           lang,
+          () => {
+            const currentIndex = lang.sheets.indexOf(sheet);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const sheetName = sheet.name.trim() || "Untitled sheet";
+            return confirmDeletion(this.app, {
+              title: "Delete cypher sheet?",
+              message: `Delete the cypher sheet "${sheetName}" and its ${sheet.rules.length} rule${sheet.rules.length === 1 ? "" : "s"} from this language's settings?`,
+              confirmText: "Delete sheet"
+            });
+          },
           (candidate) => {
             const currentIndex = lang.sheets.indexOf(sheet);
             if (currentIndex < 0) {
@@ -6662,6 +6677,9 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
             candidate.sheets.splice(currentIndex, 1);
           }
         );
+        if (result.status === "cancelled") {
+          return;
+        }
         if (result.status === "save-failed") {
           console.error(
             "Made Up Words: failed to delete cypher sheet:",
@@ -6933,15 +6951,24 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
     const deleteBtn = deleteTd.createEl("button", { text: "\xD7" });
     deleteBtn.addEventListener("click", () => {
       void (async () => {
-        const ruleDescription = rule.input || rule.output ? `"${rule.input || "(empty)"}" \u2192 "${rule.output || "(empty)"}"` : "this cypher rule";
-        const confirmed = await confirmDeletion(this.app, {
-          title: "Delete cypher rule?",
-          message: `Delete ${ruleDescription} from this cypher sheet?`,
-          confirmText: "Delete rule"
-        });
-        if (!confirmed) return;
-        const result = await this.plugin.setLinguisticRuleState(
+        const result = await this.plugin.confirmLinguisticRuleState(
           lang,
+          () => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const ruleDescription = rule.input || rule.output ? `"${rule.input || "(empty)"}" \u2192 "${rule.output || "(empty)"}"` : "this cypher rule";
+            return confirmDeletion(this.app, {
+              title: "Delete cypher rule?",
+              message: `Delete ${ruleDescription} from this cypher sheet?`,
+              confirmText: "Delete rule"
+            });
+          },
           (candidate) => {
             const currentSheetIndex = lang.sheets.indexOf(sheet);
             if (currentSheetIndex < 0) {
@@ -6957,6 +6984,9 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
             );
           }
         );
+        if (result.status === "cancelled") {
+          return;
+        }
         if (result.status === "save-failed") {
           console.error(
             "Made Up Words: failed to delete cypher rule:",
@@ -7143,18 +7173,55 @@ var ConlangSettingTab = class extends import_obsidian15.PluginSettingTab {
     const deleteBtn = deleteTd.createEl("button", { text: "\xD7" });
     deleteBtn.addEventListener("click", () => {
       void (async () => {
-        const label = rule.label.trim();
-        const ruleDescription = label ? `the inflection rule "${label}"` : "this inflection rule";
-        const confirmed = await confirmDeletion(this.app, {
-          title: "Delete inflection rule?",
-          message: `Delete ${ruleDescription} from this language's settings?`,
-          confirmText: "Delete rule"
-        });
-        if (!confirmed) return;
-        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
-          candidateRules.splice(currentIndex, 1);
-        }, "delete inflection rule");
-        if (!applied) {
+        const result = await this.plugin.confirmLinguisticRuleState(
+          lang,
+          () => {
+            const currentRules = lang.inflections;
+            if (!currentRules || currentRules.indexOf(rule) < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const label = rule.label.trim();
+            const ruleDescription = label ? `the inflection rule "${label}"` : "this inflection rule";
+            return confirmDeletion(this.app, {
+              title: "Delete inflection rule?",
+              message: `Delete ${ruleDescription} from this language's settings?`,
+              confirmText: "Delete rule"
+            });
+          },
+          (candidate) => {
+            const currentRules = lang.inflections;
+            if (!currentRules) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const currentIndex = currentRules.indexOf(rule);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            const candidateRules = candidate.inflections;
+            if (!candidateRules || !candidateRules[currentIndex]) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+            candidateRules.splice(currentIndex, 1);
+          }
+        );
+        if (result.status === "cancelled") {
+          return;
+        }
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to delete inflection rule:",
+            result.error
+          );
+          new import_obsidian15.Notice(
+            "Made Up Words: could not save the inflection-rule deletion; the rule was not deleted."
+          );
+          this.rerender();
+          return;
+        }
+        if (result.status === "target-missing") {
+          new import_obsidian15.Notice(
+            "Made Up Words: that inflection rule is no longer current; nothing was deleted."
+          );
           this.rerender();
           return;
         }
@@ -14015,6 +14082,42 @@ var _ConlangPlugin = class _ConlangPlugin extends import_obsidian30.Plugin {
         save: () => this.saveSettings()
       })
     );
+  }
+  /**
+   * Establish one destructive/replacement linguistic-rule mutation whose exact
+   * meaning must remain stable while the creator is deciding.
+   *
+   * The common settings-authority queue is acquired BEFORE the confirmation
+   * callback reads the target or constructs creator-facing text. This differs
+   * deliberately from ordinary H10 edits: a confirmation cannot safely be
+   * prepared from a rendered object and then wait outside the authority queue,
+   * because successful H10 reconciliation preserves object identity while
+   * updating that object's semantic values.
+   *
+   * Holding the outer queue through confirmation gives this sequence:
+   *
+   *   settled settings authority
+   *     -> current-target confirmation
+   *     -> linguisticRuleStateQueue
+   *     -> persistence/reconciliation
+   *
+   * Do not implement this by calling setLinguisticRuleState() from inside the
+   * common queue. That method acquires the same non-reentrant queue and would
+   * deadlock behind the transaction already holding it.
+   */
+  async confirmLinguisticRuleState(language, confirm, edit) {
+    return this.settingsAuthorityQueue.run(() => {
+      if (!this.settings.languages.includes(language)) {
+        return Promise.resolve({ status: "target-missing" });
+      }
+      return applyConfirmedLinguisticRuleState({
+        state: language,
+        queue: this.linguisticRuleStateQueue,
+        confirm,
+        edit,
+        save: () => this.saveSettings()
+      });
+    });
   }
   /**
    * Establish the requested conlang case-matching policy as one authority

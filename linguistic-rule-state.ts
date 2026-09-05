@@ -54,6 +54,21 @@ export type LinguisticRuleStateResult =
     };
 
 /**
+ * Result of a linguistic-rule mutation whose authority also requires explicit
+ * creator confirmation.
+ *
+ * Cancellation is deliberately distinct from target-missing. A creator who
+ * closes or declines a confirmation made a valid no-write choice; target-
+ * missing instead means the object the UI intended to authorize was no longer
+ * current authority when the confirmation transaction reached its turn.
+ */
+export type ConfirmedLinguisticRuleStateResult =
+  | LinguisticRuleStateResult
+  | {
+      status: "cancelled";
+    };
+
+/**
  * Abort one queued edit because the exact object authorized by the UI no
  * longer exists in current linguistic-rule authority.
  *
@@ -450,4 +465,75 @@ export class LinguisticRuleStateQueue {
 
     return result;
   }
+}
+
+/**
+ * Services required by one explicitly confirmed linguistic-rule mutation.
+ *
+ * The caller must already hold the plugin-wide settings-authority boundary
+ * before invoking this helper. That outer lock is what ensures the confirmation
+ * is constructed from settled authority and that no other settings transaction
+ * can change its meaning while the creator is deciding.
+ */
+export interface ApplyConfirmedLinguisticRuleStateRequest {
+  state: LinguisticRuleState;
+  queue: LinguisticRuleStateQueue;
+
+  /**
+   * Build and display the confirmation from CURRENT settled authority.
+   *
+   * The callback may throw LinguisticRuleTargetMissingError if a rendered UI
+   * reference no longer identifies a current object. In that case no
+   * confirmation or mutation authority is granted.
+   */
+  confirm: () => Promise<boolean>;
+
+  /**
+   * Apply the already-confirmed operation to the queue's fresh detached
+   * candidate. Exact-target checks should still be repeated here as defense in
+   * depth rather than treating confirmation as permanent authority.
+   */
+  edit: (candidate: LinguisticRuleCandidate) => void;
+
+  save: () => Promise<void>;
+}
+
+/**
+ * Apply one linguistic-rule mutation that requires explicit creator approval.
+ *
+ * Confirmation happens before candidate construction or persistence, but only
+ * after the caller has entered the common settings-authority queue. Therefore:
+ *
+ * - earlier authority transactions settle before confirmation text is built;
+ * - later authority transactions cannot change the approved meaning while the
+ *   modal is open;
+ * - cancellation performs no candidate mutation and no persistence;
+ * - stale targets fail closed before mutation;
+ * - and the ordinary H10 queue still owns detached cloning, save rollback, and
+ *   successful identity reconciliation.
+ */
+export async function applyConfirmedLinguisticRuleState(
+  request: ApplyConfirmedLinguisticRuleStateRequest,
+): Promise<ConfirmedLinguisticRuleStateResult> {
+  let confirmed: boolean;
+
+  try {
+    confirmed = await request.confirm();
+  } catch (error) {
+    if (error instanceof LinguisticRuleTargetMissingError) {
+      return { status: "target-missing" };
+    }
+
+    throw error;
+  }
+
+  if (!confirmed) {
+    return { status: "cancelled" };
+  }
+
+  return request.queue.apply({
+    state: request.state,
+    edit: request.edit,
+    save: request.save,
+  });
 }

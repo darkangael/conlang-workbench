@@ -2051,46 +2051,30 @@ export class ConlangSettingTab extends PluginSettingTab {
             }
             const preset = findPreset(pendingPresetId);
             if (!preset) return;
-            const approvedRules = lang.inflections
-              ? [...lang.inflections]
-              : undefined;
-            const existingCount = approvedRules?.length ?? 0;
-            const confirmed = await this.confirmPreset(preset, existingCount);
-            if (!confirmed) return;
 
-            const result = await this.plugin.setLinguisticRuleState(
+            const result = await this.plugin.confirmLinguisticRuleState(
               lang,
-              (candidate) => {
-                const currentRules = lang.inflections;
-
+              () => {
                 /*
-                 * Preserve the distinction between an absent inflection array
-                 * and an explicitly present empty array. If that authority
-                 * changed while confirmation was open, the old confirmation no
-                 * longer authorizes replacing the new state.
+                 * Build the warning from the current authoritative rule count
+                 * only after this operation owns the common settings queue.
+                 * Earlier H10 edits may preserve rule object identity while
+                 * changing their values, so a pre-queue shallow snapshot is not
+                 * sufficient confirmation authority.
                  */
-                if (approvedRules === undefined) {
-                  if (currentRules !== undefined) {
-                    throw new LinguisticRuleTargetMissingError();
-                  }
-                } else {
-                  if (
-                    currentRules === undefined ||
-                    currentRules.length !== approvedRules.length ||
-                    currentRules.some(
-                      (currentRule, index) =>
-                        currentRule !== approvedRules[index],
-                    )
-                  ) {
-                    throw new LinguisticRuleTargetMissingError();
-                  }
-                }
-
+                const existingCount = lang.inflections?.length ?? 0;
+                return this.confirmPreset(preset, existingCount);
+              },
+              (candidate) => {
                 candidate.inflections = preset.rules.map((rule) => ({
                   ...rule,
                 }));
               },
             );
+
+            if (result.status === "cancelled") {
+              return;
+            }
 
             if (result.status === "save-failed") {
               console.error(
@@ -2106,7 +2090,7 @@ export class ConlangSettingTab extends PluginSettingTab {
 
             if (result.status === "target-missing") {
               new Notice(
-                "Made Up Words: the inflection rules changed while preset replacement was pending; the preset was not applied.",
+                "Made Up Words: the language or inflection-rule target is no longer current; the preset was not applied.",
               );
               this.rerender();
               return;
@@ -2426,24 +2410,34 @@ export class ConlangSettingTab extends PluginSettingTab {
           .setIcon("trash")
           .setTooltip("Delete sheet")
           .onClick(async () => {
-            const sheetName = sheet.name.trim() || "Untitled sheet";
-            const confirmed = await confirmDeletion(this.app, {
-              title: "Delete cypher sheet?",
-              message:
-                `Delete the cypher sheet "${sheetName}" and its ${sheet.rules.length} ` +
-                `rule${sheet.rules.length === 1 ? "" : "s"} from this language's settings?`,
-              confirmText: "Delete sheet",
-            });
-
-            if (!confirmed) return;
-
-            const result = await this.plugin.setLinguisticRuleState(
+            const result = await this.plugin.confirmLinguisticRuleState(
               lang,
+              () => {
+                /*
+                 * Re-find the exact sheet before constructing the warning. The
+                 * same sheet object may survive earlier queued edits with a new
+                 * name or different rules, so creator-facing text must come
+                 * from current settled authority rather than rendered history.
+                 */
+                const currentIndex = lang.sheets.indexOf(sheet);
+                if (currentIndex < 0) {
+                  throw new LinguisticRuleTargetMissingError();
+                }
+
+                const sheetName = sheet.name.trim() || "Untitled sheet";
+                return confirmDeletion(this.app, {
+                  title: "Delete cypher sheet?",
+                  message:
+                    `Delete the cypher sheet "${sheetName}" and its ${sheet.rules.length} ` +
+                    `rule${sheet.rules.length === 1 ? "" : "s"} from this language's settings?`,
+                  confirmText: "Delete sheet",
+                });
+              },
               (candidate) => {
                 /*
-                 * Re-find the exact object approved by the user only when this
-                 * queued edit begins. A stale rendered index must never
-                 * authorize deletion of whichever sheet later occupies it.
+                 * Confirmation is not permanent authority. Re-find the same
+                 * current object again immediately before editing the detached
+                 * candidate.
                  */
                 const currentIndex = lang.sheets.indexOf(sheet);
                 if (currentIndex < 0) {
@@ -2453,6 +2447,10 @@ export class ConlangSettingTab extends PluginSettingTab {
                 candidate.sheets.splice(currentIndex, 1);
               },
             );
+
+            if (result.status === "cancelled") {
+              return;
+            }
 
             if (result.status === "save-failed") {
               console.error(
@@ -2769,21 +2767,36 @@ export class ConlangSettingTab extends PluginSettingTab {
     const deleteBtn = deleteTd.createEl("button", { text: "×" });
     deleteBtn.addEventListener("click", () => {
       void (async () => {
-        const ruleDescription =
-          rule.input || rule.output
-            ? `"${rule.input || "(empty)"}" → "${rule.output || "(empty)"}"`
-            : "this cypher rule";
-
-        const confirmed = await confirmDeletion(this.app, {
-          title: "Delete cypher rule?",
-          message: `Delete ${ruleDescription} from this cypher sheet?`,
-          confirmText: "Delete rule",
-        });
-
-        if (!confirmed) return;
-
-        const result = await this.plugin.setLinguisticRuleState(
+        const result = await this.plugin.confirmLinguisticRuleState(
           lang,
+          () => {
+            const currentSheetIndex = lang.sheets.indexOf(sheet);
+            if (currentSheetIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            const currentRuleIndex = sheet.rules.indexOf(rule);
+            if (currentRuleIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            /*
+             * Construct the description only after all earlier settings
+             * authority has settled. Successful H10 reconciliation deliberately
+             * preserves this rule object's identity while copying new primitive
+             * values into it.
+             */
+            const ruleDescription =
+              rule.input || rule.output
+                ? `"${rule.input || "(empty)"}" → "${rule.output || "(empty)"}"`
+                : "this cypher rule";
+
+            return confirmDeletion(this.app, {
+              title: "Delete cypher rule?",
+              message: `Delete ${ruleDescription} from this cypher sheet?`,
+              confirmText: "Delete rule",
+            });
+          },
           (candidate) => {
             const currentSheetIndex = lang.sheets.indexOf(sheet);
             if (currentSheetIndex < 0) {
@@ -2801,6 +2814,10 @@ export class ConlangSettingTab extends PluginSettingTab {
             );
           },
         );
+
+        if (result.status === "cancelled") {
+          return;
+        }
 
         if (result.status === "save-failed") {
           console.error(
@@ -3051,24 +3068,70 @@ export class ConlangSettingTab extends PluginSettingTab {
     const deleteBtn = deleteTd.createEl("button", { text: "×" });
     deleteBtn.addEventListener("click", () => {
       void (async () => {
-        const label = rule.label.trim();
-        const ruleDescription = label
-          ? `the inflection rule "${label}"`
-          : "this inflection rule";
+        const result = await this.plugin.confirmLinguisticRuleState(
+          lang,
+          () => {
+            const currentRules = lang.inflections;
+            if (!currentRules || currentRules.indexOf(rule) < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
 
-        const confirmed = await confirmDeletion(this.app, {
-          title: "Delete inflection rule?",
-          message: `Delete ${ruleDescription} from this language's settings?`,
-          confirmText: "Delete rule",
-        });
+            /*
+             * The label shown to the creator must describe the current
+             * authoritative rule, not the values retained by a rendered row
+             * before an earlier queued edit finished.
+             */
+            const label = rule.label.trim();
+            const ruleDescription = label
+              ? `the inflection rule "${label}"`
+              : "this inflection rule";
 
-        if (!confirmed) return;
+            return confirmDeletion(this.app, {
+              title: "Delete inflection rule?",
+              message: `Delete ${ruleDescription} from this language's settings?`,
+              confirmText: "Delete rule",
+            });
+          },
+          (candidate) => {
+            const currentRules = lang.inflections;
+            if (!currentRules) {
+              throw new LinguisticRuleTargetMissingError();
+            }
 
-        const applied = await applyRuleEdit((candidateRules, currentIndex) => {
-          candidateRules.splice(currentIndex, 1);
-        }, "delete inflection rule");
+            const currentIndex = currentRules.indexOf(rule);
+            if (currentIndex < 0) {
+              throw new LinguisticRuleTargetMissingError();
+            }
 
-        if (!applied) {
+            const candidateRules = candidate.inflections;
+            if (!candidateRules || !candidateRules[currentIndex]) {
+              throw new LinguisticRuleTargetMissingError();
+            }
+
+            candidateRules.splice(currentIndex, 1);
+          },
+        );
+
+        if (result.status === "cancelled") {
+          return;
+        }
+
+        if (result.status === "save-failed") {
+          console.error(
+            "Made Up Words: failed to delete inflection rule:",
+            result.error,
+          );
+          new Notice(
+            "Made Up Words: could not save the inflection-rule deletion; the rule was not deleted.",
+          );
+          this.rerender();
+          return;
+        }
+
+        if (result.status === "target-missing") {
+          new Notice(
+            "Made Up Words: that inflection rule is no longer current; nothing was deleted.",
+          );
           this.rerender();
           return;
         }
