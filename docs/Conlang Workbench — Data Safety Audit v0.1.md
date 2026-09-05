@@ -2241,32 +2241,124 @@ automatic backup or general undo subsystem.**
 
 ### Folder-Wide Operations
 
-Identify present or planned commands that can affect many notes.
+The current Workbench mutation surface contains no Workbench-owned recursive
+many-note rewrite.
+
+Language creation, root repair, and root recreation can create several folders,
+but their persistent scope is structurally bounded. Creation preflights and
+establishes the canonical language structure. Repair establishes only the
+missing canonical children of one already-owned configured root. Recreation
+establishes one explicitly authorized missing configured root and its canonical
+children. These operations do not recursively rewrite or delete notes.
+
+Language-root rename has the largest current filesystem blast radius because one
+Obsidian folder rename can move an owned root containing an arbitrary number of
+descendants. Workbench does not enumerate or rewrite those descendants itself.
+The rename planner proves the current owned source root and unoccupied
+destination, and the confirmation modal identifies the exact old and new
+language names before mutation. It also tells the creator that the existing
+owned root will be renamed, configured paths beneath it will be updated,
+Workbench will not rewrite creator-authored Markdown or YAML, and Obsidian may
+update links according to the creator's normal link-update preference. Implicit
+modal close paths fail closed.
+
+The multi-language dictionary command is the only current operation found that
+can create multiple notes in one user workflow. It performs at most one
+dictionary-entry attempt per explicitly selected configured language. Each
+attempt passes independently through the ordinary hardened dictionary writer;
+the command does not gain a separate bulk-write authority.
 
 ### Vault-Wide Operations
 
-Treat vault-wide rewrites as especially high-risk.
+No current production path performs a Workbench-owned vault-wide rewrite,
+recursive write, mass metadata normalization, or bulk deletion.
+
+Dictionary, morpheme, linguistic-example, and phonology loaders do recursively
+read Markdown beneath configured source folders. Those traversals are
+observational runtime loading, not persistent mutation.
+
+A successful entry write can also trigger rebuilding the settled active-language
+runtime and refreshing open Markdown views/highlights. That work can scale with
+the active linguistic corpus and open workspace, but it remains read/runtime/UI
+work and does not enlarge the set of creator files authorized for mutation.
+
+Language-root rename may indirectly cause Obsidian-managed link updates outside
+the renamed subtree when the creator's normal Obsidian link-update preference
+allows them. Workbench discloses that possibility before authorization rather
+than representing the rename as an isolated path-string change.
 
 ### Dry Run
 
-Determine whether broad operations should provide a no-write preview.
+No additional dry-run mode is required for the current mutation surface.
+
+The multi-language dictionary modal already acts as a concrete no-write preview:
+it shows every configured language as an individual row with its destination
+folder and proposed editable form, only the primary language begins selected,
+and the creator explicitly chooses which nonblank targets will be submitted.
+There is no select-all action.
+
+Language-root rename is an exact old-name to new-name operation against one
+already-owned root. Its explicit confirmation describes the structural move and
+possible Obsidian link-update behavior before the single host-managed rename is
+attempted. A descendant-by-descendant Workbench dry run would not describe an
+additional Workbench-controlled rewrite.
+
+The fixed-size Add/Repair/Recreate folder operations likewise have sufficiently
+narrow structural scope that a separate dry-run mechanism would not currently
+add a meaningful data-safety boundary.
 
 ### Progress and Interruption
 
-Consider how progress is reported and what happens if the operation stops.
+No current Workbench-owned persistent operation performs a long-running
+vault-wide or recursive write pass that requires per-item progress reporting.
+
+The multi-language dictionary flow processes selected targets sequentially,
+records individual successes and failures, and reports the final saved/failed
+counts. Its post-write runtime reload can become more expensive as active
+language corpora grow, but that phase prepares detached observational runtime
+state rather than progressively mutating creator files.
+
+The fixed canonical-folder operations perform only a small predetermined number
+of structural creations, while language-root rename delegates one awaited folder
+rename to Obsidian.
+
+The consequences of interruption or failure after only part of an authorized
+operation has completed are assessed separately in §17.
 
 ### Limits
 
-Consider practical safeguards against accidentally targeting more data than
-intended.
+Current persistent operations are limited by authority and target structure
+rather than by an arbitrary numerical cap:
+
+- Add/Repair/Recreate operate on one language and a fixed canonical folder set.
+- Dictionary creation writes one lexical note per independently authorized
+  target.
+- Multi-language dictionary creation is limited to explicitly selected
+  configured languages and at most one entry attempt per selected language.
+- Rename operates on exactly one established owned language root and one
+  validated unoccupied destination.
+
+No explicit maximum number of configured languages or multi-entry targets was
+found. That absence is not currently a data-safety finding because the
+multi-entry UI does not implicitly authorize the whole configured set: only the
+primary starts selected, every additional target is individually visible and
+selected, and every resulting write retains the ordinary per-entry authority
+checks.
+
+Any future bulk Markdown/frontmatter rewrite, import that replaces or transforms
+many notes, portable-ID backfill, mass metadata normalization, recursive
+mutator, broad deletion, or whole-vault transformation must reopen this
+analysis. Such a feature should establish explicit scope limits and evaluate a
+dry run/preview, progress reporting, interruption behavior, and the backup and
+recovery requirements from §15 before gaining broad mutation authority.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass**
 
 ---
 
