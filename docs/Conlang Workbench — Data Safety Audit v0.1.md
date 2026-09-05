@@ -3286,6 +3286,6 @@ A new data-safety review should be considered when any of the following occurs:
 
 ## Audit Completion Record
 
-- **Completed:** No
-- **Completion commit:** —
+- **Completed:** Yes
+- **Completion commit:** `ba75e0f421612c9c445d01a231ae8b6e9a5cd87c`
 - **Reviewer notes:** Upstream security and data-safety findings were reported to Made Up Words as issue #21, “Security and data-safety findings from the Conlang Workbench fork.”
