@@ -2124,37 +2124,116 @@ whole-settings persistence authority.
 
 ### Current Recovery Story
 
-Document what recovery options currently exist.
+Workbench currently relies on narrowly scoped transaction compensation rather
+than a general backup or undo subsystem.
+
+The failure-recovery behavior verified in Section 8 remains the controlling
+internal model:
+
+- pre-write validation failures leave the prior state untouched;
+- failed settings persistence restores the prior in-memory authority where that
+  authority is still provable;
+- blocked or failed detached runtime preparation leaves the prior runtime
+  untouched and rolls configuration back;
+- successful compensating persistence restores agreement between durable
+  settings and the prior live state;
+- language-root rename attempts exact reverse rename only through the proven
+  old/new root pair.
+
+Filesystem operations deliberately do not promise destructive rollback.
+Partially established additive folders are preserved rather than automatically
+deleted because creator or concurrent data may already exist within them.
+Recovery follows the filesystem state that can actually be proven instead of
+reconstructing an assumed prior state.
+
+This is failure-time compensation, not post-success history. Workbench does not
+currently maintain snapshots of previous successful creator configuration or a
+general command-level undo stack.
 
 ### Obsidian and Filesystem Recovery
 
-Consider compatibility with:
+Workbench remains compatible with external vault recovery and versioning
+systems, but its correctness does not depend on the creator having one.
 
-- Obsidian File Recovery
-- Git
-- filesystem backups
-- cloud/versioned storage
+Obsidian File Recovery can provide useful recovery for supported creator-authored
+vault files, but it is not treated as a complete Workbench recovery mechanism.
+Workbench settings persistence and folder topology are separate authority
+domains and must not be assumed recoverable merely because note snapshots are
+available.
+
+Git, filesystem backups, and cloud or other versioned storage remain useful
+general safeguards when they cover the relevant vault and configuration data.
+Workbench does not inspect, require, or infer recovery authority from any such
+external system.
 
 ### Pre-Mutation Backup
 
-Determine which future operations may justify explicit backup recommendations or
-automatic backup behavior.
+No current Workbench operation justifies an automatic pre-mutation backup
+requirement.
+
+Current filesystem mutations are either additive creation or the explicit rename
+of one already-owned language root. Additive failure preserves established
+content rather than deleting it. Language rename is confirmed explicitly,
+revalidates authority immediately before mutation, and has exact compensating
+rename behavior while the old/new root pair remains provable.
+
+Inflection preset replacement can replace an entire configured rule set for one
+language, but it affects settings-backed linguistic configuration rather than
+creator-authored Markdown. The confirmation reports the number of rules that
+will be replaced and explicitly warns that a successful replacement cannot be
+undone from inside Settings.
+
+This conclusion must be revisited before introducing operations such as bulk
+creator-Markdown rewriting, destructive migration, import with replacement,
+mass metadata normalization, creator-file deletion, or other transformations
+whose impact can span many creator-authored files.
 
 ### Undo
 
-Review whether mutating commands can reasonably support undo.
+Workbench has no general post-success undo system.
+
+A successfully renamed language can be renamed again through the same fresh
+validation and confirmation path, providing a semantic inverse without treating
+the earlier transaction snapshot as durable undo history.
+
+Successful inflection preset replacement does not retain the previous rule set
+for later restoration. This limitation is communicated before authorization,
+and failed persistence still restores the previously settled rule state.
+
+A general undo stack is not required by the current mutation surface. Any future
+operation that destroys or rewrites substantial creator-authored data must
+reopen that conclusion.
 
 ### Documentation
 
-Users should understand when an operation may alter many files.
+The current README does not contain a general backup or recovery section.
+
+For the present mutation surface, operation-specific UI communicates the most
+important recovery boundaries:
+
+- language rename identifies the old and new names, states that the existing
+  owned root folder will be renamed, explains that configured child paths
+  change, and warns that Obsidian may update links according to the creator's
+  normal link-update preference;
+- inflection preset replacement states that existing rules will be replaced,
+  reports the affected rule count, requires explicit confirmation, and warns
+  that successful replacement cannot be undone from inside Settings;
+- failure notices distinguish restored state from unusual cases where persisted
+  settings or filesystem state require creator review.
+
+A broader backup/recovery section should be added to user documentation if
+future Workbench operations begin rewriting, replacing, or deleting substantial
+creator-authored vault content.
 
 ### Findings
 
-None recorded yet.
+None.
 
 ### Status
 
-**Not Reviewed**
+**Pass — current recovery boundaries are explicit, external backups remain
+supplementary rather than assumed, and no present operation requires an
+automatic backup or general undo subsystem.**
 
 ---
 
