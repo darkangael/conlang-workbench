@@ -73,10 +73,7 @@ export class LexicalIdentityIndex {
     return { status: "ambiguous", targets };
   }
 
-  compare(
-    left: DictionaryEntry,
-    right: DictionaryEntry,
-  ): LexicalEquivalence {
+  compare(left: DictionaryEntry, right: DictionaryEntry): LexicalEquivalence {
     const leftId = left.lexemeId ? normalizeLexemeId(left.lexemeId) : "";
     const rightId = right.lexemeId ? normalizeLexemeId(right.lexemeId) : "";
 

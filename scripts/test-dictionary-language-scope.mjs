@@ -421,11 +421,8 @@ definition: ordinary test definition
   );
 
   assert.equal(
-    dictionary.resolveLexemeId(
-      "duplicate-mer-id",
-      "mer-language",
-      "Mer",
-    ).status,
+    dictionary.resolveLexemeId("duplicate-mer-id", "mer-language", "Mer")
+      .status,
     "ambiguous",
     "duplicate stable IDs inside one language must remain ambiguous",
   );

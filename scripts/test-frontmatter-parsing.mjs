@@ -163,10 +163,7 @@ const configuredLanguageWorkbenchID = createConfiguredLanguageWorkbenchID(
   "Languages/Mer",
 );
 
-assert.equal(
-  configuredLanguageWorkbenchID,
-  "wb:language:Mer:Languages%2FMer",
-);
+assert.equal(configuredLanguageWorkbenchID, "wb:language:Mer:Languages%2FMer");
 
 assert.throws(
   () => createConfiguredLanguageWorkbenchID("   ", "Languages/Mer"),
@@ -944,13 +941,7 @@ assert.equal(malformedOptionalScalarSource.value.notes, undefined);
 assert.equal(malformedOptionalScalarSource.value.language, undefined);
 assert.equal(malformedOptionalScalarSource.value.languageId, undefined);
 
-for (const field of [
-  "ipa",
-  "etymology",
-  "notes",
-  "language",
-  "language_id",
-]) {
+for (const field of ["ipa", "etymology", "notes", "language", "language_id"]) {
   assert.ok(
     malformedOptionalScalarSource.diagnostics.some(
       (diagnostic) =>
