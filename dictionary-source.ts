@@ -406,6 +406,7 @@ export function parseDictionarySource(
     notes,
     language,
     languageId,
+    lexemeId: normalizedLexemeId,
     mtime: input.mtime,
     nameCategory: nameCategoryResult.value,
     isPhrase,

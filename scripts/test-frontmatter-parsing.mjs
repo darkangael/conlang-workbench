@@ -790,6 +790,11 @@ assert.equal(
   undefined,
   "a legacy lemma must not be manufactured into stable lexical identity",
 );
+assert.equal(
+  lemmaGlossSource.value?.lexemeId,
+  undefined,
+  "legacy lexical notes must not receive manufactured stable identity",
+);
 
 // An explicit portable lexical ID is independent from the current lemma.
 const explicitLexemeIdSource = parseDictionarySource(
@@ -804,6 +809,11 @@ const explicitLexemeIdSource = parseDictionarySource(
 assert.ok(explicitLexemeIdSource);
 assert.equal(explicitLexemeIdSource.value?.word, "talu");
 assert.equal(explicitLexemeIdSource.value?.languageId, "test-language");
+assert.equal(
+  explicitLexemeIdSource.value?.lexemeId,
+  "lex-river-001",
+  "the accepted runtime DictionaryEntry must expose creator-authored lexical identity",
+);
 assert.equal(explicitLexemeIdSource.identity.linguisticID, "lex-river-001");
 assert.equal(explicitLexemeIdSource.diagnostics.length, 0);
 
@@ -819,6 +829,11 @@ const respelledLexemeSource = parseDictionarySource(
 );
 assert.ok(respelledLexemeSource);
 assert.equal(respelledLexemeSource.value?.word, "taluu");
+assert.equal(
+  respelledLexemeSource.value?.lexemeId,
+  "lex-river-001",
+  "respelling must not change the runtime lexeme identity",
+);
 assert.equal(respelledLexemeSource.identity.linguisticID, "lex-river-001");
 
 // A malformed optional ID cannot establish portable identity, but it also does
@@ -835,6 +850,11 @@ const malformedLexemeIdSource = parseDictionarySource(
 assert.ok(malformedLexemeIdSource);
 assert.ok(malformedLexemeIdSource.value);
 assert.equal(malformedLexemeIdSource.value.word, "talu");
+assert.equal(
+  malformedLexemeIdSource.value?.lexemeId,
+  undefined,
+  "malformed lexeme_id must not leak into runtime lexical identity",
+);
 assert.equal(malformedLexemeIdSource.identity.linguisticID, undefined);
 assert.ok(malformedLexemeIdSource.identity.workbenchID);
 assert.ok(malformedLexemeIdSource.identity.sourceID);
@@ -859,6 +879,11 @@ const blankLexemeIdSource = parseDictionarySource(
 );
 assert.ok(blankLexemeIdSource);
 assert.ok(blankLexemeIdSource.value);
+assert.equal(
+  blankLexemeIdSource.value?.lexemeId,
+  undefined,
+  "blank lexeme_id must not become runtime lexical identity",
+);
 assert.equal(blankLexemeIdSource.identity.linguisticID, undefined);
 assert.ok(
   blankLexemeIdSource.diagnostics.some(

@@ -143,6 +143,9 @@ export interface DictionaryEntry {
   // may omit `language_id`; a configured language can supply this value to the
   // runtime object without rewriting creator-authored Markdown.
   languageId?: string;
+  // Stable creator-authored lexical identity when a usable `lexeme_id` is
+  // present. Legacy entries remain fully valid without one.
+  lexemeId?: string;
   // File modification time, used for "recently added" sorting in the browser
   mtime?: number;
   // For proper-noun entries: what category of named thing (character, place,
