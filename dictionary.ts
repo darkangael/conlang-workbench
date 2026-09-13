@@ -349,6 +349,13 @@ export class Dictionary {
     return this.sourceByWorkbenchID.get(workbenchID);
   }
 
+  /**
+   * Resolve a creator-authored lexical ID through the derived runtime index.
+   *
+   * The explicit unresolved/unique/ambiguous result is part of the safety
+   * contract: callers must decide how to handle uncertainty rather than having
+   * Dictionary silently choose among duplicate IDs.
+   */
   resolveLexemeId(
     lexemeId: string,
     languageId?: string,
@@ -357,6 +364,12 @@ export class Dictionary {
     return this.lexicalIdentity.resolve(lexemeId, languageId, language);
   }
 
+  /**
+   * Ask whether two entries have the same stable lexical identity.
+   *
+   * `indeterminate` is meaningful and must be preserved when either entry lacks
+   * a usable ID or its ID cannot be resolved uniquely.
+   */
   compareLexicalIdentity(
     left: DictionaryEntry,
     right: DictionaryEntry,
@@ -683,6 +696,10 @@ export class Dictionary {
     existing.push(entry);
     this.byWord.set(key, existing);
     this.all.push(entry);
+
+    // Like the other Dictionary indexes, lexicalIdentity is rebuilt from
+    // canonical source entries. Adding an entry here updates only derived
+    // runtime lookup state; it does not create or persist a lexical ID.
     this.lexicalIdentity.add(entry);
     if (entry.isPhrase) {
       // Sorting and indexing happen once in finalizePhrases() after the load.
