@@ -11,6 +11,7 @@ export default defineConfig([
     ignores: [
       "main.js",
       "node_modules/",
+      ".worktrees/",
       "**/*.js",
       "**/*.mjs",
       "test-*.ts",
