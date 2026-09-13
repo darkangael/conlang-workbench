@@ -809,6 +809,7 @@ function parseDictionarySource(input) {
     notes,
     language,
     languageId,
+    lexemeId: normalizedLexemeId,
     mtime: input.mtime,
     nameCategory: nameCategoryResult.value,
     isPhrase,
@@ -932,6 +933,69 @@ function matchPhraseAtStart(text, phrases) {
   return null;
 }
 
+// lexical-identity.ts
+function normalizeLexemeId(id) {
+  return id.trim().toLowerCase();
+}
+function sharesLexicalLanguageScope(candidate, languageId, language) {
+  if (languageId && candidate.languageId !== languageId) return false;
+  if (language && candidate.language !== language) return false;
+  return true;
+}
+var LexicalIdentityIndex = class {
+  constructor() {
+    this.byId = /* @__PURE__ */ new Map();
+  }
+  clear() {
+    this.byId.clear();
+  }
+  add(entry) {
+    var _a;
+    const key = entry.lexemeId ? normalizeLexemeId(entry.lexemeId) : "";
+    if (!key) return;
+    const entries = (_a = this.byId.get(key)) != null ? _a : [];
+    entries.push(entry);
+    this.byId.set(key, entries);
+  }
+  resolve(lexemeId, languageId, language) {
+    var _a;
+    const key = normalizeLexemeId(lexemeId);
+    if (!key) {
+      return { status: "unresolved", targets: [] };
+    }
+    const targets = ((_a = this.byId.get(key)) != null ? _a : []).filter(
+      (candidate) => sharesLexicalLanguageScope(candidate, languageId, language)
+    );
+    if (targets.length === 0) {
+      return { status: "unresolved", targets: [] };
+    }
+    if (targets.length === 1) {
+      return { status: "unique", targets: [targets[0]] };
+    }
+    return { status: "ambiguous", targets };
+  }
+  compare(left, right) {
+    const leftId = left.lexemeId ? normalizeLexemeId(left.lexemeId) : "";
+    const rightId = right.lexemeId ? normalizeLexemeId(right.lexemeId) : "";
+    if (!leftId || !rightId) return "indeterminate";
+    if (leftId !== rightId) return "different";
+    const leftResolution = this.resolve(
+      left.lexemeId,
+      left.languageId,
+      left.language
+    );
+    const rightResolution = this.resolve(
+      right.lexemeId,
+      right.languageId,
+      right.language
+    );
+    if (leftResolution.status !== "unique" || rightResolution.status !== "unique") {
+      return "indeterminate";
+    }
+    return leftResolution.targets[0] === rightResolution.targets[0] ? "same" : "different";
+  }
+};
+
 // dictionary.ts
 var _Dictionary = class _Dictionary {
   constructor(app) {
@@ -955,6 +1019,7 @@ var _Dictionary = class _Dictionary {
     // Ordered list of all valid entries in insertion order (preserves "recently
     // added" sorting and stable iteration).
     this.all = [];
+    this.lexicalIdentity = new LexicalIdentityIndex();
     // Source records are kept separately from feature-facing DictionaryEntry
     // objects. A recognized lexical note can therefore remain known to
     // Workbench even when malformed required frontmatter prevents it from
@@ -1009,6 +1074,7 @@ var _Dictionary = class _Dictionary {
     this.phrases = [];
     this.phraseIdx = EMPTY_PHRASE_INDEX;
     this.all = [];
+    this.lexicalIdentity.clear();
     this.sourceRecords = [];
     this.sourceByWorkbenchID.clear();
   }
@@ -1051,12 +1117,21 @@ var _Dictionary = class _Dictionary {
    * hit is a synthetic entry standing in for a multi-word declared form.
    * Returns undefined for ordinary phrase entries.
    *
-   * The synthetic copies carry the lemma's `path`, which is what makes this
-   * recoverable — without it a multi-word form would render as a headword in
-   * its own right, complete with the lemma's definition under the wrong word.
+   * Synthetic copies preserve the lemma's stable lexical identity when one is
+   * available. ID-bearing entries resolve through that identity and fail closed
+   * if it is unresolved or ambiguous. Legacy ID-less entries retain exact-path
+   * ownership as a compatibility fallback.
    */
   lemmaForDeclaredPhrase(entry) {
     if (!entry.viaFormLabel || !entry.viaFormLemma) return void 0;
+    if (entry.lexemeId) {
+      const resolution = this.resolveLexemeId(
+        entry.lexemeId,
+        entry.languageId,
+        entry.language
+      );
+      return resolution.status === "unique" ? resolution.targets[0] : void 0;
+    }
     return this.lookupAll(entry.viaFormLemma).find(
       (e) => e.path === entry.path
     );
@@ -1159,6 +1234,12 @@ var _Dictionary = class _Dictionary {
    */
   lookupWorkbenchID(workbenchID) {
     return this.sourceByWorkbenchID.get(workbenchID);
+  }
+  resolveLexemeId(lexemeId, languageId, language) {
+    return this.lexicalIdentity.resolve(lexemeId, languageId, language);
+  }
+  compareLexicalIdentity(left, right) {
+    return this.lexicalIdentity.compare(left, right);
   }
   /**
    * Build the index by scanning a single folder for .md files. Kept for
@@ -1387,6 +1468,7 @@ var _Dictionary = class _Dictionary {
     existing.push(entry);
     this.byWord.set(key, existing);
     this.all.push(entry);
+    this.lexicalIdentity.add(entry);
     if (entry.isPhrase) {
       this.phrases.push(entry);
     }
