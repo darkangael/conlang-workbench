@@ -23,6 +23,7 @@ node_modules/
 
 # Local agent scratch
 .claude/
+.worktrees/
 issue16-reply.md
 
 # Conlang Workbench test-vault
