@@ -33,6 +33,11 @@ import type {
 } from "./workbench-source";
 import { buildPhraseIndex, EMPTY_PHRASE_INDEX, PhraseIndex } from "./phrases";
 import { normalizeLexicalKey } from "./lexical-normalization";
+import {
+  LexicalIdentityIndex,
+  type LexicalEquivalence,
+  type LexicalIdentityResolution,
+} from "./lexical-identity";
 
 /**
  * A richer English-language dictionary lookup result.
@@ -78,6 +83,7 @@ export class Dictionary {
   // Ordered list of all valid entries in insertion order (preserves "recently
   // added" sorting and stable iteration).
   private all: DictionaryEntry[] = [];
+  private lexicalIdentity = new LexicalIdentityIndex();
 
   // Source records are kept separately from feature-facing DictionaryEntry
   // objects. A recognized lexical note can therefore remain known to
@@ -144,6 +150,7 @@ export class Dictionary {
     this.phrases = [];
     this.phraseIdx = EMPTY_PHRASE_INDEX;
     this.all = [];
+    this.lexicalIdentity.clear();
     this.sourceRecords = [];
     this.sourceByWorkbenchID.clear();
   }
@@ -329,6 +336,21 @@ export class Dictionary {
     workbenchID: string,
   ): WorkbenchSourceRecord<DictionaryEntry> | undefined {
     return this.sourceByWorkbenchID.get(workbenchID);
+  }
+
+  resolveLexemeId(
+    lexemeId: string,
+    languageId?: string,
+    language?: string,
+  ): LexicalIdentityResolution<DictionaryEntry> {
+    return this.lexicalIdentity.resolve(lexemeId, languageId, language);
+  }
+
+  compareLexicalIdentity(
+    left: DictionaryEntry,
+    right: DictionaryEntry,
+  ): LexicalEquivalence {
+    return this.lexicalIdentity.compare(left, right);
   }
 
   /**
@@ -650,6 +672,7 @@ export class Dictionary {
     existing.push(entry);
     this.byWord.set(key, existing);
     this.all.push(entry);
+    this.lexicalIdentity.add(entry);
     if (entry.isPhrase) {
       // Sorting and indexing happen once in finalizePhrases() after the load.
       this.phrases.push(entry);

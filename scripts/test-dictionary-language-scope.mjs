@@ -89,6 +89,8 @@ try {
     new TFile("Languages/Mer/Lexicon/sense-word.md"),
     new TFile("Languages/Mer/Lexicon/ambiguous-a.md"),
     new TFile("Languages/Mer/Lexicon/ambiguous-b.md"),
+    new TFile("Languages/Mer/Lexicon/duplicate-id-a.md"),
+    new TFile("Languages/Mer/Lexicon/duplicate-id-b.md"),
     new TFile("Languages/Mer/Lexicon/conflicting-language-id.md"),
   ];
 
@@ -119,6 +121,7 @@ try {
       "Languages/Mer/Lexicon/shared.md",
       {
         definition: "shared meaning",
+        lexeme_id: "shared-local",
         aliases: ["shared alias"],
         forms: ["plural: shared-form", "plural phrase: shared form phrase"],
       },
@@ -127,6 +130,7 @@ try {
       "Languages/Test Language/Lexicon/shared.md",
       {
         definition: "shared meaning",
+        lexeme_id: "shared-local",
         aliases: ["shared alias"],
         forms: ["plural: shared-form", "plural phrase: shared form phrase"],
       },
@@ -165,6 +169,20 @@ try {
       "Languages/Mer/Lexicon/ambiguous-b.md",
       {
         definition: "same-language ambiguity",
+      },
+    ],
+    [
+      "Languages/Mer/Lexicon/duplicate-id-a.md",
+      {
+        definition: "duplicate stable identity a",
+        lexeme_id: "duplicate-mer-id",
+      },
+    ],
+    [
+      "Languages/Mer/Lexicon/duplicate-id-b.md",
+      {
+        definition: "duplicate stable identity b",
+        lexeme_id: "duplicate-mer-id",
       },
     ],
     [
@@ -262,7 +280,7 @@ definition: ordinary test definition
 
   assert.equal(
     loaded,
-    9,
+    11,
     "an explicit conflicting language_id must not enter the configured language",
   );
   assert.equal(
@@ -378,6 +396,38 @@ definition: ordinary test definition
     dictionary.lookupAll("shared").length,
     2,
     "unscoped lookup should preserve both loaded languages",
+  );
+
+  const merSharedId = dictionary.resolveLexemeId(
+    "shared-local",
+    "mer-language",
+    "Mer",
+  );
+  assert.equal(merSharedId.status, "unique");
+  assert.equal(merSharedId.targets[0], merShared);
+
+  const testSharedId = dictionary.resolveLexemeId(
+    "shared-local",
+    "test-language",
+    "Test Language",
+  );
+  assert.equal(testSharedId.status, "unique");
+  assert.equal(testSharedId.targets[0], testShared);
+
+  assert.equal(
+    dictionary.resolveLexemeId("shared-local").status,
+    "ambiguous",
+    "an unscoped lookup must not pretend identical local IDs are globally unique",
+  );
+
+  assert.equal(
+    dictionary.resolveLexemeId(
+      "duplicate-mer-id",
+      "mer-language",
+      "Mer",
+    ).status,
+    "ambiguous",
+    "duplicate stable IDs inside one language must remain ambiguous",
   );
   assert.deepEqual(
     dictionary.lookupAll("shared", "Mer").map((entry) => entry.language),
