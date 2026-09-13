@@ -201,12 +201,23 @@ export class Dictionary {
    * hit is a synthetic entry standing in for a multi-word declared form.
    * Returns undefined for ordinary phrase entries.
    *
-   * The synthetic copies carry the lemma's `path`, which is what makes this
-   * recoverable — without it a multi-word form would render as a headword in
-   * its own right, complete with the lemma's definition under the wrong word.
+   * Synthetic copies preserve the lemma's stable lexical identity when one is
+   * available. ID-bearing entries resolve through that identity and fail closed
+   * if it is unresolved or ambiguous. Legacy ID-less entries retain exact-path
+   * ownership as a compatibility fallback.
    */
   lemmaForDeclaredPhrase(entry: DictionaryEntry): DictionaryEntry | undefined {
     if (!entry.viaFormLabel || !entry.viaFormLemma) return undefined;
+
+    if (entry.lexemeId) {
+      const resolution = this.resolveLexemeId(
+        entry.lexemeId,
+        entry.languageId,
+        entry.language,
+      );
+      return resolution.status === "unique" ? resolution.targets[0] : undefined;
+    }
+
     return this.lookupAll(entry.viaFormLemma).find(
       (e) => e.path === entry.path,
     );

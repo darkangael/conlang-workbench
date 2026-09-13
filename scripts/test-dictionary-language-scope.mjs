@@ -565,6 +565,44 @@ definition: ordinary test definition
     "Test Language synthetic declared form must resolve back to its own lemma",
   );
 
+  const movedMerDeclaredPhrase = {
+    ...merDeclaredPhrase.entry,
+    path: "Languages/Mer/Lexicon/moved-shared.md",
+  };
+  assert.equal(
+    dictionary.lemmaForDeclaredPhrase(movedMerDeclaredPhrase),
+    merShared,
+    "stable lexical identity must survive a changed source path",
+  );
+
+  const merRiver = dictionary.lookup("river way", "Mer");
+  assert.ok(merRiver);
+  assert.equal(merRiver.lexemeId, undefined);
+  assert.equal(
+    dictionary.lemmaForDeclaredPhrase({
+      ...merRiver,
+      word: "river ways",
+      viaFormLabel: "plural phrase",
+      viaFormLemma: merRiver.word,
+    }),
+    merRiver,
+    "an ID-less declared form must preserve exact-path legacy fallback",
+  );
+
+  const duplicateMer = dictionary.lookup("duplicate-id-a", "Mer");
+  assert.ok(duplicateMer);
+  assert.equal(duplicateMer.lexemeId, "duplicate-mer-id");
+  assert.equal(
+    dictionary.lemmaForDeclaredPhrase({
+      ...duplicateMer,
+      word: "duplicate id phrase",
+      viaFormLabel: "test form",
+      viaFormLemma: duplicateMer.word,
+    }),
+    undefined,
+    "an ambiguous stable ID must fail closed instead of falling back to path",
+  );
+
   // -------------------------------------------------------------------------
   // Unknown language fails closed under an authoritative scope
   // -------------------------------------------------------------------------
