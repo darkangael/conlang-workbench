@@ -16,6 +16,7 @@
     "test:gloss-rendering": "node scripts/test-gloss-rendering.mjs",
     "test:lexical-normalization": "node scripts/test-lexical-normalization.mjs",
     "test:lexical-part-relationships": "node scripts/test-lexical-part-relationships.mjs",
+    "test:lexical-identity": "node scripts/test-lexical-identity.mjs",
     "test:lookup-query": "node scripts/test-lookup-query.mjs",
     "test:source-diagnostics": "node scripts/test-source-diagnostics.mjs",
     "test:source-language-authority": "node scripts/test-source-language-authority.mjs",
